@@ -4312,6 +4312,11 @@ fn is_catchup_reply(m: &WireMsg) -> bool {
     )
 }
 
+/// Ok/Err acks a mesh peer never reads (its process_msg returns None for them).
+fn is_peer_ack(m: &WireMsg) -> bool {
+    matches!(m, WireMsg::Ok { .. } | WireMsg::Err { .. })
+}
+
 fn we_dial(my_id: &str, peer_id: &str) -> bool {
     my_id < peer_id
 }
@@ -4576,6 +4581,7 @@ async fn handle_inbound(
                 inbound_registered = true;
             }
         }
+        let was_hello = matches!(msg, WireMsg::Hello { .. });
         let replies = dispatch_wire(&shared, msg, Some(&fanout), true, false);
         for r in replies {
             let out = serde_json::to_string(&r)? + "\n";
@@ -4583,6 +4589,14 @@ async fn handle_inbound(
                 if catch_reply_tx.try_send(out).is_err() {
                     warn!("inbound catch-up reply dropped (catch-up lane full)");
                 }
+            } else if inbound_registered && !was_hello && is_peer_ack(&r) {
+                // Hello'd mesh peer: it discards Ok/Err (process_msg -> None),
+                // so acks to gossip (header-known, voted, buffered/dup, tx
+                // duplicate ...) only filled the 64-slot queue (~2.5k
+                // "inbound reply dropped"/min on v3) and crowded out data
+                // replies (NeedLedgerBody, TxsBatch, NeedMempoolTxs).
+                // Clients (no Hello) still get every ack.
+                continue;
             } else {
                 enqueue(&reply_tx, out);
             }
