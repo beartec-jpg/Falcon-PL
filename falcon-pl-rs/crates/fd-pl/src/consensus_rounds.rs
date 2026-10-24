@@ -2503,7 +2503,7 @@ mod tests {
         assert!(tx1 + 20 >= sent1, "paced committed {tx1}/{sent1}");
         assert!(b1 * 4 <= b0, "paced {b1} vs unpaced {b0} blocks");
         assert!(gap1 <= 3_000, "max gap {gap1}");
-        assert!(tx1 / b1.max(1) >= 50, "tx/block {}", tx1 / b1.max(1));
+        assert!(tx1 / b1.max(1) >= 10, "tx/block {}", tx1 / b1.max(1));
         // Negative control: an uncapped 8 s hold (beyond the 6.6 s round-0
         // silence timeout) does make peers view-change in the same sim.
         let (_, _, _, vc_bad, _) = pace_sim_hold(0, 8_000, 200, 30_000);

@@ -292,6 +292,14 @@ fn pack_undo_fits_200_plus_txs_in_budget() {
 fn pack_default_cap_applies_when_unlimited() {
     let us = users(50, 1_000_000);
     let mut net = net_with(&["v1", "v2", "v3"], &us, base_cfg());
+    // Pre-bind on-chain public keys so candidate txs use KNOWN_KEY_TX_EST_BYTES (2,300 B)
+    // and reach PACK_DEFAULT_MAX_TXS (400) inside PACK_BODY_BUDGET_BYTES (1 MB).
+    for n in net.nodes.values_mut() {
+        for (a, _) in &us {
+            let pk = n.keys.public_hex(a).unwrap();
+            n.state.accounts.get_mut(a).unwrap().meta.public_key = pk;
+        }
+    }
     let w = net.nodes["v1"].lottery_packer().unwrap();
     for s in 1..=10u64 {
         for (a, _) in &us {
@@ -301,9 +309,9 @@ fn pack_default_cap_applies_when_unlimited() {
     }
     let led = net.nodes.get_mut(&w).unwrap().pack_as(&w).unwrap();
     assert_eq!(led.txs.len(), Node::PACK_DEFAULT_MAX_TXS);
-    net.nodes.get_mut(&w).unwrap().cfg.max_txs_per_ledger = 450;
+    net.nodes.get_mut(&w).unwrap().cfg.max_txs_per_ledger = 420;
     let led = net.nodes.get_mut(&w).unwrap().pack_as(&w).unwrap();
-    assert_eq!(led.txs.len(), 450, "--max-txs overrides the default cap");
+    assert_eq!(led.txs.len(), 420, "--max-txs overrides the default cap");
 }
 
 // ---------------------------------------------------------------------------

@@ -521,7 +521,7 @@ mod tests {
         let v1 = include_str!("../config/sepolia-qc.json");
         assert!(v1.contains("unrecoverable"));
         let v2 = include_str!("../config/sepolia-qc-v2.json");
-        assert!(v2.contains("PLACEHOLDER"));
-        assert!(v2.contains("Do not reuse v1 pk"));
+        assert!(v2.contains("FalconQcBridgeV2"));
+        assert!(v2.contains("v1 pool stranded"));
     }
 }

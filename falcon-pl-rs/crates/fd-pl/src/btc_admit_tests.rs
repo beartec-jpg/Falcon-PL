@@ -205,19 +205,24 @@ fn btc_chain_admission_capped_then_falls_back_to_committed_tip() {
     let (h0, tip_hash) = rail_tip(&net);
     let cap = Node::BTC_ADMIT_CHAIN_MAX as usize;
     let hs = chain(&tip_hash, cap + 2, 0xe0, T0 + 600);
-    // seq 2 (head) + `cap` predecessors-replayed successors are admitted.
-    for i in 0..=cap {
+    // Up to `cap` pending txs (seq 2..2+cap) fit inside MEMPOOL_SEQ_WINDOW.
+    for i in 0..cap {
         let tx = hdr_tx(&net, "alice", 2 + i as u64, h0 + 1 + i as u64, &hs[i].raw_hex);
         assert_eq!(submit_all(&mut net, &tx), Ok(true), "#{i}");
     }
-    // One deeper than the cap: no replay, checked against the committed tip.
+    // `cap`-th successor passes BTC replay probe and hits the per-account mempool cap.
+    let at_cap = hdr_tx(&net, "alice", 2 + cap as u64, h0 + 1 + cap as u64, &hs[cap].raw_hex);
+    let e_cap = submit_all(&mut net, &at_cap).unwrap_err();
+    assert!(e_cap.contains("account mempool cap"), "{e_cap}");
+    // One deeper than BTC_ADMIT_CHAIN_MAX: no replay, checked against the committed tip.
     let deep = hdr_tx(&net, "alice", 2 + cap as u64 + 1, h0 + cap as u64 + 2, &hs[cap + 1].raw_hex);
     let e = submit_all(&mut net, &deep).unwrap_err();
     assert!(e.contains("BTC header parent mismatch"), "{e}");
     let r = net.seal_next_height().unwrap();
-    assert_eq!(r.n_txs, cap + 1);
-    assert_eq!(rail_tip(&net).0, h0 + cap as u64 + 1);
-    // After the pack the same header is admissible.
+    assert_eq!(r.n_txs, cap);
+    assert_eq!(rail_tip(&net).0, h0 + cap as u64);
+    // After the pack both `at_cap` and `deep` are admissible.
+    assert_eq!(submit_all(&mut net, &at_cap), Ok(true));
     assert_eq!(submit_all(&mut net, &deep), Ok(true));
 }
 

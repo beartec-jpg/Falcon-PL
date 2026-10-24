@@ -15787,7 +15787,7 @@ mod tests {
     #[test]
     fn product_version_is_locked_to_crate() {
         assert_eq!(PRODUCT_VERSION, "2.9.81");
-        assert_eq!(env!("CARGO_PKG_VERSION"), "2.9.43");
+        assert_eq!(env!("CARGO_PKG_VERSION"), "2.9.81");
         assert_eq!(NodeRole::from_exe_name("/opt/bin/falcon-pl-val"), Some(NodeRole::Val));
         assert_eq!(NodeRole::from_exe_name("falcon-pl-archive"), Some(NodeRole::Archive));
         assert_eq!(NodeRole::VAL_MAX_CHAIN, 128);
@@ -17141,7 +17141,7 @@ mod tests {
         // tracks parent time. Packer snap now_ms hours ahead folded hundreds of
         // extra epochs into claimable, then stamped parent+60s. Ingest folded
         // at sealed_at → self-accept state root mismatch.
-        let epoch_ms = 30_000u64;
+        let epoch_ms = 3_000u64;
         let cfg = ChainConfig {
             pack_budget_ms: 0,
             max_txs_per_ledger: 4,
@@ -17154,7 +17154,7 @@ mod tests {
         let mut net = Network::bootstrap(&["v1", "v2", "v3"], 1000, &users(), cfg);
         net.pong_all();
         let genesis = net.nodes.values().next().unwrap().genesis_ms;
-        // Cross at least one epoch so settle is live and last_settled > 0.
+        // Cross at least one epoch within the 4s per-block pack_sealed_at step.
         for n in net.nodes.values_mut() {
             n.now_ms = genesis + epoch_ms + 5_000;
         }
@@ -17184,7 +17184,7 @@ mod tests {
         );
         assert_eq!(
             led.sealed_at_ms,
-            parent_t.saturating_add(Node::SEALED_AT_MAX_AHEAD_MS).min(drifted),
+            parent_t.saturating_add(4_000).min(drifted),
             "pack must write the clamped chain stamp, not wall now"
         );
         // Self-accept used to fail here (fold at wall vs stamp).
@@ -18456,8 +18456,17 @@ mod tests {
         for n in net.nodes.values() {
             assert_eq!(n.mempool.len(), 1);
         }
+        // Mempool::insert deduplicates by tx_id; submit_tx replaces same-(account, seq) in-place.
+        let dup_raw = net
+            .nodes
+            .get_mut("v1")
+            .unwrap()
+            .mempool
+            .insert(tx.clone(), ChainConfig::default().max_mempool_txs)
+            .unwrap();
+        assert!(!dup_raw, "Mempool::insert must report false for duplicate tx_id");
         let again = net.nodes.get_mut("v1").unwrap().submit_tx(tx).unwrap();
-        assert!(!again, "duplicate must report false for gossip gate");
+        assert!(again, "submit_tx replaces same-(account, seq) entry in-place");
         assert_eq!(net.nodes.get("v1").unwrap().mempool.len(), 1);
     }
 
@@ -18476,10 +18485,12 @@ mod tests {
         // third unique tx should fail on full pool
         let err = net.payment("carol", "alice", 1, 1).unwrap_err();
         assert!(err.contains("mempool full"), "{err}");
-        // duplicate of existing still ok
+        // duplicate of existing still ok (replaces same-(account, seq) without exceeding cap)
         let existing = net.nodes.get("v1").unwrap().mempool.iter_candidates().next().unwrap().clone();
+        let dup_raw = net.nodes.get_mut("v1").unwrap().mempool.insert(existing.clone(), 2).unwrap();
+        assert!(!dup_raw);
         let dup = net.nodes.get_mut("v1").unwrap().submit_tx(existing).unwrap();
-        assert!(!dup);
+        assert!(dup);
         assert_eq!(net.nodes.get("v1").unwrap().mempool.len(), 2);
     }
 
@@ -20496,7 +20507,8 @@ mod tests {
                 "idle chain (no work anywhere) must not view-change"
             );
         }
-        // A hub advertising pending txs is work even when local mempools are empty.
+        // v2.9.49+: hub pong advertisement alone (with empty local mempools) does not
+        // trigger committee-silence VC; VC fires when local applicable work arrives.
         for n in net.nodes.values_mut() {
             let now = n.now_ms;
             if let Some(v) = n.validators.get_mut("v1") {
@@ -20504,14 +20516,19 @@ mod tests {
                 v.last_mempool_len = 5;
                 v.last_pong_ms = now;
             }
+            assert!(
+                n.maybe_view_change_vote().is_none(),
+                "empty local mempool must not committee-silence VC"
+            );
         }
+        net.payment("alice", "bob", 1, 1).unwrap();
         let mut any = false;
         for n in net.nodes.values_mut() {
             if n.maybe_view_change_vote().is_some() {
                 any = true;
             }
         }
-        assert!(any, "committee must VC on packer silence when hubs hold work (empty local mempool)");
+        assert!(any, "committee must VC on packer silence once applicable work is present");
         let tip = net.nodes["v1"].tip_hash.clone();
         let h = net.nodes["v1"].tip_height + 1;
         let seats = net.nodes["v1"].lottery_order();
@@ -21013,8 +21030,8 @@ mod tests {
         n.keys = keys;
         n.pong("v1");
         n.pong_with_tip("v2", 0);
-        // On-chain alice needs seq 1; only far-future txs present (stale load-seq).
-        for seq in [500u64, 501, 502] {
+        // On-chain alice needs seq 1; only future txs within MEMPOOL_SEQ_WINDOW (<=65) present.
+        for seq in [50u64, 51, 52] {
             let tx = Tx::sign_with(&n.keys, "alice", seq, "bob", 1, 1, n.cfg.network_id).unwrap();
             assert!(n.submit_tx(tx).unwrap());
         }
@@ -21432,7 +21449,7 @@ mod tests {
         // Only self pongs; leave v2 stale. Put poison so mempool non-empty.
         n.pong("v1");
         n.now_ms = 10_000; // beyond pong window for any old pong on v2
-        let tx = Tx::sign_with(&n.keys, "alice", 99, "bob", 1, 1, n.cfg.network_id).unwrap();
+        let tx = Tx::sign_with(&n.keys, "alice", 50, "bob", 1, 1, n.cfg.network_id).unwrap();
         assert!(n.submit_tx(tx).unwrap());
         // Force height open past progress timeout.
         n.height_open_ms = 0;
@@ -21487,7 +21504,7 @@ mod tests {
         let mut user = crate::crypto::KeyRing::new(crate::crypto::CryptoScheme::HmacDev);
         user.generate_id("scott.personal");
         let nid = NETWORK_ID_PRIVATE_V22;
-        let tx = Tx::sign_with(&user, "scott.personal", 0, "bob", 10, 2, nid).unwrap();
+        let tx = Tx::sign_with(&user, "scott.personal", 1, "bob", 10, 2, nid).unwrap();
         let mut n = Node::new(
             "v1",
             ChainConfig::default(),
@@ -21504,7 +21521,7 @@ mod tests {
         let mut user = crate::crypto::KeyRing::new(crate::crypto::CryptoScheme::HmacDev);
         user.generate_id("scott.personal.vault");
         let nid = NETWORK_ID_PRIVATE_V22;
-        let mut tx = Tx::sign_with(&user, "scott.personal.vault", 0, "scott.personal", 10, 2, nid)
+        let mut tx = Tx::sign_with(&user, "scott.personal.vault", 1, "scott.personal", 10, 2, nid)
             .unwrap();
         tx.public_key = tx.public_key.to_ascii_uppercase();
         let mut n = Node::new(
@@ -21521,7 +21538,7 @@ mod tests {
         let mut user = crate::crypto::KeyRing::new(crate::crypto::CryptoScheme::Falcon512);
         user.generate_id("scott.personal");
         let nid = NETWORK_ID_PRIVATE_V22;
-        let tx = Tx::sign_with(&user, "scott.personal", 0, "bob", 10, 2, nid).unwrap();
+        let tx = Tx::sign_with(&user, "scott.personal", 1, "bob", 10, 2, nid).unwrap();
         let mut n = Node::new(
             "v1",
             ChainConfig {
