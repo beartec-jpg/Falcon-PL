@@ -1,0 +1,42 @@
+name: Falcon PL CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "falcon-pl-rs/**"
+      - ".github/workflows/rust-ci.yml"
+  pull_request:
+    paths:
+      - "falcon-pl-rs/**"
+      - ".github/workflows/rust-ci.yml"
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    name: fd-pl test + release build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: falcon-pl-rs
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: falcon-pl-rs
+
+      - name: System deps (pqcrypto-falcon)
+        run: sudo apt-get update && sudo apt-get install -y build-essential clang cmake pkg-config
+
+      - name: cargo test -p fd-pl --lib
+        run: cargo test -p fd-pl --lib
+
+      - name: cargo build --release -p fd-pl
+        run: cargo build --release -p fd-pl

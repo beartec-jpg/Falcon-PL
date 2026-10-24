@@ -1,0 +1,5 @@
+# Foundry build artifacts (deps installed in CI / locally via forge install)
+cache/
+out/
+broadcast/
+lib/

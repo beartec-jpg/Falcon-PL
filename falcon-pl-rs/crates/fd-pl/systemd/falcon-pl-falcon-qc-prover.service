@@ -1,0 +1,32 @@
+[Unit]
+Description=Falcon PL Falcon-512 QC prover (Sepolia FalconQcBridge headers)
+After=network-online.target falcon-pl-node.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=falcon
+WorkingDirectory=/home/falcon/falcon-pl-public-testnet-2300
+EnvironmentFile=-/home/falcon/falcon-pl-public-testnet-2300/run/bridge/falcon-pl-bridge.env
+Environment=FALCON_QC_PK=/home/falcon/falcon-pl-public-testnet-2300/run/snark/falcon-qc-one/pk.bin
+Environment=FALCON_QC_KEYS=/home/falcon/falcon-pl-public-testnet-2300/keys/falcon-qc
+Environment=FALCON_QC_SIGS=/home/falcon/falcon-pl-public-testnet-2300/keys/falcon-qc/sigs
+Environment=FALCON_QC_SAMPLE_GAP=48
+Environment=FALCON_QC_THRESHOLD=4
+Environment=FALCON_QC_PROVE_PARALLEL=1
+# Production 32G+ host: FALCON_QC_PROVE_WORKERS=4 and ETH_SUBMIT_PK_FILE ≠ deployer
+Environment=FALCON_QC_STEADY=0
+Environment=FALCON_QC_CATCHUP_SEC=600
+Environment=ETH_PK_FILE=/home/falcon/falcon-pl-vault-test/eth-wallets/deployer.privhex
+Environment=POLL_SEC=8
+# Production 32G+ prover host. On smaller testnet boxes systemd drop-in can lower this.
+MemoryMax=32G
+ExecStartPre=/bin/bash -c 'LOCK=/home/falcon/falcon-pl-public-testnet-2300/run/snark/falcon-qc-prover/prover.lock; if [[ -f "$LOCK" ]]; then pid=$(cat "$LOCK" 2>/dev/null||true); if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then echo "prover already running pid=$pid"; else rm -f "$LOCK"; fi; fi'
+ExecStart=/usr/bin/python3 /home/falcon/falcon-pl-public-testnet-2300/scripts/pl-falcon-qc-prover.py
+Restart=always
+RestartSec=20
+StandardOutput=append:/home/falcon/falcon-pl-public-testnet-2300/logs/falcon-qc-prover.log
+StandardError=append:/home/falcon/falcon-pl-public-testnet-2300/logs/falcon-qc-prover.log
+
+[Install]
+WantedBy=multi-user.target

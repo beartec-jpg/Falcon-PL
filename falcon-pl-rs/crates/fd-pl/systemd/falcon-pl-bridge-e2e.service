@@ -1,0 +1,22 @@
+[Unit]
+Description=Falcon PL production bridge e2e supervisor (ETH + BitVM2)
+After=network-online.target falcon-pl-node.service falcon-pl-falcon-qc-prover.service falcon-pl-eth-lc-relayer.service falcon-pl-btc-header-submitter.service falcon-pl-bitvm2-operator.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=falcon
+WorkingDirectory=/home/falcon/falcon-pl-public-testnet-2300
+EnvironmentFile=-/home/falcon/falcon-pl-public-testnet-2300/run/bridge/falcon-pl-bridge.env
+Environment=PL_ROOT=/home/falcon/falcon-pl-public-testnet-2300
+Environment=FPL_PRODUCTION=1
+Environment=FPL_E2E_MAX_LAG=500
+Environment=FPL_E2E_RETRY_SEC=300
+ExecStart=/usr/bin/python3 /home/falcon/falcon-pl-public-testnet-2300/scripts/pl-bridge-e2e-wait.py --all
+Restart=always
+RestartSec=30
+StandardOutput=append:/home/falcon/falcon-pl-public-testnet-2300/logs/e2e-all.log
+StandardError=append:/home/falcon/falcon-pl-public-testnet-2300/logs/e2e-all.log
+
+[Install]
+WantedBy=multi-user.target

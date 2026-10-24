@@ -1,0 +1,17 @@
+{
+  "pack_id": "fpl-bitvm-bn254-c1b-v1",
+  "upstream": "https://github.com/BitVM/BitVM",
+  "upstream_commit": "7d1ca3660cac08aab62e76f3aa4daec0d7403ecc",
+  "api_path": "bitvm/src/chunk/api.rs",
+  "num_pubs": 1,
+  "num_u256": 14,
+  "num_hash": 363,
+  "num_taps": 364,
+  "entrypoints": {
+    "generate_partial_scripts": "api_generate_partial_script",
+    "generate_full_tapscripts": "api_generate_full_tapscripts",
+    "validate_assertions": "validate_assertions"
+  },
+  "scripts_root_hex": null,
+  "notes": "Full ScriptBuf cache via tools/bitvm-c1b-export; not committed (~1GB)."
+}

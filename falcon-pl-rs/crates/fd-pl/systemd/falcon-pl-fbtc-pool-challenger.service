@@ -1,0 +1,22 @@
+[Unit]
+Description=Falcon PL FBTC pool challenger (Sally peg-out vs burns; abort fraud)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=falcon
+Environment=PL_ROOT=/home/falcon/falcon-pl-public-testnet-2300
+Environment=FPL_RPC=127.0.0.1:19301
+Environment=FPL_CTL=/home/falcon/falcon-pl-public-testnet-2300/bin/falcon-pl-ctl
+Environment=BTC_EXPLORER=https://mempool.space/testnet/api
+Environment=FBTC_POOL_KEYS=/home/falcon/falcon-pl-public-testnet-2300/keys/fbtc-pool
+EnvironmentFile=-/home/falcon/falcon-pl-public-testnet-2300/config/fbtc-pool.env
+ExecStart=/usr/bin/python3 /home/falcon/falcon-pl/falcon-pl-rs/crates/fd-pl/scripts/pl-fbtc-pool-challenger.py
+Restart=always
+RestartSec=15
+StandardOutput=append:/home/falcon/falcon-pl-public-testnet-2300/logs/fbtc-pool-challenger.log
+StandardError=append:/home/falcon/falcon-pl-public-testnet-2300/logs/fbtc-pool-challenger.log
+
+[Install]
+WantedBy=multi-user.target

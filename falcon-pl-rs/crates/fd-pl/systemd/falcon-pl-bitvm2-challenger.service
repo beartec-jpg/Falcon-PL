@@ -1,0 +1,21 @@
+[Unit]
+Description=Falcon PL BitVM2 A1 challenger (watch pegouts vs FPL claims)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=falcon
+Environment=PL_ROOT=/home/falcon/falcon-pl-public-testnet-2300
+Environment=FPL_RPC=127.0.0.1:19301
+Environment=FPL_CTL=/home/falcon/falcon-pl-public-testnet-2300/bin/falcon-pl-ctl
+Environment=BTC_EXPLORER=https://mempool.space/testnet/api
+EnvironmentFile=-/home/falcon/falcon-pl-public-testnet-2300/config/bitvm2-instance.env
+ExecStart=/usr/bin/python3 /home/falcon/falcon-pl-public-testnet-2300/scripts/pl-bitvm2-challenger.py
+Restart=always
+RestartSec=20
+StandardOutput=append:/home/falcon/falcon-pl-public-testnet-2300/logs/bitvm2-challenger.log
+StandardError=append:/home/falcon/falcon-pl-public-testnet-2300/logs/bitvm2-challenger.log
+
+[Install]
+WantedBy=multi-user.target

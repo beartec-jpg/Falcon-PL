@@ -1,0 +1,104 @@
+{
+  "timestamp": "2026-08-03T16:51:21Z",
+  "phases": [
+    {
+      "name": "unit_pytest",
+      "cmd": "/home/scott/falcon-dag/.venv/bin/python -m pytest tests/ -v --tb=line",
+      "rc": 0,
+      "ok": true,
+      "elapsed_s": 3.25,
+      "stdout_tail": "t_equivocation.py::test_equivocation_same_parents_different_batches PASSED [ 21%]\ntests/test_equivocation.py::test_da_sign_parallel_batches_same_parents_ok PASSED [ 24%]\ntests/test_equivocation.py::test_same_batch_resign_not_equivocation PASSED [ 27%]\ntests/test_falcon512.py::test_falcon512_key_sizes_and_roundtrip PASSED   [ 29%]\ntests/test_falcon512.py::test_falcon512_public_only_verify PASSED        [ 32%]\ntests/test_falcon512.py::test_network_sim_with_falcon512_certs PASSED    [ 35%]\ntests/test_falcon512.py::test_forged_falcon_sig_rejected PASSED          [ 37%]\ntests/test_falcon512.py::test_cert_byte_amortization_with_falcon512 PASSED [ 40%]\ntests/test_mempool.py::test_priority_and_starvation PASSED               [ 43%]\ntests/test_mempool.py::test_mark_done_drops_competitors PASSED           [ 45%]\ntests/test_narwhal.py::TestAgreement::test_high_load_executed_match PASSED [ 48%]\ntests/test_narwhal.py::TestAgreement::test_soft_final_before_hard PASSED [ 51%]\ntests/test_narwhal.py::TestAgreement::test_hard_final_grows PASSED       [ 54%]\ntests/test_narwhal.py::TestConflicts::test_double_spend_one_winner PASSED [ 56%]\ntests/test_narwhal.py::TestConflicts::test_insufficient_balance PASSED   [ 59%]\ntests/test_narwhal.py::TestFaults::test_one_silent_still_certifies PASSED [ 62%]\ntests/test_narwhal.py::TestFaults::test_two_silent_no_certify PASSED     [ 64%]\ntests/test_narwhal.py::TestDA::test_parallel_batches_certify PASSED      [ 67%]\ntests/test_narwhal.py::TestDA::test_parents_are_certified_tips PASSED    [ 70%]\ntests/test_narwhal.py::test_network_sizes[3] PASSED                      [ 72%]\ntests/test_narwhal.py::test_network_sizes[5] PASSED                      [ 75%]\ntests/test_narwhal.py::test_network_sizes[7] PASSED                      [ 78%]\ntests/test_persist_dos.py::test_snapshot_roundtrip PASSED                [ 81%]\ntests/test_persist_dos.py::test_snapshot_dict_export_import PASSED       [ 83%]\ntests/test_persist_dos.py::test_dos_max_uncertified_per_creator PASSED   [ 86%]\ntests/test_persist_dos.py::test_dos_reject_remote_flood PASSED           [ 89%]\ntests/test_persist_dos.py::test_mempool_cap PASSED                       [ 91%]\ntests/test_rate_prune.py::test_sig_rate_limit_trips PASSED               [ 94%]\ntests/test_rate_prune.py::test_prune_stale_uncertified PASSED            [ 97%]\ntests/test_rate_prune.py::test_restart_recovery_drill PASSED             [100%]\n\n============================== 37 passed in 2.77s ==============================\n",
+      "stderr_tail": ""
+    },
+    {
+      "name": "bench_crypto",
+      "cmd": "/home/scott/falcon-dag/.venv/bin/python /home/scott/falcon-dag/scripts/bench_crypto.py --rounds 15",
+      "rc": 0,
+      "ok": true,
+      "elapsed_s": 0.14,
+      "stdout_tail": "=== Falcon DAG crypto micro-benchmark ===\n\n## hmac-sha256-dev\n  keygen: 0.052 ms (one keypair)\n  sign:   p50=0.0046 ms  p95=0.0092 ms  mean=0.0051 ms\n  verify: p50=0.0047 ms  p95=0.008 ms  mean=0.005 ms\n  sig:    mean=32.0 B  [32\u201332]\n\n## falcon-512\n  keygen: 13.422 ms (one keypair)\n  sign:   p50=0.3871 ms  p95=0.5716 ms  mean=0.4227 ms\n  verify: p50=0.0881 ms  p95=0.149 ms  mean=0.0963 ms\n  sig:    mean=654.9 B  [652\u2013660]\n\nFalcon-512 sign \u2248 83\u00d7 slower than HMAC-dev (mean)\nThis is why unit tests default to HMAC-dev; regtest uses Falcon-512.\n",
+      "stderr_tail": ""
+    },
+    {
+      "name": "regtest_up",
+      "cmd": "/home/scott/falcon-dag/regtest/start-regtest.sh",
+      "rc": 0,
+      "ok": true,
+      "elapsed_s": 0.62,
+      "stdout_tail": " \"proposing\",\n            \"validator_id\": \"val1\",\n            \"network_id\": 9002,\n            \"uptime_s\": 0,\n            \"build_version\": \"falcon-dag/0.3.0-falcon512\",\n            \"architecture\": \"narwhal-da + federated-ordering + falcon-512-certs\",\n            \"metrics\": {\n                \"validator_id\": \"val1\",\n                \"mempool\": 0,\n                \"batches_created\": 0,\n                \"worker_index\": 0,\n                \"worker_count\": 5,\n                \"batch_interval_s\": 0.15,\n                \"da\": {\n                    \"batches\": 1,\n                    \"certified\": 1,\n                    \"tips\": [\n                        \"2857a9cb0c2467ff9978f27eb0fa25ce0b577fe432c129ad667d7c413d39e52e\"\n                    ],\n                    \"tip_count\": 1,\n                    \"rejected_sigs\": 0,\n                    \"rejected_batches\": 0,\n                    \"equivocations\": 0,\n                    \"rate_limited_sigs\": 0,\n                    \"pruned_batches\": 0,\n                    \"uncertified\": 0,\n                    \"crypto_scheme\": \"falcon-512\",\n                    \"crypto\": {\n                        \"scheme\": \"falcon-512\",\n                        \"public_key_bytes\": 897,\n                        \"secret_key_bytes\": 1281,\n                        \"sample_sig_bytes\": 653,\n                        \"unl_size\": 5,\n                        \"timing\": {\n                            \"sign\": {\n                                \"n\": 0\n                            },\n                            \"verify\": {\n                                \"n\": 0\n                            },\n                            \"signature_bytes\": {\n                                \"n\": 0\n                            }\n                        }\n                    },\n                    \"avg_sig_bytes\": null,\n                    \"est_cert_bytes_4sigs\": null,\n                    \"non_genesis_certs\": 0\n                },\n                \"ordering\": {\n                    \"ordered\": 1,\n                    \"hard_final\": 1,\n                    \"tip_ordered\": \"2857a9cb0c2467ff9978f27eb0fa25ce0b577fe432c129ad667d7c413d39e52e\"\n                },\n                \"execution\": {\n                    \"executed_txs\": 0,\n                    \"soft_final_txs\": 0\n                },\n                \"hard_final_batches\": 1,\n                \"dos\": {\n                    \"max_uncertified\": 2000,\n                    \"uncertified\": 0,\n                    \"max_mempool\": 50000\n                }\n            }\n        }\n    }\n}\n",
+      "stderr_tail": "",
+      "action": "clean_start"
+    },
+    {
+      "name": "load_test",
+      "cmd": "/home/scott/falcon-dag/.venv/bin/python /home/scott/falcon-dag/scripts/load_test.py --txs 80 --wait 6",
+      "rc": 0,
+      "ok": true,
+      "elapsed_s": 6.49,
+      "stdout_tail": "Submitted 80/80 in 0.36s; waiting 6.0s...\n{\n  \"architecture\": \"narwhal-da + federated-ordering + falcon-512-certs\",\n  \"metrics\": {\n    \"validator_id\": \"val1\",\n    \"mempool\": 40,\n    \"batches_created\": 2,\n    \"worker_index\": 0,\n    \"worker_count\": 5,\n    \"batch_interval_s\": 0.2008,\n    \"da\": {\n      \"batches\": 12,\n      \"certified\": 8,\n      \"tips\": [\n        \"543ed8baced46eca9541f810c4dd07dfed3c6d0d2045e706a9b887dab9c3e9fc\"\n      ],\n      \"tip_count\": 1,\n      \"rejected_sigs\": 0,\n      \"rejected_batches\": 0,\n      \"equivocations\": 0,\n      \"rate_limited_sigs\": 503,\n      \"pruned_batches\": 0,\n      \"uncertified\": 4,\n      \"crypto_scheme\": \"falcon-512\",\n      \"crypto\": {\n        \"scheme\": \"falcon-512\",\n        \"public_key_bytes\": 897,\n        \"secret_key_bytes\": 1281,\n        \"sample_sig_bytes\": 655,\n        \"unl_size\": 5,\n        \"timing\": {\n          \"sign\": {\n            \"n\": 90,\n            \"min_ms\": 0.3095,\n            \"p50_ms\": 0.5175,\n            \"p95_ms\": 0.6334,\n            \"max_ms\": 1.2023,\n            \"mean_ms\": 0.5037\n          },\n          \"verify\": {\n            \"n\": 512,\n            \"min_ms\": 0.064,\n            \"p50_ms\": 0.1098,\n            \"p95_ms\": 0.1493,\n            \"max_ms\": 0.6978,\n            \"mean_ms\": 0.1127\n          },\n          \"signature_bytes\": {\n            \"n\": 90,\n            \"min_b\": 649,\n            \"max_b\": 659,\n            \"mean_b\": 655.0\n          }\n        }\n      },\n      \"avg_sig_bytes\": 655.5,\n      \"est_cert_bytes_4sigs\": 2654.0,\n      \"non_genesis_certs\": 7\n    },\n    \"ordering\": {\n      \"ordered\": 8,\n      \"hard_final\": 2,\n      \"tip_ordered\": \"543ed8baced46eca9541f810c4dd07dfed3c6d0d2045e706a9b887dab9c3e9fc\"\n    },\n    \"execution\": {\n      \"executed_txs\": 25,\n      \"soft_final_txs\": 25\n    },\n    \"hard_final_batches\": 2,\n    \"dos\": {\n      \"max_uncertified\": 2000,\n      \"uncertified\": 4,\n      \"max_mempool\": 50000\n    }\n  }\n}\ncanonical executed txs: 25\nordered batches: 8\n",
+      "stderr_tail": ""
+    },
+    {
+      "name": "double_spend",
+      "cmd": "/home/scott/falcon-dag/.venv/bin/python /home/scott/falcon-dag/scripts/regtest_double_spend.py",
+      "rc": 0,
+      "ok": true,
+      "elapsed_s": 8.2,
+      "stdout_tail": "{\n  \"name\": \"double_spend\",\n  \"ok\": true,\n  \"detail\": {\n    \"seq\": 2,\n    \"id_a\": \"435cce3c837e9d905aefea8604668990958efdb26b0a2083b32ed8264a0bbf85\",\n    \"id_b\": \"4c07d210d5da77a98aab4480fde450b3d106f659d3334e76fa0a48db8ec8f414\",\n    \"winners\": [\n      \"4c07d210d5da77a98aab4480fde450b3d106f659d3334e76fa0a48db8ec8f414\"\n    ],\n    \"agree\": true,\n    \"canonical_lens\": [\n      27,\n      27,\n      27,\n      27,\n      27\n    ],\n    \"soft_final\": 28\n  }\n}\n",
+      "stderr_tail": ""
+    },
+    {
+      "name": "adversarial",
+      "cmd": "/home/scott/falcon-dag/.venv/bin/python /home/scott/falcon-dag/scripts/regtest_adversarial.py",
+      "rc": 0,
+      "ok": true,
+      "elapsed_s": 5.07,
+      "stdout_tail": "{\n  \"name\": \"adversarial_spam\",\n  \"ok\": true,\n  \"detail\": {\n    \"rejected_batches_before\": 0,\n    \"rejected_batches_after\": 22,\n    \"rejected_sigs_before\": 0,\n    \"rejected_sigs_after\": 0,\n    \"rate_limited_sigs\": 503,\n    \"saw_defense\": true,\n    \"agree\": true,\n    \"canonical_lens\": [\n      27,\n      27,\n      27,\n      27,\n      27\n    ],\n    \"crypto\": \"falcon-512\"\n  }\n}\n",
+      "stderr_tail": ""
+    },
+    {
+      "name": "soak",
+      "cmd": "/home/scott/falcon-dag/.venv/bin/python /home/scott/falcon-dag/scripts/soak_test.py --duration 20 --rate 12",
+      "rc": 0,
+      "ok": true,
+      "elapsed_s": 23.23,
+      "stdout_tail": "soak 20.0s @ ~12.0 tx/s\n{\n  \"duration_s\": 23.02,\n  \"submitted_ok\": 179,\n  \"submit_errors\": 54,\n  \"agree_canonical\": true,\n  \"executed\": [\n    27,\n    27,\n    27,\n    27,\n    27\n  ],\n  \"crypto_schemes\": [\n    \"falcon-512\",\n    \"falcon-512\",\n    \"falcon-512\",\n    \"falcon-512\",\n    \"falcon-512\"\n  ],\n  \"rejected_batches\": [\n    22,\n    21,\n    21,\n    16,\n    16\n  ],\n  \"equivocations\": [\n    0,\n    0,\n    0,\n    0,\n    0\n  ],\n  \"tps_submit\": 7.8\n}\nSOAK OK\n",
+      "stderr_tail": ""
+    },
+    {
+      "name": "failure",
+      "cmd": "/home/scott/falcon-dag/.venv/bin/python /home/scott/falcon-dag/scripts/regtest_failure.py",
+      "rc": 0,
+      "ok": true,
+      "elapsed_s": 62.84,
+      "stdout_tail": "clean restart for failure pack...\n[falcon-dag-regtest] Stopped.\n{\n  \"ok\": true,\n  \"cases\": [\n    {\n      \"name\": \"baseline_progress\",\n      \"ok\": true,\n      \"detail\": {\n        \"before\": {\n          \"certified\": 1,\n          \"executed\": 0,\n          \"soft\": 0,\n          \"ordered\": 1\n        },\n        \"after\": {\n          \"certified\": 8,\n          \"executed\": 19,\n          \"soft\": 19,\n          \"ordered\": 8\n        },\n        \"submitted\": 25\n      }\n    },\n    {\n      \"name\": \"kill_1_of_5_still_progress\",\n      \"ok\": true,\n      \"detail\": {\n        \"before\": {\n          \"certified\": 8,\n          \"executed\": 19,\n          \"soft\": 19,\n          \"ordered\": 8\n        },\n        \"after\": {\n          \"certified\": 19,\n          \"executed\": 32,\n          \"soft\": 32,\n          \"ordered\": 19\n        },\n        \"submitted\": 40,\n        \"progress\": true,\n        \"val5_restored\": true,\n        \"val5_pid\": 102366\n      }\n    },\n    {\n      \"name\": \"kill_2_of_5_stalls_certs\",\n      \"ok\": true,\n      \"detail\": {\n        \"before\": {\n          \"certified\": 19,\n          \"executed\": 32,\n          \"soft\": 32,\n          \"ordered\": 19\n        },\n        \"after\": {\n          \"certified\": 19,\n          \"executed\": 32,\n          \"soft\": 32,\n          \"ordered\": 19\n        },\n        \"cert_delta\": 0,\n        \"stalled\": true\n      }\n    },\n    {\n      \"name\": \"heal_after_kill2_progress\",\n      \"ok\": true,\n      \"detail\": {\n        \"before\": {\n          \"certified\": 19,\n          \"executed\": 32,\n          \"soft\": 32,\n          \"ordered\": 19\n        },\n        \"after\": {\n          \"certified\": 24,\n          \"executed\": 59,\n          \"soft\": 59,\n          \"ordered\": 24\n        },\n        \"submitted\": 40,\n        \"progress\": true\n      }\n    }\n  ]\n}\n",
+      "stderr_tail": ""
+    },
+    {
+      "name": "restart",
+      "cmd": "/home/scott/falcon-dag/.venv/bin/python /home/scott/falcon-dag/scripts/regtest_restart.py",
+      "rc": 1,
+      "ok": false,
+      "elapsed_s": 113.19,
+      "stdout_tail": "[falcon-dag-regtest] Stopped.\n{\n  \"ok\": false,\n  \"cases\": [\n    {\n      \"name\": \"full_restart\",\n      \"ok\": false,\n      \"detail\": {\n        \"stopped\": true,\n        \"started\": true,\n        \"agree\": false,\n        \"canonical_lens\": [\n          146,\n          146,\n          146,\n          146,\n          98\n        ],\n        \"txs_before\": 80,\n        \"txs_after\": 146,\n        \"overlap\": 80,\n        \"retained_history\": true,\n        \"has_snapshots\": true,\n        \"cert_before\": 28,\n        \"cert_after\": 31,\n        \"start_rc\": 0\n      }\n    },\n    {\n      \"name\": \"post_restart_progress\",\n      \"ok\": false,\n      \"detail\": {\n        \"cert_before\": 31,\n        \"cert_after\": 31,\n        \"exec_before\": 146,\n        \"exec_after\": 146,\n        \"agree\": false,\n        \"canonical_lens\": [\n          146,\n          146,\n          146,\n          146,\n          98\n        ]\n      }\n    }\n  ]\n}\n",
+      "stderr_tail": ""
+    },
+    {
+      "name": "viability_suite",
+      "cmd": "/home/scott/falcon-dag/.venv/bin/python /home/scott/falcon-dag/scripts/viability_suite.py",
+      "rc": 0,
+      "ok": true,
+      "elapsed_s": 46.64,
+      "stdout_tail": "=== Falcon DAG viability suite ===\n\n[1/8] Validator scaling...\n[2/8] Agreement mid-load...\n[3/8] TPS sweep (in-process sim)...\n[4/8] Fault tolerance...\n[5/8] Conflicts...\n[6/9] Signature amortization model...\n[7/9] Adaptive / fat-batch thinking...\n[8/9] Falcon-512 live sim...\n[9/9] Live regtest + Falcon baseline probe...\n\n=== RESULTS ===\n  [FAIL] validators_3  tps=466.3  exec=187\n  [PASS] validators_5  tps=2187.1  exec=200\n  [PASS] validators_7  tps=438.8  exec=200\n  [PASS] validators_9  tps=105.2  exec=200\n  [PASS] validators_11  tps=277.4  exec=200\n  [PASS] agreement_v5_tx200  tps=1797.6  exec=200\n  [PASS] agreement_v5_tx800  tps=838.2  exec=800\n  [PASS] tps_sim_tx100  tps=3024.0  exec=100\n  [PASS] tps_sim_tx500  tps=3173.6  exec=500\n  [PASS] tps_sim_tx1500  tps=1747.7  exec=1500\n  [PASS] tps_sim_tx3000  tps=1143.8  exec=3000\n  [PASS] fault_1_of_5_silent\n  [PASS] fault_2_of_5_no_certify\n  [PASS] conflict_double_spend\n  [PASS] signature_amortization_model\n  [PASS] adaptive_fat_vs_thin_batches\n  [PASS] falcon512_live_sim  tps=332.2  exec=80\n  [FAIL] live_regtest  exec=163\n  [PASS] falcon_baseline_probe\n\n=== VERDICT ===\n{\n  \"decision\": \"CONTINUE\",\n  \"confidence\": \"medium-high for research spinoff / layer-upgrade path\",\n  \"must_pass_ok\": true,\n  \"peak_sim_tps\": 3173.6,\n  \"live_regtest_ok\": false,\n  \"positioning\": \"spinoff or optional layer upgrade \\u2014 NOT a production Falcon replacement\",\n  \"goal_fit\": \"Increase throughput while retaining large Falcon signatures by amortizing DA into fat batches and ordering only certificates.\"\n}\n\nWrote /home/scott/falcon-dag/docs/VIABILITY_REPORT.json\n",
+      "stderr_tail": ""
+    }
+  ],
+  "summary": {
+    "passed": 8,
+    "total": 9,
+    "ok": false,
+    "failed": [
+      "restart"
+    ]
+  }
+}

@@ -1,0 +1,13 @@
+# Co-signer operator seats. Env: FPL_SEAT_ID, FPL_LEAD_SEAT_URL (lead tailnet IP:8791), FPL_OP_HOME.
+[Unit]
+Description=Falcon PL testnet4 bridge seat sync (co-signer operator)
+After=network-online.target fpl-operatord.service
+[Service]
+EnvironmentFile=/opt/fpl-operator/seat-sync.env
+ExecStart=/usr/bin/python3 /opt/fpl-operator/bin/seat_sync.py
+Restart=always
+RestartSec=5
+User=root
+MemoryMax=6G
+[Install]
+WantedBy=multi-user.target

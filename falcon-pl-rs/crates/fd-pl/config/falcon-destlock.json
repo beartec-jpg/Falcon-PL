@@ -1,0 +1,10 @@
+{
+  "network": "sepolia",
+  "bridge": "0xdBF6855b00B78c047A729A21E13bfE5f4C991C05",
+  "claimer": "0xDb52847EE70cEd3128f49309c3DC65b69d7466f4",
+  "claim_delay": 6,
+  "usdc": "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238",
+  "eth_lock": "0xc1113d2059c5d73f45968910fadfff7d88a3c4a4d8a0f754f15faa495d2c467b",
+  "usdc_lock": "0xc8927e1f8b56b080b015ccf240c5d27c6f1525d52a6545a1c03c84326e483c1c",
+  "note": "LEFTOVER. Peg-in dest-lock stays automatic until V2 deposits are live. Then stop new dest-lock deposits. Kickoff dest = user RailWithdraw.external_to only — never operator self-dest. Residual 0.1 ETH + 20 USDC stranded (product: strand+document). v1 QC 0.018 ETH + 8 USDC unrecoverable. No socialized rescue into V2."
+}

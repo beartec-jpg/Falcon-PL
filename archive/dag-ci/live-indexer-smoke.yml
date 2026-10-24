@@ -1,0 +1,73 @@
+# Continuous protocol-control gate: live public chain headers into Falcon.
+# Soft-fail total network outages; hard-fail free mint / Issue not tecPROTOCOL.
+name: live-indexer-smoke
+
+on:
+  schedule:
+    # Daily 06:15 UTC
+    - cron: "15 6 * * *"
+  workflow_dispatch:
+    inputs:
+      max_headers:
+        description: "Headers per rail near tip"
+        required: false
+        default: "2"
+      require_eth:
+        description: "Hard-fail if ETH headers fail (0/1)"
+        required: false
+        default: "0"
+
+concurrency:
+  group: live-indexer-smoke
+  cancel-in-progress: true
+
+jobs:
+  live-dry-run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: falcon-dag-rs
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: falcon-dag-rs -> target
+
+      - name: Build falcon-dagd (release)
+        run: cargo build --release -p fd-node
+
+      - name: Live indexer smoke
+        env:
+          MAX_HEADERS: ${{ github.event.inputs.max_headers || '2' }}
+          MAX_DEPOSITS: "3"
+          CI_SOFT_NETWORK: "1"
+          REQUIRE_ETH: ${{ github.event.inputs.require_eth || '0' }}
+          # Optional secrets (empty = headers-only)
+          BTC_WATCH: ${{ secrets.BTC_WATCH }}
+          ETH_LOCK: ${{ secrets.ETH_LOCK }}
+          BNB_LOCK: ${{ secrets.BNB_LOCK }}
+          XRP_WATCH: ${{ secrets.XRP_WATCH }}
+          ETH_RPC: ${{ secrets.ETH_RPC }}
+          BNB_RPC: ${{ secrets.BNB_RPC }}
+        run: |
+          set -euo pipefail
+          chmod +x scripts/live_indexer_smoke.sh
+          ./scripts/live_indexer_smoke.sh | tee /tmp/live-indexer-smoke.out
+          # Protocol hard assertions embedded in script (Issue → tecPROTOCOL, no free mint)
+
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-indexer-logs
+          path: |
+            /tmp/fd-live-indexer.log
+            /tmp/live-indexer-smoke.out
+          if-no-files-found: ignore

@@ -1,0 +1,20 @@
+[Unit]
+Description=Falcon PL 2300 dest-lock ETH/USDC auto-mint
+After=network.target falcon-pl-walletd.service
+
+[Service]
+Type=simple
+User=falcon
+WorkingDirectory=/home/falcon/falcon-pl-public-testnet-2300
+EnvironmentFile=-/home/falcon/falcon-pl-public-testnet-2300/run/bridge/falcon-pl-bridge.env
+Environment=FPL_ETH_MINT=/home/falcon/falcon-pl-public-testnet-2300/scripts/pl-eth-mint.py
+# Mint account. Not watcher-eth-lc (the relayer) and not watcher-browser (BTC).
+Environment=FPL_WATCHER_ACCOUNT=watcher-eth
+ExecStart=/usr/bin/python3 /home/falcon/falcon-pl-public-testnet-2300/scripts/pl-eth-auto-mint.py --daemon
+Restart=always
+RestartSec=3
+# Wrong signer exits 78. Do not restart-loop a bad account.conf drop-in.
+RestartPreventExitStatus=78
+
+[Install]
+WantedBy=multi-user.target

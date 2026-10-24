@@ -1,0 +1,24 @@
+{
+  "suite": "shard3_capacity",
+  "verdict": "SHARD3_FLAT_OR_LESS: sum 45.07 vs single 45.4",
+  "win": false,
+  "A_single": {
+    "exec_tps_min": 45.4,
+    "deltas": [
+      2043,
+      2043,
+      2043
+    ],
+    "gmp_ok": 2700
+  },
+  "B_shards_tps": [
+    14.41,
+    16.14,
+    14.52
+  ],
+  "B_sum": 45.07,
+  "load": {
+    "rate": 90,
+    "hold": 30.0
+  }
+}

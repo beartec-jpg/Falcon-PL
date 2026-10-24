@@ -1,0 +1,32 @@
+[Unit]
+Description=Falcon PL BitVM2 operator (BTC testnet front + Claim + attest)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment=PL_ROOT=/home/falcon/falcon-pl-public-testnet-2300
+Environment=BTC_EXIT_MODE=bitvm2
+Environment=FALCON_PL_RPC=127.0.0.1:19301
+Environment=FALCON_PL_RPC_SYNCED=100.64.0.2:19302
+Environment=FALCON_PL_KEYS=/home/falcon/falcon-pl-public-testnet-2300/keys
+Environment=FALCON_PL_CTL=/home/falcon/falcon-pl-public-testnet-2300/bin/falcon-pl-ctl
+Environment=FPL_ADMIN_SOCK=/home/falcon/falcon-pl-public-testnet-2300/run/v1.admin.sock
+Environment=BITVM2_OPERATOR_ACCOUNT=v1
+Environment=BITVM2_PRIVHEX_FILE=/home/falcon/falcon-pl-vault-test/btc-wallets/dave.privhex
+Environment=BITVM2_OPERATOR_ADDR=tb1q6lq0x4cwk40pxyvpk8pppj2zxrud3u0wcntz7l
+Environment=BITVM2_CHECKPOINT=/home/falcon/falcon-pl-public-testnet-2300/run/bitvm2-operator.json
+Environment=BITVM2_MIN_INVENTORY_SATS=15000
+Environment=BITVM2_MIN_CONFS=1
+Environment=BITVM2_POLL_SECS=15
+Environment=BITVM2_ATTEST_TIMEOUT=180
+Environment=BTC_EXPLORER=https://mempool.space/testnet/api
+Environment=FALCON_PL_BITVM2_PROVE=/home/falcon/falcon-pl-public-testnet-2300/bin/falcon-pl-bitvm2-prove
+EnvironmentFile=-/home/falcon/falcon-pl-public-testnet-2300/config/bitvm2-instance.env
+ExecStart=/usr/bin/python3 /home/falcon/falcon-pl-public-testnet-2300/scripts/pl-bitvm2-operator.py
+Restart=always
+RestartSec=10
+User=falcon
+
+[Install]
+WantedBy=multi-user.target

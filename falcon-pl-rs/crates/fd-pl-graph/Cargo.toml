@@ -1,0 +1,18 @@
+[package]
+name = "fd-pl-graph"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "BitVM2-style presigned peg-out graph (M2): templates, Winternitz split-verifier Disprove leaves, n-of-n presign + wipe"
+
+[dependencies]
+bitcoin = { version = "0.32", features = ["rand-std", "serde"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+hex = { workspace = true }
+sha2 = { workspace = true }
+
+[[bin]]
+name = "fpl-graph"
+path = "src/bin/fpl_graph.rs"

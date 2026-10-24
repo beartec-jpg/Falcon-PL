@@ -1,0 +1,14 @@
+# Lead operator seat only. TESTNET4 design test. Env file holds FPL_* settings (see fpl_bridge_intake.py);
+# FPL_SEAT_LISTEN must be the tailnet IP; FPL_INTAKE_LISTEN stays on 127.0.0.1 behind the site proxy / caddy.
+[Unit]
+Description=Falcon PL testnet4 bridge intake (lead operator)
+After=network-online.target fpl-operatord.service
+[Service]
+EnvironmentFile=/opt/fpl-operator/intake.env
+ExecStart=/usr/bin/python3 /opt/fpl-operator/bin/fpl_bridge_intake.py
+Restart=always
+RestartSec=5
+User=root
+MemoryMax=6G
+[Install]
+WantedBy=multi-user.target

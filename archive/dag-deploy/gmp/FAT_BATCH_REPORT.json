@@ -1,0 +1,327 @@
+{
+  "suite": "fat_batch_amortization",
+  "hypothesis": "Larger batches amortize UNL cert cost \u2192 higher exec_tps_min, lower certs/s",
+  "load": {
+    "rate": 80,
+    "hold_s": 35.0,
+    "drain_s": 18.0,
+    "n": 3
+  },
+  "verdict": "FAT_BATCH_FLAT: best mb16_iv0.05 tps=40.2 \u2248 baseline64 37.89",
+  "best": {
+    "label": "mb16_iv0.05",
+    "max_batch_txs": 16,
+    "batch_interval_s": 0.05,
+    "adaptive_batch": false,
+    "elapsed_s": 53.06,
+    "exec_delta": [
+      2133,
+      2133,
+      2133
+    ],
+    "batch_delta": [
+      59,
+      56,
+      40
+    ],
+    "cert_delta": [
+      155,
+      155,
+      155
+    ],
+    "exec_tps_min": 40.2,
+    "exec_tps_max": 40.2,
+    "batches_per_s_mean": 0.974,
+    "certs_per_s_mean": 2.921,
+    "txs_per_batch_approx": 41.28,
+    "exec_per_cert_approx": 13.76,
+    "lag_max": 0,
+    "exec_spread": 0,
+    "roots_agree": true,
+    "gmp_ok": 2800,
+    "gmp_err": 0,
+    "pass_stable": true
+  },
+  "baseline_64_0.05": {
+    "label": "mb64_iv0.05",
+    "max_batch_txs": 64,
+    "batch_interval_s": 0.05,
+    "adaptive_batch": false,
+    "elapsed_s": 53.05,
+    "exec_delta": [
+      2010,
+      2010,
+      2010
+    ],
+    "batch_delta": [
+      49,
+      56,
+      28
+    ],
+    "cert_delta": [
+      133,
+      133,
+      133
+    ],
+    "exec_tps_min": 37.89,
+    "exec_tps_max": 37.89,
+    "batches_per_s_mean": 0.836,
+    "certs_per_s_mean": 2.507,
+    "txs_per_batch_approx": 45.34,
+    "exec_per_cert_approx": 15.11,
+    "lag_max": 0,
+    "exec_spread": 0,
+    "roots_agree": true,
+    "gmp_ok": 2800,
+    "gmp_err": 0,
+    "pass_stable": true
+  },
+  "amortization_signal": {
+    "lowest_txs_per_batch": 41.28,
+    "highest_txs_per_batch": 59.85,
+    "tps_at_lowest": 40.2,
+    "tps_at_highest": 38.36,
+    "certs_s_at_lowest": 2.921,
+    "certs_s_at_highest": 1.923
+  },
+  "cells": [
+    {
+      "label": "mb16_iv0.05",
+      "max_batch_txs": 16,
+      "batch_interval_s": 0.05,
+      "adaptive_batch": false,
+      "elapsed_s": 53.06,
+      "exec_delta": [
+        2133,
+        2133,
+        2133
+      ],
+      "batch_delta": [
+        59,
+        56,
+        40
+      ],
+      "cert_delta": [
+        155,
+        155,
+        155
+      ],
+      "exec_tps_min": 40.2,
+      "exec_tps_max": 40.2,
+      "batches_per_s_mean": 0.974,
+      "certs_per_s_mean": 2.921,
+      "txs_per_batch_approx": 41.28,
+      "exec_per_cert_approx": 13.76,
+      "lag_max": 0,
+      "exec_spread": 0,
+      "roots_agree": true,
+      "gmp_ok": 2800,
+      "gmp_err": 0,
+      "pass_stable": true
+    },
+    {
+      "label": "mb64_iv0.05",
+      "max_batch_txs": 64,
+      "batch_interval_s": 0.05,
+      "adaptive_batch": false,
+      "elapsed_s": 53.05,
+      "exec_delta": [
+        2010,
+        2010,
+        2010
+      ],
+      "batch_delta": [
+        49,
+        56,
+        28
+      ],
+      "cert_delta": [
+        133,
+        133,
+        133
+      ],
+      "exec_tps_min": 37.89,
+      "exec_tps_max": 37.89,
+      "batches_per_s_mean": 0.836,
+      "certs_per_s_mean": 2.507,
+      "txs_per_batch_approx": 45.34,
+      "exec_per_cert_approx": 15.11,
+      "lag_max": 0,
+      "exec_spread": 0,
+      "roots_agree": true,
+      "gmp_ok": 2800,
+      "gmp_err": 0,
+      "pass_stable": true
+    },
+    {
+      "label": "mb128_iv0.05",
+      "max_batch_txs": 128,
+      "batch_interval_s": 0.05,
+      "adaptive_batch": false,
+      "elapsed_s": 53.06,
+      "exec_delta": [
+        1935,
+        1935,
+        1935
+      ],
+      "batch_delta": [
+        38,
+        51,
+        27
+      ],
+      "cert_delta": [
+        116,
+        116,
+        116
+      ],
+      "exec_tps_min": 36.46,
+      "exec_tps_max": 36.46,
+      "batches_per_s_mean": 0.729,
+      "certs_per_s_mean": 2.186,
+      "txs_per_batch_approx": 50.04,
+      "exec_per_cert_approx": 16.68,
+      "lag_max": 0,
+      "exec_spread": 0,
+      "roots_agree": true,
+      "gmp_ok": 2800,
+      "gmp_err": 0,
+      "pass_stable": true
+    },
+    {
+      "label": "mb256_iv0.05",
+      "max_batch_txs": 256,
+      "batch_interval_s": 0.05,
+      "adaptive_batch": false,
+      "elapsed_s": 53.05,
+      "exec_delta": [
+        2035,
+        2035,
+        2035
+      ],
+      "batch_delta": [
+        42,
+        39,
+        21
+      ],
+      "cert_delta": [
+        102,
+        102,
+        102
+      ],
+      "exec_tps_min": 38.36,
+      "exec_tps_max": 38.36,
+      "batches_per_s_mean": 0.641,
+      "certs_per_s_mean": 1.923,
+      "txs_per_batch_approx": 59.85,
+      "exec_per_cert_approx": 19.95,
+      "lag_max": 0,
+      "exec_spread": 0,
+      "roots_agree": true,
+      "gmp_ok": 2800,
+      "gmp_err": 0,
+      "pass_stable": true
+    },
+    {
+      "label": "mb256_iv0.12",
+      "max_batch_txs": 256,
+      "batch_interval_s": 0.12,
+      "adaptive_batch": false,
+      "elapsed_s": 53.3,
+      "exec_delta": [
+        2041,
+        2041,
+        2041
+      ],
+      "batch_delta": [
+        55,
+        51,
+        31
+      ],
+      "cert_delta": [
+        137,
+        137,
+        137
+      ],
+      "exec_tps_min": 38.29,
+      "exec_tps_max": 38.29,
+      "batches_per_s_mean": 0.857,
+      "certs_per_s_mean": 2.57,
+      "txs_per_batch_approx": 44.69,
+      "exec_per_cert_approx": 14.9,
+      "lag_max": 0,
+      "exec_spread": 0,
+      "roots_agree": true,
+      "gmp_ok": 2800,
+      "gmp_err": 0,
+      "pass_stable": true
+    },
+    {
+      "label": "mb512_iv0.12",
+      "max_batch_txs": 512,
+      "batch_interval_s": 0.12,
+      "adaptive_batch": false,
+      "elapsed_s": 53.06,
+      "exec_delta": [
+        1955,
+        1955,
+        1955
+      ],
+      "batch_delta": [
+        60,
+        63,
+        18
+      ],
+      "cert_delta": [
+        141,
+        141,
+        141
+      ],
+      "exec_tps_min": 36.84,
+      "exec_tps_max": 36.84,
+      "batches_per_s_mean": 0.886,
+      "certs_per_s_mean": 2.657,
+      "txs_per_batch_approx": 41.6,
+      "exec_per_cert_approx": 13.87,
+      "lag_max": 0,
+      "exec_spread": 0,
+      "roots_agree": true,
+      "gmp_ok": 2800,
+      "gmp_err": 0,
+      "pass_stable": true
+    },
+    {
+      "label": "mb512_iv0.2",
+      "max_batch_txs": 512,
+      "batch_interval_s": 0.2,
+      "adaptive_batch": false,
+      "elapsed_s": 53.08,
+      "exec_delta": [
+        2099,
+        2099,
+        2099
+      ],
+      "batch_delta": [
+        36,
+        47,
+        38
+      ],
+      "cert_delta": [
+        121,
+        121,
+        121
+      ],
+      "exec_tps_min": 39.55,
+      "exec_tps_max": 39.55,
+      "batches_per_s_mean": 0.76,
+      "certs_per_s_mean": 2.28,
+      "txs_per_batch_approx": 52.04,
+      "exec_per_cert_approx": 17.35,
+      "lag_max": 0,
+      "exec_spread": 0,
+      "roots_agree": true,
+      "gmp_ok": 2800,
+      "gmp_err": 0,
+      "pass_stable": true
+    }
+  ]
+}

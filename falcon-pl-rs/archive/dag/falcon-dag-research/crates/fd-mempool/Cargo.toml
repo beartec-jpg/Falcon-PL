@@ -1,0 +1,9 @@
+[package]
+name = "fd-mempool"
+version.workspace = true
+edition.workspace = true
+license = "LicenseRef-All-Rights-Reserved"
+
+[dependencies]
+fd-types = { workspace = true }
+serde_json = { workspace = true }

@@ -1,0 +1,123 @@
+# Falcon DAG Rust local testnet (HMAC-dev by default).
+# Build: docker compose -f deploy/docker-compose.yml up --build
+#
+# For Falcon-512: generate keys on host, mount into ./keys, set CRYPTO=falcon-512.
+x-node: &node
+  build:
+    context: ..
+    dockerfile: deploy/Dockerfile
+  environment:
+    RUST_LOG: info
+  restart: unless-stopped
+
+services:
+  val1:
+    <<: *node
+    command:
+      - --id=val1
+      - --rpc=0.0.0.0:18001
+      - --p2p=0.0.0.0:19001
+      - --peers=val2:19002,val3:19003,val4:19004,val5:19005
+      - --unl=val1,val2,val3,val4,val5
+      - --worker-index=0
+      - --worker-count=5
+      - --network-id=9002
+      - --crypto=hmac-sha256-dev
+      - --data-dir=/data
+      - --snapshot-interval=10
+    ports:
+      - "18001:18001"
+    volumes:
+      - val1-data:/data
+    networks: [fdnet]
+
+  val2:
+    <<: *node
+    command:
+      - --id=val2
+      - --rpc=0.0.0.0:18002
+      - --p2p=0.0.0.0:19002
+      - --peers=val1:19001,val3:19003,val4:19004,val5:19005
+      - --unl=val1,val2,val3,val4,val5
+      - --worker-index=1
+      - --worker-count=5
+      - --network-id=9002
+      - --crypto=hmac-sha256-dev
+      - --data-dir=/data
+      - --snapshot-interval=10
+    ports:
+      - "18002:18002"
+    volumes:
+      - val2-data:/data
+    networks: [fdnet]
+
+  val3:
+    <<: *node
+    command:
+      - --id=val3
+      - --rpc=0.0.0.0:18003
+      - --p2p=0.0.0.0:19003
+      - --peers=val1:19001,val2:19002,val4:19004,val5:19005
+      - --unl=val1,val2,val3,val4,val5
+      - --worker-index=2
+      - --worker-count=5
+      - --network-id=9002
+      - --crypto=hmac-sha256-dev
+      - --data-dir=/data
+      - --snapshot-interval=10
+    ports:
+      - "18003:18003"
+    volumes:
+      - val3-data:/data
+    networks: [fdnet]
+
+  val4:
+    <<: *node
+    command:
+      - --id=val4
+      - --rpc=0.0.0.0:18004
+      - --p2p=0.0.0.0:19004
+      - --peers=val1:19001,val2:19002,val3:19003,val5:19005
+      - --unl=val1,val2,val3,val4,val5
+      - --worker-index=3
+      - --worker-count=5
+      - --network-id=9002
+      - --crypto=hmac-sha256-dev
+      - --data-dir=/data
+      - --snapshot-interval=10
+    ports:
+      - "18004:18004"
+    volumes:
+      - val4-data:/data
+    networks: [fdnet]
+
+  val5:
+    <<: *node
+    command:
+      - --id=val5
+      - --rpc=0.0.0.0:18005
+      - --p2p=0.0.0.0:19005
+      - --peers=val1:19001,val2:19002,val3:19003,val4:19004
+      - --unl=val1,val2,val3,val4,val5
+      - --worker-index=4
+      - --worker-count=5
+      - --network-id=9002
+      - --crypto=hmac-sha256-dev
+      - --data-dir=/data
+      - --snapshot-interval=10
+    ports:
+      - "18005:18005"
+    volumes:
+      - val5-data:/data
+    networks: [fdnet]
+
+networks:
+  fdnet:
+    driver: bridge
+
+volumes:
+  val1-data:
+  val2-data:
+  val3-data:
+  val4-data:
+  val5-data:

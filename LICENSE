@@ -1,0 +1,17 @@
+Copyright (c) BEARTEC. All Rights Reserved.
+
+This software and accompanying documentation are proprietary to BEARTEC and are provided for research, public review, and Falcon PL network participation only. This software is not licensed under any Open Source Initiative (OSI) license (not MIT, Apache-2.0, GPL, or similar).
+
+Public Review & Network Participation Grant:
+BEARTEC grants permission to any person obtaining a copy of this repository from the official BEARTEC repository to:
+1. View, inspect, audit, and analyze the source code, circuits, contracts, and documentation for security and technical review;
+2. Compile the software from source and run unmodified validator, watcher, full/lite node, and bridge operator binaries to participate in official Falcon PL testnets and networks; and
+3. Submit security disclosures, bug reports, and pull requests to the official repository.
+
+Restrictions:
+Except as expressly permitted above, no rights or licenses (express or implied, by estoppel or otherwise) are granted under any copyright, patent, trademark, or other intellectual property right of BEARTEC. Without prior written permission from BEARTEC, you may not:
+- Redistribute, sublicense, sell, lease, or offer the software as a commercial or managed service;
+- Use this software or modified derivatives to launch or operate competing or unauthorized networks, forks, or commercial products; or
+- Remove or alter any copyright, attribution, or license notices.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. IN NO EVENT SHALL BEARTEC OR THE COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.

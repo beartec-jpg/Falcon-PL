@@ -1,0 +1,25 @@
+{
+  "network": "sepolia",
+  "network_id": "2300",
+  "bridge": "0x811854827627024B38926Ea9DCc0f88ACd5fB23e",
+  "verifier": "0x2Cb70e9f082F2DF91E9A5e6E7C9DF6b8b11B4F80",
+  "verifier_deployer": "0x14b3c2790002fAc4F30Afc95499998f60251dAf6",
+  "circuit": "FplFalconQcCircuitV2",
+  "n_public": 16,
+  "usdc": "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238",
+  "start_height": 353110,
+  "genesis_hash": "f82f0c54bb15e3677e709a1f80fb09ff168963269834a2a16d324da9416c41ae",
+  "inner_hash": "a729675f87707c18dbb60356b7b3ca659c78f7e1af680cbfbd7c23b989223415",
+  "claim_root": "9671942a853984682f915a3418cc02d37ff19148692f117c149eeb34da86cfa5",
+  "committee_root": "1969b6274a251d7fccb0d4b854fb1d82b699e9da2b84fbf0831d3376ec2f3839",
+  "leaves": [
+    "0da12dd8b18f81e428844ad7812877e3457fecf6dea20dabef1fa81707d38ff0",
+    "0f4d487479139079bea435867a04fff3afafd9a59c4477ee21850cb3307dd905",
+    "17ed803ed1528b98f195350631347a07473bdf02e984ea72c4d92e7f7ad9806c",
+    "0772449d8b6451ddf2adf02d64fe1722bed5394f2c4263a58395d09e5f355ca4",
+    "0a14c367cded01f662b51b86a3014375ab225b5a0f7e618e2e764432e26b8e7d",
+    "10b05d173375914e7106731fe52730e90f6644cdf483ccda18704893901f1001"
+  ],
+  "deploy_tx": "0x01da6b6805e62313dc4ed9108bc8839084f6b03967e0ea1559a18ffa3125cc1d",
+  "note": "FalconQcBridgeV2 sequential lottery-6. Headers not moving until v2 prover. Dest-lock peg-in still live. v1 pool stranded."
+}

@@ -1,0 +1,48 @@
+# Example logrotate policy for Falcon PL seat logs (v2.9.53).
+#
+# Install (per host, as root):
+#   sudo install -m 0644 deploy/logrotate/falcon-pl-seats /etc/logrotate.d/falcon-pl-seats
+#   sudo logrotate -d /etc/logrotate.d/falcon-pl-seats   # dry run first
+#
+# Seats run under systemd with
+#   StandardOutput=append:<data>/logs/vN.log
+#   StandardError=append:<data>/logs/vN.log
+# systemd holds the file open with O_APPEND and has no "reopen" signal, so
+# use `copytruncate` (no restart, no signal). The node keeps writing at the
+# new end of the truncated file; at most a few lines written during the copy
+# can be lost — acceptable for ops logs.
+#
+# `maxsize` only takes effect as often as logrotate runs. The stock Ubuntu
+# timer is daily; a seat logs ~0.3-0.5 GB/day under load, which daily +
+# maxsize handles. For hourly checks:
+#   sudo systemctl edit logrotate.timer   # [Timer] OnCalendar=hourly
+#
+# Remove the block for whichever user does not exist on the host
+# (host1/host2 run as `falcon`; mhr/hel/hil/fsn run as `root`).
+
+/home/falcon/falcon-pl-public-testnet-2300/logs/v*.log {
+    su falcon falcon
+    daily
+    maxsize 200M
+    rotate 7
+    dateext
+    dateformat -%Y%m%d-%s
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+}
+
+/root/falcon-pl-public-testnet-2300/logs/v*.log {
+    daily
+    maxsize 200M
+    rotate 7
+    dateext
+    dateformat -%Y%m%d-%s
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+}

@@ -1,0 +1,68 @@
+{
+  "network_name": "falcon-dag-testnet-1",
+  "version": 1,
+  "created_at": "2026-08-10T16:27:13Z",
+  "crypto": "falcon-512",
+  "native_asset": "FDAG",
+  "genesis_accounts": 40,
+  "genesis_native_per_account": 1000000000,
+  "shards": [
+    {
+      "id": 0,
+      "name": "s0",
+      "network_id": 9003,
+      "accounts": {
+        "lo": 1,
+        "hi": 20
+      },
+      "bridge": "acct20",
+      "unl": [
+        "val1",
+        "val2",
+        "val3"
+      ],
+      "gmp_port": 18500,
+      "rpc_bootstrap_ports": [
+        18001,
+        18002,
+        18003
+      ],
+      "p2p_bootstrap_ports": [
+        19001,
+        19002,
+        19003
+      ]
+    },
+    {
+      "id": 1,
+      "name": "s1",
+      "network_id": 9004,
+      "accounts": {
+        "lo": 21,
+        "hi": 40
+      },
+      "bridge": "acct40",
+      "unl": [
+        "val4",
+        "val5",
+        "val6"
+      ],
+      "gmp_port": 18510,
+      "rpc_bootstrap_ports": [
+        18004,
+        18005,
+        18006
+      ],
+      "p2p_bootstrap_ports": [
+        19004,
+        19005,
+        19006
+      ]
+    }
+  ],
+  "facade_port": 18499,
+  "faucet_port": 18550,
+  "client_entry": "facade",
+  "notes": "Public play testnet (R2). No real money. Foundation-run seed UNL; open clients + faucet.",
+  "unl_public_sha256": "90f8aea4b1fa6e14ce4895ce5019304c54d31b2b868cca52969f4a254365c9b9"
+}

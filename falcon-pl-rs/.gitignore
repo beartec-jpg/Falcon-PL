@@ -1,0 +1,8 @@
+/target
+**/*.rs.bk
+
+# BitVM upstream (fetched by scripts/fetch-bitvm.sh; not a workspace member)
+/vendor/BitVM/
+
+# Separate BitVM export tool build dir
+/tools/bitvm-c1b-export/target/

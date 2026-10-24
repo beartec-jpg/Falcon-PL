@@ -1,0 +1,961 @@
+{
+  "suite": "gmp_scale_n",
+  "design": "docs/GLOBAL_MEMPOOL_CONF_POOL_DESIGN.md",
+  "hosts": {
+    "F1": "192.0.2.1",
+    "F2": "192.0.2.2"
+  },
+  "ns": [
+    3,
+    6
+  ],
+  "ladder": [
+    {
+      "label": "warm",
+      "rate": 12,
+      "hold": 12
+    },
+    {
+      "label": "light",
+      "rate": 25,
+      "hold": 20
+    },
+    {
+      "label": "med",
+      "rate": 50,
+      "hold": 25
+    }
+  ],
+  "path": "clients\u2192GMP \u2192 engine lease \u2192 multipack pack/cert",
+  "capacity": "equal budgets (honest scale dig)",
+  "results": [
+    {
+      "n": 3,
+      "placement": {
+        "f1": [
+          1,
+          2
+        ],
+        "f2": [
+          3
+        ]
+      },
+      "phases": [
+        {
+          "label": "warm",
+          "rate": 12,
+          "hold_s": 12,
+          "elapsed_s": 24.06,
+          "exec_tps_min": 5.99,
+          "exec_tps_max": 5.99,
+          "exec_delta": [
+            144,
+            144,
+            144
+          ],
+          "health": {
+            "exec_min": 144,
+            "exec_max": 144,
+            "exec_spread": 0,
+            "lag_max": 0,
+            "vals_up": 3,
+            "roots_agree": true,
+            "arch1_exec": 144,
+            "arch2_exec": 144
+          },
+          "gmp_ok": 144,
+          "gmp_err": 0,
+          "gmp_status": {
+            "active_leases": 0,
+            "max_pending": 50000,
+            "num_shards": 16,
+            "pending": 0,
+            "validators": {
+              "val1": {
+                "advert_age_s": 0.0030531883239746094,
+                "completed": 27,
+                "expired": 0,
+                "in_flight": 0,
+                "mem_budget_mb": 4096,
+                "mem_used_mb": 0,
+                "weight": 0.5025
+              },
+              "val2": {
+                "advert_age_s": 0.07438063621520996,
+                "completed": 25,
+                "expired": 0,
+                "in_flight": 0,
+                "mem_budget_mb": 4096,
+                "mem_used_mb": 0,
+                "weight": 0.5025
+              },
+              "val3": {
+                "advert_age_s": 0.04655957221984863,
+                "completed": 19,
+                "expired": 0,
+                "in_flight": 0,
+                "mem_budget_mb": 4096,
+                "mem_used_mb": 0,
+                "weight": 0.5025
+              }
+            }
+          },
+          "gcp_status": {
+            "certified": 47,
+            "open": 0,
+            "total": 47
+          },
+          "pack_hint_val1": {
+            "own_open_n": 0,
+            "try_certify_attempts": 0,
+            "try_certify_ok": 0,
+            "filter_seq_gap": null,
+            "no_ready_txs": null,
+            "mempool": 0
+          },
+          "pass_tight": true
+        },
+        {
+          "label": "light",
+          "rate": 25,
+          "hold_s": 20,
+          "elapsed_s": 32.06,
+          "exec_tps_min": 15.6,
+          "exec_tps_max": 15.6,
+          "exec_delta": [
+            500,
+            500,
+            500
+          ],
+          "health": {
+            "exec_min": 644,
+            "exec_max": 644,
+            "exec_spread": 0,
+            "lag_max": 0,
+            "vals_up": 3,
+            "roots_agree": true,
+            "arch1_exec": 644,
+            "arch2_exec": 644
+          },
+          "gmp_ok": 500,
+          "gmp_err": 0,
+          "gmp_status": {
+            "active_leases": 0,
+            "max_pending": 50000,
+            "num_shards": 16,
+            "pending": 0,
+            "validators": {
+              "val1": {
+                "advert_age_s": 0.01601266860961914,
+                "completed": 90,
+                "expired": 0,
+                "in_flight": 0,
+                "mem_budget_mb": 4096,
+                "mem_used_mb": 0,
+                "weight": 0.5025
+              },
+              "val2": {
+                "advert_age_s": 0.010515689849853516,
+                "completed": 92,
+                "expired": 0,
+                "in_flight": 0,
+                "mem_budget_mb": 4096,
+                "mem_used_mb": 0,
+                "weight": 0.5025
+              },
+              "val3": {
+                "advert_age_s": 0.05181264877319336,
+                "completed": 67,
+                "expired": 0,
+                "in_flight": 0,
+                "mem_budget_mb": 4096,
+                "mem_used_mb": 0,
+                "weight": 0.5025
+              }
+            }
+          },
+          "gcp_status": {
+            "certified": 108,
+            "open": 0,
+            "total": 108
+          },
+          "pack_hint_val1": {
+            "own_open_n": 0,
+            "try_certify_attempts": 0,
+            "try_certify_ok": 0,
+            "filter_seq_gap": null,
+            "no_ready_txs": null,
+            "mempool": 0
+          },
+          "pass_tight": true
+        },
+        {
+          "label": "med",
+          "rate": 50,
+          "hold_s": 25,
+          "elapsed_s": 37.11,
+          "exec_tps_min": 21.8,
+          "exec_tps_max": 21.8,
+          "exec_delta": [
+            809,
+            809,
+            809
+          ],
+          "health": {
+            "exec_min": 1453,
+            "exec_max": 1453,
+            "exec_spread": 0,
+            "lag_max": 0,
+            "vals_up": 3,
+            "roots_agree": true,
+            "arch1_exec": 1453,
+            "arch2_exec": 1453
+          },
+          "gmp_ok": 1250,
+          "gmp_err": 0,
+          "gmp_status": {
+            "active_leases": 0,
+            "max_pending": 50000,
+            "num_shards": 16,
+            "pending": 0,
+            "validators": {
+              "val1": {
+                "advert_age_s": 0.016096830368041992,
+                "completed": 233,
+                "expired": 0,
+                "in_flight": 0,
+                "mem_budget_mb": 4096,
+                "mem_used_mb": 26,
+                "weight": 0.49931030273437493
+              },
+              "val2": {
+                "advert_age_s": 0.0769658088684082,
+                "completed": 231,
+                "expired": 0,
+                "in_flight": 0,
+                "mem_budget_mb": 4096,
+                "mem_used_mb": 134,
+                "weight": 0.48606079101562494
+              },
+              "val3": {
+                "advert_age_s": 0.0601038932800293,
+                "completed": 153,
+                "expired": 0,
+                "in_flight": 0,
+                "mem_budget_mb": 4096,
+                "mem_used_mb": 334,
+                "weight": 0.46152465820312494
+              }
+            }
+          },
+          "gcp_status": {
+            "certified": 195,
+            "open": 0,
+            "total": 195
+          },
+          "pack_hint_val1": {
+            "own_open_n": 0,
+            "try_certify_attempts": 0,
+            "try_certify_ok": 0,
+            "filter_seq_gap": 32,
+            "no_ready_txs": 32,
+            "mempool": 13
+          },
+          "pass_tight": true
+        }
+      ],
+      "best_exec_tps_min": 21.8,
+      "best_label": "med",
+      "med": {
+        "label": "med",
+        "rate": 50,
+        "hold_s": 25,
+        "elapsed_s": 37.11,
+        "exec_tps_min": 21.8,
+        "exec_tps_max": 21.8,
+        "exec_delta": [
+          809,
+          809,
+          809
+        ],
+        "health": {
+          "exec_min": 1453,
+          "exec_max": 1453,
+          "exec_spread": 0,
+          "lag_max": 0,
+          "vals_up": 3,
+          "roots_agree": true,
+          "arch1_exec": 1453,
+          "arch2_exec": 1453
+        },
+        "gmp_ok": 1250,
+        "gmp_err": 0,
+        "gmp_status": {
+          "active_leases": 0,
+          "max_pending": 50000,
+          "num_shards": 16,
+          "pending": 0,
+          "validators": {
+            "val1": {
+              "advert_age_s": 0.016096830368041992,
+              "completed": 233,
+              "expired": 0,
+              "in_flight": 0,
+              "mem_budget_mb": 4096,
+              "mem_used_mb": 26,
+              "weight": 0.49931030273437493
+            },
+            "val2": {
+              "advert_age_s": 0.0769658088684082,
+              "completed": 231,
+              "expired": 0,
+              "in_flight": 0,
+              "mem_budget_mb": 4096,
+              "mem_used_mb": 134,
+              "weight": 0.48606079101562494
+            },
+            "val3": {
+              "advert_age_s": 0.0601038932800293,
+              "completed": 153,
+              "expired": 0,
+              "in_flight": 0,
+              "mem_budget_mb": 4096,
+              "mem_used_mb": 334,
+              "weight": 0.46152465820312494
+            }
+          }
+        },
+        "gcp_status": {
+          "certified": 195,
+          "open": 0,
+          "total": 195
+        },
+        "pack_hint_val1": {
+          "own_open_n": 0,
+          "try_certify_attempts": 0,
+          "try_certify_ok": 0,
+          "filter_seq_gap": 32,
+          "no_ready_txs": 32,
+          "mempool": 13
+        },
+        "pass_tight": true
+      },
+      "light": {
+        "label": "light",
+        "rate": 25,
+        "hold_s": 20,
+        "elapsed_s": 32.06,
+        "exec_tps_min": 15.6,
+        "exec_tps_max": 15.6,
+        "exec_delta": [
+          500,
+          500,
+          500
+        ],
+        "health": {
+          "exec_min": 644,
+          "exec_max": 644,
+          "exec_spread": 0,
+          "lag_max": 0,
+          "vals_up": 3,
+          "roots_agree": true,
+          "arch1_exec": 644,
+          "arch2_exec": 644
+        },
+        "gmp_ok": 500,
+        "gmp_err": 0,
+        "gmp_status": {
+          "active_leases": 0,
+          "max_pending": 50000,
+          "num_shards": 16,
+          "pending": 0,
+          "validators": {
+            "val1": {
+              "advert_age_s": 0.01601266860961914,
+              "completed": 90,
+              "expired": 0,
+              "in_flight": 0,
+              "mem_budget_mb": 4096,
+              "mem_used_mb": 0,
+              "weight": 0.5025
+            },
+            "val2": {
+              "advert_age_s": 0.010515689849853516,
+              "completed": 92,
+              "expired": 0,
+              "in_flight": 0,
+              "mem_budget_mb": 4096,
+              "mem_used_mb": 0,
+              "weight": 0.5025
+            },
+            "val3": {
+              "advert_age_s": 0.05181264877319336,
+              "completed": 67,
+              "expired": 0,
+              "in_flight": 0,
+              "mem_budget_mb": 4096,
+              "mem_used_mb": 0,
+              "weight": 0.5025
+            }
+          }
+        },
+        "gcp_status": {
+          "certified": 108,
+          "open": 0,
+          "total": 108
+        },
+        "pack_hint_val1": {
+          "own_open_n": 0,
+          "try_certify_attempts": 0,
+          "try_certify_ok": 0,
+          "filter_seq_gap": null,
+          "no_ready_txs": null,
+          "mempool": 0
+        },
+        "pass_tight": true
+      }
+    },
+    {
+      "n": 6,
+      "placement": {
+        "f1": [
+          1,
+          2,
+          3
+        ],
+        "f2": [
+          4,
+          5,
+          6
+        ]
+      },
+      "phases": [
+        {
+          "label": "warm",
+          "rate": 12,
+          "hold_s": 12,
+          "elapsed_s": 24.11,
+          "exec_tps_min": 5.97,
+          "exec_tps_max": 5.97,
+          "exec_delta": [
+            144,
+            144,
+            144,
+            144,
+            144,
+            144
+          ],
+          "health": {
+            "exec_min": 144,
+            "exec_max": 144,
+            "exec_spread": 0,
+            "lag_max": 0,
+            "vals_up": 6,
+            "roots_agree": true,
+            "arch1_exec": 144,
+            "arch2_exec": 144
+          },
+          "gmp_ok": 144,
+          "gmp_err": 0,
+          "gmp_status": {
+            "active_leases": 0,
+            "max_pending": 50000,
+            "num_shards": 16,
+            "pending": 0,
+            "validators": {
+              "val1": {
+                "advert_age_s": 0.015548467636108398,
+                "completed": 255,
+                "expired": 0,
+                "in_flight": 0,
+                "mem_budget_mb": 4096,
+                "mem_used_mb": 0,
+                "weight": 0.5025
+              },
+              "val2": {
+                "advert_age_s": 0.02881145477294922,
+                "completed": 256,
+                "expired": 0,
+                "in_flight": 0,
+                "mem_budget_mb": 4096,
+                "mem_used_mb": 0,
+                "weight": 0.5025
+              },
+              "val3": {
+                "advert_age_s": 0.010916948318481445,
+                "completed": 175,
+                "expired": 0,
+                "in_flight": 0,
+                "mem_budget_mb": 4096,
+                "mem_used_mb": 0,
+                "weight": 0.5025
+              },
+              "val4": {
+                "advert_age_s": 0.0024132728576660156,
+                "completed": 10,
+                "expired": 0,
+                "in_flight": 0,
+                "mem_budget_mb": 4096,
+                "mem_used_mb": 0,
+                "weight": 0.5025
+              },
+              "val5": {
+                "advert_age_s": 0.09688138961791992,
+                "completed": 10,
+                "expired": 0,
+                "in_flight": 0,
+                "mem_budget_mb": 4096,
+                "mem_used_mb": 0,
+                "weight": 0.5025
+              },
+              "val6": {
+                "advert_age_s": 0.0021109580993652344,
+                "completed": 12,
+                "expired": 0,
+                "in_flight": 0,
+                "mem_budget_mb": 4096,
+                "mem_used_mb": 0,
+                "weight": 0.5025
+              }
+            }
+          },
+          "gcp_status": {
+            "certified": 244,
+            "open": 0,
+            "total": 244
+          },
+          "pack_hint_val1": {
+            "own_open_n": 0,
+            "try_certify_attempts": 0,
+            "try_certify_ok": 0,
+            "filter_seq_gap": null,
+            "no_ready_txs": null,
+            "mempool": 0
+          },
+          "pass_tight": true
+        },
+        {
+          "label": "light",
+          "rate": 25,
+          "hold_s": 20,
+          "elapsed_s": 32.08,
+          "exec_tps_min": 10.16,
+          "exec_tps_max": 10.16,
+          "exec_delta": [
+            326,
+            326,
+            326,
+            326,
+            326,
+            326
+          ],
+          "health": {
+            "exec_min": 470,
+            "exec_max": 470,
+            "exec_spread": 0,
+            "lag_max": 0,
+            "vals_up": 6,
+            "roots_agree": true,
+            "arch1_exec": 470,
+            "arch2_exec": 470
+          },
+          "gmp_ok": 500,
+          "gmp_err": 0,
+          "gmp_status": {
+            "active_leases": 0,
+            "max_pending": 50000,
+            "num_shards": 16,
+            "pending": 0,
+            "validators": {
+              "val1": {
+                "advert_age_s": 0.008403778076171875,
+                "completed": 319,
+                "expired": 0,
+                "in_flight": 0,
+                "mem_budget_mb": 4096,
+                "mem_used_mb": 0,
+                "weight": 0.5025
+              },
+              "val2": {
+                "advert_age_s": 0.0029211044311523438,
+                "completed": 318,
+                "expired": 0,
+                "in_flight": 0,
+                "mem_budget_mb": 4096,
+                "mem_used_mb": 0,
+                "weight": 0.5025
+              },
+              "val3": {
+                "advert_age_s": 0.02859187126159668,
+                "completed": 238,
+                "expired": 0,
+                "in_flight": 0,
+                "mem_budget_mb": 4096,
+                "mem_used_mb": 0,
+                "weight": 0.5025
+              },
+              "val4": {
+                "advert_age_s": 0.07282567024230957,
+                "completed": 31,
+                "expired": 0,
+                "in_flight": 0,
+                "mem_budget_mb": 4096,
+                "mem_used_mb": 36,
+                "weight": 0.49808349609374997
+              },
+              "val5": {
+                "advert_age_s": 0.027309417724609375,
+                "completed": 27,
+                "expired": 0,
+                "in_flight": 0,
+                "mem_budget_mb": 4096,
+                "mem_used_mb": 42,
+                "weight": 0.49734741210937494
+              },
+              "val6": {
+                "advert_age_s": 0.03606438636779785,
+                "completed": 29,
+                "expired": 0,
+                "in_flight": 0,
+                "mem_budget_mb": 4096,
+                "mem_used_mb": 40,
+                "weight": 0.49759277343749997
+              }
+            }
+          },
+          "gcp_status": {
+            "certified": 294,
+            "open": 1,
+            "total": 295
+          },
+          "pack_hint_val1": {
+            "own_open_n": 0,
+            "try_certify_attempts": 0,
+            "try_certify_ok": 0,
+            "filter_seq_gap": null,
+            "no_ready_txs": null,
+            "mempool": 0
+          },
+          "pass_tight": true
+        },
+        {
+          "label": "med",
+          "rate": 50,
+          "hold_s": 25,
+          "elapsed_s": 37.11,
+          "exec_tps_min": 14.66,
+          "exec_tps_max": 14.66,
+          "exec_delta": [
+            544,
+            544,
+            544,
+            544,
+            544,
+            544
+          ],
+          "health": {
+            "exec_min": 1014,
+            "exec_max": 1014,
+            "exec_spread": 0,
+            "lag_max": 0,
+            "vals_up": 6,
+            "roots_agree": true,
+            "arch1_exec": 1014,
+            "arch2_exec": 1014
+          },
+          "gmp_ok": 1250,
+          "gmp_err": 0,
+          "gmp_status": {
+            "active_leases": 0,
+            "max_pending": 50000,
+            "num_shards": 16,
+            "pending": 0,
+            "validators": {
+              "val1": {
+                "advert_age_s": 0.05142974853515625,
+                "completed": 439,
+                "expired": 0,
+                "in_flight": 0,
+                "mem_budget_mb": 4096,
+                "mem_used_mb": 0,
+                "weight": 0.5025
+              },
+              "val2": {
+                "advert_age_s": 0.049268484115600586,
+                "completed": 440,
+                "expired": 0,
+                "in_flight": 0,
+                "mem_budget_mb": 4096,
+                "mem_used_mb": 36,
+                "weight": 0.49808349609374997
+              },
+              "val3": {
+                "advert_age_s": 0.007245540618896484,
+                "completed": 361,
+                "expired": 0,
+                "in_flight": 0,
+                "mem_budget_mb": 4096,
+                "mem_used_mb": 54,
+                "weight": 0.49587524414062495
+              },
+              "val4": {
+                "advert_age_s": 0.02382683753967285,
+                "completed": 63,
+                "expired": 0,
+                "in_flight": 0,
+                "mem_budget_mb": 4096,
+                "mem_used_mb": 160,
+                "weight": 0.4828710937499999
+              },
+              "val5": {
+                "advert_age_s": 0.03909921646118164,
+                "completed": 57,
+                "expired": 0,
+                "in_flight": 0,
+                "mem_budget_mb": 4096,
+                "mem_used_mb": 176,
+                "weight": 0.48090820312499993
+              },
+              "val6": {
+                "advert_age_s": 0.00961613655090332,
+                "completed": 63,
+                "expired": 0,
+                "in_flight": 0,
+                "mem_budget_mb": 4096,
+                "mem_used_mb": 176,
+                "weight": 0.48090820312499993
+              }
+            }
+          },
+          "gcp_status": {
+            "certified": 344,
+            "open": 1,
+            "total": 345
+          },
+          "pack_hint_val1": {
+            "own_open_n": 0,
+            "try_certify_attempts": 0,
+            "try_certify_ok": 0,
+            "filter_seq_gap": null,
+            "no_ready_txs": null,
+            "mempool": 0
+          },
+          "pass_tight": true
+        }
+      ],
+      "best_exec_tps_min": 14.66,
+      "best_label": "med",
+      "med": {
+        "label": "med",
+        "rate": 50,
+        "hold_s": 25,
+        "elapsed_s": 37.11,
+        "exec_tps_min": 14.66,
+        "exec_tps_max": 14.66,
+        "exec_delta": [
+          544,
+          544,
+          544,
+          544,
+          544,
+          544
+        ],
+        "health": {
+          "exec_min": 1014,
+          "exec_max": 1014,
+          "exec_spread": 0,
+          "lag_max": 0,
+          "vals_up": 6,
+          "roots_agree": true,
+          "arch1_exec": 1014,
+          "arch2_exec": 1014
+        },
+        "gmp_ok": 1250,
+        "gmp_err": 0,
+        "gmp_status": {
+          "active_leases": 0,
+          "max_pending": 50000,
+          "num_shards": 16,
+          "pending": 0,
+          "validators": {
+            "val1": {
+              "advert_age_s": 0.05142974853515625,
+              "completed": 439,
+              "expired": 0,
+              "in_flight": 0,
+              "mem_budget_mb": 4096,
+              "mem_used_mb": 0,
+              "weight": 0.5025
+            },
+            "val2": {
+              "advert_age_s": 0.049268484115600586,
+              "completed": 440,
+              "expired": 0,
+              "in_flight": 0,
+              "mem_budget_mb": 4096,
+              "mem_used_mb": 36,
+              "weight": 0.49808349609374997
+            },
+            "val3": {
+              "advert_age_s": 0.007245540618896484,
+              "completed": 361,
+              "expired": 0,
+              "in_flight": 0,
+              "mem_budget_mb": 4096,
+              "mem_used_mb": 54,
+              "weight": 0.49587524414062495
+            },
+            "val4": {
+              "advert_age_s": 0.02382683753967285,
+              "completed": 63,
+              "expired": 0,
+              "in_flight": 0,
+              "mem_budget_mb": 4096,
+              "mem_used_mb": 160,
+              "weight": 0.4828710937499999
+            },
+            "val5": {
+              "advert_age_s": 0.03909921646118164,
+              "completed": 57,
+              "expired": 0,
+              "in_flight": 0,
+              "mem_budget_mb": 4096,
+              "mem_used_mb": 176,
+              "weight": 0.48090820312499993
+            },
+            "val6": {
+              "advert_age_s": 0.00961613655090332,
+              "completed": 63,
+              "expired": 0,
+              "in_flight": 0,
+              "mem_budget_mb": 4096,
+              "mem_used_mb": 176,
+              "weight": 0.48090820312499993
+            }
+          }
+        },
+        "gcp_status": {
+          "certified": 344,
+          "open": 1,
+          "total": 345
+        },
+        "pack_hint_val1": {
+          "own_open_n": 0,
+          "try_certify_attempts": 0,
+          "try_certify_ok": 0,
+          "filter_seq_gap": null,
+          "no_ready_txs": null,
+          "mempool": 0
+        },
+        "pass_tight": true
+      },
+      "light": {
+        "label": "light",
+        "rate": 25,
+        "hold_s": 20,
+        "elapsed_s": 32.08,
+        "exec_tps_min": 10.16,
+        "exec_tps_max": 10.16,
+        "exec_delta": [
+          326,
+          326,
+          326,
+          326,
+          326,
+          326
+        ],
+        "health": {
+          "exec_min": 470,
+          "exec_max": 470,
+          "exec_spread": 0,
+          "lag_max": 0,
+          "vals_up": 6,
+          "roots_agree": true,
+          "arch1_exec": 470,
+          "arch2_exec": 470
+        },
+        "gmp_ok": 500,
+        "gmp_err": 0,
+        "gmp_status": {
+          "active_leases": 0,
+          "max_pending": 50000,
+          "num_shards": 16,
+          "pending": 0,
+          "validators": {
+            "val1": {
+              "advert_age_s": 0.008403778076171875,
+              "completed": 319,
+              "expired": 0,
+              "in_flight": 0,
+              "mem_budget_mb": 4096,
+              "mem_used_mb": 0,
+              "weight": 0.5025
+            },
+            "val2": {
+              "advert_age_s": 0.0029211044311523438,
+              "completed": 318,
+              "expired": 0,
+              "in_flight": 0,
+              "mem_budget_mb": 4096,
+              "mem_used_mb": 0,
+              "weight": 0.5025
+            },
+            "val3": {
+              "advert_age_s": 0.02859187126159668,
+              "completed": 238,
+              "expired": 0,
+              "in_flight": 0,
+              "mem_budget_mb": 4096,
+              "mem_used_mb": 0,
+              "weight": 0.5025
+            },
+            "val4": {
+              "advert_age_s": 0.07282567024230957,
+              "completed": 31,
+              "expired": 0,
+              "in_flight": 0,
+              "mem_budget_mb": 4096,
+              "mem_used_mb": 36,
+              "weight": 0.49808349609374997
+            },
+            "val5": {
+              "advert_age_s": 0.027309417724609375,
+              "completed": 27,
+              "expired": 0,
+              "in_flight": 0,
+              "mem_budget_mb": 4096,
+              "mem_used_mb": 42,
+              "weight": 0.49734741210937494
+            },
+            "val6": {
+              "advert_age_s": 0.03606438636779785,
+              "completed": 29,
+              "expired": 0,
+              "in_flight": 0,
+              "mem_budget_mb": 4096,
+              "mem_used_mb": 40,
+              "weight": 0.49759277343749997
+            }
+          }
+        },
+        "gcp_status": {
+          "certified": 294,
+          "open": 1,
+          "total": 295
+        },
+        "pack_hint_val1": {
+          "own_open_n": 0,
+          "try_certify_attempts": 0,
+          "try_certify_ok": 0,
+          "filter_seq_gap": null,
+          "no_ready_txs": null,
+          "mempool": 0
+        },
+        "pass_tight": true
+      }
+    }
+  ],
+  "scale_out_ok": false,
+  "verdict": "SCALE_OUT_FAIL: N=6 best 14.66 < N=3 best 21.8 (regression) | med: N3=21.8 N6=14.66",
+  "north_star": "exec_tps_min(N=6) > exec_tps_min(N=3)"
+}

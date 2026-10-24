@@ -1,0 +1,112 @@
+name: Release binaries (portable, reproducible)
+
+# Builds falcon-pl-node + falcon-pl-ctl for linux x86_64 TWICE in a pinned container,
+# requires identical sha256 (reproducible), AVX-512 count 0 (portable), --version == PRODUCT_VERSION,
+# and uploads dist/ (binaries, tarball, installer, network profile, BUILDINFO, SHA256SUMS) as an artifact.
+#
+# Publishing is a separate, manual step from an operator box (no cross-repo token in this repo):
+#   bash falcon-pl-rs/crates/fd-pl/scripts/release/publish-draft.sh <run-id>
+# which creates a DRAFT GitHub release in beartec-jpg/falcon-pl-releases. Signing (minisign) is done by
+# the release-key holder (Scott) on his machine: scripts/release/sign-sums.sh.
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Commit / tag / branch to build (default: the dispatch ref)"
+        required: false
+        default: ""
+  push:
+    tags: ["v2.*"]
+  pull_request:
+    paths:
+      - ".github/workflows/release-binaries.yml"
+      - "falcon-pl-rs/crates/fd-pl/scripts/release/**"
+      - "falcon-pl-rs/crates/fd-pl/scripts/install-falcon-node.sh"
+      - "falcon-pl-rs/crates/fd-pl/scripts/network-2300.env"
+
+permissions:
+  contents: read
+
+env:
+  # Image: ubuntu:22.04 + rustup-pinned Rust 1.85.1 (glibc floor 2.34, enforced below: Ubuntu 22.04+, Debian 12+).
+  # (Debian 11 images were dropped: bullseye security pool no longer serves the indexed packages.)
+  # Both passes use the same image + checkout path, so the binaries must be byte-identical.
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: build ${{ matrix.pass }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        pass: [a, b]
+    container:
+      image: ubuntu:22.04
+    steps:
+      - name: System deps + pinned Rust
+        shell: bash
+        run: |
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update -qq
+          apt-get install -y -qq --no-install-recommends ca-certificates curl build-essential clang cmake pkg-config binutils git >/dev/null
+          curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain 1.85.1
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+      # after deps: actions/checkout needs git in the container, else it downloads a tarball (no .git)
+      # Tooling (build script, installer, network profile) always from the workflow's own commit;
+      # the SOURCE built is `inputs.ref` (e.g. the exact commit a live release runs), default the same commit.
+      - uses: actions/checkout@v4
+        with:
+          path: tools
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          path: src
+      - name: Portable build (RUSTFLAGS unset)
+        working-directory: tools
+        shell: bash
+        env:
+          BUILD_IMAGE: ubuntu:22.04+rust-1.85.1
+        run: |
+          git config --global --add safe.directory '*'
+          git -C "$GITHUB_WORKSPACE/src" rev-parse HEAD
+          env -u RUSTFLAGS -u CARGO_ENCODED_RUSTFLAGS FALCON_SRC="$GITHUB_WORKSPACE/src" \
+            bash falcon-pl-rs/crates/fd-pl/scripts/release/build-portable.sh "$GITHUB_WORKSPACE/dist"
+      - name: Image digest
+        run: echo "pass ${{ matrix.pass }} image ubuntu:22.04 rustc $(rustc -V)" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ matrix.pass }}
+          path: dist/
+          if-no-files-found: error
+
+  verify:
+    name: reproducible + portable
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { name: dist-a, path: a }
+      - uses: actions/download-artifact@v4
+        with: { name: dist-b, path: b }
+      - name: Same sha256 in both builds
+        run: |
+          diff a/SHA256SUMS b/SHA256SUMS
+          (cd a && sha256sum -c SHA256SUMS)
+          cat a/BUILDINFO.txt
+          grep -q '^avx512_insns_node=0$' a/BUILDINFO.txt
+          grep -q '^avx512_insns_ctl=0$' a/BUILDINFO.txt
+          g="$(sed -n 's/^glibc_min=//p' a/BUILDINFO.txt)"; [ "$(printf '%s\n2.34\n' "$g" | sort -V | tail -1)" = 2.34 ] || { echo "glibc_min $g > 2.34"; exit 1; }
+          { echo '### SHA256SUMS'; echo '```'; cat a/SHA256SUMS; echo '```'; echo '### BUILDINFO'; echo '```'; cat a/BUILDINFO.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      - name: Smoke test on a stock runner (glibc of ubuntu-latest)
+        run: |
+          chmod +x a/falcon-pl-node a/falcon-pl-ctl
+          a/falcon-pl-node --version || a/falcon-pl-node --help >/dev/null
+          a/falcon-pl-ctl --version || a/falcon-pl-ctl --help >/dev/null
+          grep -E '^(product_version|commit|tooling_commit|version_flag|glibc_min)=' a/BUILDINFO.txt
+          bash -n a/install-falcon-node.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-dist
+          path: a/
+          if-no-files-found: error

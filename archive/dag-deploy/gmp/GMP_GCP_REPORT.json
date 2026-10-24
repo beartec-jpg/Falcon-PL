@@ -1,0 +1,103 @@
+{
+  "suite": "gmp_gcp_pr_g5",
+  "design": "docs/GLOBAL_MEMPOOL_CONF_POOL_DESIGN.md",
+  "gmp_url": "http://192.0.2.1:18500",
+  "gcp_url": "http://192.0.2.1:18501",
+  "phase_a": {
+    "elapsed_s": 63.07,
+    "exec_tps_min": 15.73,
+    "exec_delta": [
+      992,
+      992,
+      992
+    ],
+    "health": {
+      "exec_min": 992,
+      "exec_max": 992,
+      "exec_spread": 0,
+      "lag_max": 0,
+      "vals_up": 3,
+      "roots_agree": true,
+      "arch1_exec": 992,
+      "arch2_exec": 992
+    },
+    "stats": {
+      "gmp_ok": 1260
+    },
+    "lease_shares": {
+      "val1": 158,
+      "val2": 158,
+      "val3": 106
+    },
+    "capacity_skew_ok": true,
+    "gcp_status": {
+      "certified": 158,
+      "open": 0,
+      "total": 158
+    },
+    "gcp_open_n": 0,
+    "node_gcp_stats": {
+      "val1": {
+        "batches": 235,
+        "certs": 178,
+        "enabled": true,
+        "errors": 0,
+        "last_error": null,
+        "sigs": 588,
+        "url": "http://192.0.2.1:18501"
+      },
+      "val2": {
+        "batches": 231,
+        "certs": 166,
+        "enabled": true,
+        "errors": 0,
+        "last_error": null,
+        "sigs": 574,
+        "url": "http://192.0.2.1:18501"
+      },
+      "val3": {
+        "batches": 178,
+        "certs": 138,
+        "enabled": true,
+        "errors": 0,
+        "last_error": null,
+        "sigs": 442,
+        "url": "http://192.0.2.1:18501"
+      }
+    },
+    "node_batches_sum": 644,
+    "node_certs_sum": 482,
+    "gcp_ok": true,
+    "pass": true
+  },
+  "phase_b_kill_val3_agent": {
+    "elapsed_s": 38.17,
+    "exec_tps_min": 6.86,
+    "exec_delta": [
+      262,
+      262,
+      262
+    ],
+    "health": {
+      "exec_min": 1254,
+      "exec_max": 1254,
+      "exec_spread": 0,
+      "lag_max": 0,
+      "vals_up": 3,
+      "roots_agree": true,
+      "arch1_exec": 1254,
+      "arch2_exec": 1254
+    },
+    "stats": {
+      "gmp_ok": 560
+    },
+    "gmp_pending_after": 0,
+    "gcp_status": {
+      "certified": 190,
+      "open": 0,
+      "total": 190
+    },
+    "pass": true
+  },
+  "pass": true
+}

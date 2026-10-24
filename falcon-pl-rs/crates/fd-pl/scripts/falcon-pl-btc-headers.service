@@ -1,0 +1,19 @@
+[Unit]
+Description=Falcon PL 2300 Bitcoin header submitter (no vault key)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=falcon
+Environment=FPL_NETWORK_ID=2300
+Environment=FPL_RPC=127.0.0.1:19301,100.64.0.3:19303
+Environment=FPL_CTL=/home/falcon/falcon-pl-public-testnet-2300/bin/falcon-pl-ctl
+Environment=FPL_KEYS=/home/falcon/falcon-pl-public-testnet-2300/keys
+Restart=always
+RestartSec=10
+ExecStart=/usr/bin/python3 /home/falcon/falcon-pl/falcon-pl-rs/crates/fd-pl/scripts/pl-btc-header-submitter.py
+# This process submits headers only. It must never read vault-share-* files.
+
+[Install]
+WantedBy=multi-user.target

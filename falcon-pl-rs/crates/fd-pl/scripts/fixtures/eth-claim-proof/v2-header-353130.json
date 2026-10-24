@@ -1,0 +1,111 @@
+{
+  "_about": "Real data for the V2 header 353130 9-vs-10-leaf case. Nothing here is synthetic. test_pl_eth_claim_proof.py re-derives every leaf from the withdrawals and every root from the leaves.",
+  "header": {
+    "_source": "eth_call headers(uint64) selector 0x68b1487c, arg 353130, to FalconQcBridgeV2 0x811854827627024B38926Ea9DCc0f88ACd5fB23e on Sepolia via https://ethereum-sepolia-rpc.publicnode.com (walletd's default ETH_RPC) at block 11873910, read 2026-10-09 01:59:53 BST. fplTip() returned 353130 in the same read.",
+    "bridge": "0x811854827627024B38926Ea9DCc0f88ACd5fB23e",
+    "height": 353130,
+    "readAtBlock": 11873910,
+    "hash": "0xa782b02eb67f3fa6817c2110a3f905520a72a3b1028ac4e12f3df877321ccf51",
+    "parent": "0xe8753a185bc50aa059465a1b8c99f24f6ef34b2228c7eac3f8ad2b94325a1225",
+    "innerHash": "0x02b16b32362482d2703cbdf2ca37554618b3505c2b843604208083c756a891d8",
+    "claimRoot": "0x9671942a853984682f915a3418cc02d37ff19148692f117c149eeb34da86cfa5",
+    "nextCommitteeRoot": "0x072ed28506ae97f3aa6dfd64aa3002ae9a2ac532e4e03c2dad38653607d95f9d",
+    "finalized": true
+  },
+  "status": {
+    "_source": "falcon-pl-ctl status (the read path pl-eth-claim-proof.py uses) from seat v1 at tip_height 400214, product_version 2.9.60; saved read-only as /workspace/v2diag/ctlstatus.raw on the shared box, mtime 2026-10-09 01:55 BST, sha256 e241f246206eee5651f7b766c2c62a29a08bd3c7ad833465356af63f8b3e751d. Only the ETH/USDC claim fields are kept (withdrawal 'from' account names dropped). Cross-checks: the first 9 leaves hash to the on-chain header claimRoot above, all 10 hash to lc.claim_root, and each leaf equals withdrawLeaf(note_id, external_to, amount, isUsdc).",
+    "lc": {
+      "claim_root": "4146c6c66d0af773d804352b18e45d43e7efe429b2674c14a38e1273a6d1cfb1",
+      "claim_leaves": [
+        "76b5395cf7ce5aea0efc4ebc91fa2a271556cf1dd1cc5320c87636c58b2b93cf",
+        "6df0659464c33d7417b73274e783e85775d8147aa360fdae360c0c3ad03a9e79",
+        "b4830cd77bd0a082dfe341625f8da570472dcb7c38742222764cc18a08b62550",
+        "cf8e42f6abcf231f4b8de1800913ddc2f2d716fd2a7558304cf189f08c9fa11b",
+        "1b061cc22b7f3bbb3ef6fa9113833c6de5584bc614a70c2888c361bbaa9e1492",
+        "97e45879697573a3274f02dfedc90d958fb42297d0a173a51df09743eb0b1753",
+        "d5f551822609bbcd666b6d9c8742509ade9185e155a818d2989534cbbc11110f",
+        "ac880538e211b8872f119c4d6ca7d878e06b9ea3fdec444b3c6e9927527fc853",
+        "c41d5887058731141a68dc9fc5e3e3b2be08cc524b0b844f86d750e9bb98d87a",
+        "56e1e36f337f59091140ac7d4fd3416807451ec94f65bc25021e61edf1bc40b7"
+      ]
+    },
+    "rails": [
+      {
+        "asset": "ETH",
+        "claim_root": "c33fe806beefbc5dd29349da9d350f4c40db34d4e42521238a7094b7c8213720",
+        "claim_leaves": [
+          "76b5395cf7ce5aea0efc4ebc91fa2a271556cf1dd1cc5320c87636c58b2b93cf",
+          "6df0659464c33d7417b73274e783e85775d8147aa360fdae360c0c3ad03a9e79",
+          "b4830cd77bd0a082dfe341625f8da570472dcb7c38742222764cc18a08b62550",
+          "cf8e42f6abcf231f4b8de1800913ddc2f2d716fd2a7558304cf189f08c9fa11b",
+          "1b061cc22b7f3bbb3ef6fa9113833c6de5584bc614a70c2888c361bbaa9e1492"
+        ],
+        "withdrawals": [
+          {
+            "note_id": "05760deea01033660a80f38f70a4f361398dc1b4f72474ad9aa4e1fcd591089f",
+            "external_to": "0xDb52847EE70cEd3128f49309c3DC65b69d7466f4",
+            "amount": 1000000000000000
+          },
+          {
+            "note_id": "2c6600f856d7932fc602d47b52d82664e4692aaa39fc2359074b53480ca0e6cc",
+            "external_to": "0xa978781b96aFDFe5653BEFbE935F3C235795F5AE",
+            "amount": 5000000000000000
+          },
+          {
+            "note_id": "b3d78ce7d70b073b164cb7c8aa139cd224d4001bb07c0ee1aa5b7f24522a98b0",
+            "external_to": "0xa978781b96aFDFe5653BEFbE935F3C235795F5AE",
+            "amount": 1000000000000000
+          },
+          {
+            "note_id": "bb8a1517e7945d7a8f68191f2b1700921253674afe240019176d150e550e2ee4",
+            "external_to": "0x2E0630BB9339AC427feB2aaae31DFEf90fD1181e",
+            "amount": 1000000000000000
+          },
+          {
+            "note_id": "fb13ddc0bd773488cddbe9e067047a299a75c7a8e8e92240cc39383c9f4c2dc9",
+            "external_to": "0xDb52847EE70cEd3128f49309c3DC65b69d7466f4",
+            "amount": 1000000000000000
+          }
+        ]
+      },
+      {
+        "asset": "USDC",
+        "claim_root": "f0b2d7399fdf7e31d37aa7d001dfb29c4931f6931c916cfd5badc0ec397cf4e9",
+        "claim_leaves": [
+          "97e45879697573a3274f02dfedc90d958fb42297d0a173a51df09743eb0b1753",
+          "d5f551822609bbcd666b6d9c8742509ade9185e155a818d2989534cbbc11110f",
+          "ac880538e211b8872f119c4d6ca7d878e06b9ea3fdec444b3c6e9927527fc853",
+          "c41d5887058731141a68dc9fc5e3e3b2be08cc524b0b844f86d750e9bb98d87a",
+          "56e1e36f337f59091140ac7d4fd3416807451ec94f65bc25021e61edf1bc40b7"
+        ],
+        "withdrawals": [
+          {
+            "note_id": "8ff47f4a84b73ab15c3f13cbc253cb2037454e58b7560897de7e16b9ee6d62ba",
+            "external_to": "0xa978781b96aFDFe5653BEFbE935F3C235795F5AE",
+            "amount": 2000000
+          },
+          {
+            "note_id": "90d58e3c4d18cbff1e236c5281932b39316df424f048f64b810808761db4a605",
+            "external_to": "0xDb52847EE70cEd3128f49309c3DC65b69d7466f4",
+            "amount": 2000000
+          },
+          {
+            "note_id": "9c8717994691f133fad183379b88083d3a9fbafc8f0859d41f9885104260b647",
+            "external_to": "0xDb52847EE70cEd3128f49309c3DC65b69d7466f4",
+            "amount": 2000000
+          },
+          {
+            "note_id": "c3d31eff0c5c610b5e7caeaae20d7636b62e272a08be2e2a68f0874534860ddd",
+            "external_to": "0xDb52847EE70cEd3128f49309c3DC65b69d7466f4",
+            "amount": 2000000
+          },
+          {
+            "note_id": "f43f5db6d119e50f509f2c3b3b85e9565e9f82f89a951d33e089b26d29b39c25",
+            "external_to": "0x722b793432e8c36B54764eF42414FE1984F0c24D",
+            "amount": 100000000
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,2236 @@
+{
+  "suite": "phase_a_scale_n_curve",
+  "goal": "exec_tps_min increases as packing N grows (honest multi-host)",
+  "transport": "LAN",
+  "knobs": {
+    "admit_ahead": 2000,
+    "max_uncert": 8,
+    "max_batch_txs": 64,
+    "pack_open": 0,
+    "crypto": "falcon-512",
+    "unl_threshold": 0.6
+  },
+  "results": [
+    {
+      "n": 2,
+      "network_id": 9222,
+      "placement": {
+        "f1": [
+          1
+        ],
+        "f2": [
+          2
+        ]
+      },
+      "phases": [
+        {
+          "label": "warm",
+          "n": 2,
+          "target_rate": 10,
+          "hold_s": 15,
+          "workers": 4,
+          "elapsed_s": 17.04,
+          "ok": 150,
+          "busy": 0,
+          "err": 0,
+          "err_codes": {},
+          "submits_by_owner": {
+            "val1": 74,
+            "val2": 76
+          },
+          "submit_tps": 8.8,
+          "exec_delta": {
+            "val1": 150,
+            "val2": 150
+          },
+          "exec_delta_min": 150,
+          "exec_delta_max": 150,
+          "exec_tps_min": 8.8,
+          "exec_tps_max": 8.8,
+          "health_before": {
+            "exec_min": 0,
+            "exec_max": 0,
+            "exec_spread": 0,
+            "lag_max": 0,
+            "vals_up": 2,
+            "roots_agree": true,
+            "arch1_exec": 0,
+            "arch2_exec": 0
+          },
+          "health_after": {
+            "exec_min": 150,
+            "exec_max": 150,
+            "exec_spread": 0,
+            "lag_max": 0,
+            "vals_up": 2,
+            "roots_agree": true,
+            "arch1_exec": 150,
+            "arch2_exec": 150
+          },
+          "lag_after": 0,
+          "spread_after": 0,
+          "snap_after": {
+            "val1": {
+              "exec": 150,
+              "lag": 0,
+              "certified": 31,
+              "batches": 15,
+              "mempool": 0,
+              "uncertified": 0,
+              "p2p": 6,
+              "root": "276e7b7f83788e99",
+              "admits": 74
+            },
+            "val2": {
+              "exec": 150,
+              "lag": 0,
+              "certified": 31,
+              "batches": 15,
+              "mempool": 0,
+              "uncertified": 0,
+              "p2p": 6,
+              "root": "276e7b7f83788e99",
+              "admits": 76
+            },
+            "arch1": {
+              "exec": 150,
+              "lag": 0,
+              "certified": 31,
+              "batches": 0,
+              "profile": "archival",
+              "root": "276e7b7f83788e99"
+            },
+            "arch2": {
+              "exec": 150,
+              "lag": 0,
+              "certified": 31,
+              "batches": 0,
+              "profile": "archival",
+              "root": "276e7b7f83788e99"
+            }
+          },
+          "pass_tight": true
+        },
+        {
+          "label": "light",
+          "n": 2,
+          "target_rate": 25,
+          "hold_s": 20,
+          "workers": 8,
+          "elapsed_s": 22.04,
+          "ok": 500,
+          "busy": 0,
+          "err": 0,
+          "err_codes": {},
+          "submits_by_owner": {
+            "val1": 250,
+            "val2": 250
+          },
+          "submit_tps": 22.69,
+          "exec_delta": {
+            "val1": 500,
+            "val2": 500
+          },
+          "exec_delta_min": 500,
+          "exec_delta_max": 500,
+          "exec_tps_min": 22.69,
+          "exec_tps_max": 22.69,
+          "health_before": {
+            "exec_min": 150,
+            "exec_max": 150,
+            "exec_spread": 0,
+            "lag_max": 0,
+            "vals_up": 2,
+            "roots_agree": true,
+            "arch1_exec": 150,
+            "arch2_exec": 150
+          },
+          "health_after": {
+            "exec_min": 650,
+            "exec_max": 650,
+            "exec_spread": 0,
+            "lag_max": 0,
+            "vals_up": 2,
+            "roots_agree": true,
+            "arch1_exec": 650,
+            "arch2_exec": 650
+          },
+          "lag_after": 0,
+          "spread_after": 0,
+          "snap_after": {
+            "val1": {
+              "exec": 650,
+              "lag": 0,
+              "certified": 73,
+              "batches": 37,
+              "mempool": 0,
+              "uncertified": 0,
+              "p2p": 6,
+              "root": "23f9e7ef2e0cf422",
+              "admits": 324
+            },
+            "val2": {
+              "exec": 650,
+              "lag": 0,
+              "certified": 73,
+              "batches": 35,
+              "mempool": 0,
+              "uncertified": 0,
+              "p2p": 6,
+              "root": "23f9e7ef2e0cf422",
+              "admits": 326
+            },
+            "arch1": {
+              "exec": 650,
+              "lag": 0,
+              "certified": 73,
+              "batches": 0,
+              "profile": "archival",
+              "root": "23f9e7ef2e0cf422"
+            },
+            "arch2": {
+              "exec": 650,
+              "lag": 0,
+              "certified": 73,
+              "batches": 0,
+              "profile": "archival",
+              "root": "23f9e7ef2e0cf422"
+            }
+          },
+          "pass_tight": true
+        },
+        {
+          "label": "med",
+          "n": 2,
+          "target_rate": 50,
+          "hold_s": 25,
+          "workers": 12,
+          "elapsed_s": 27.14,
+          "ok": 1250,
+          "busy": 0,
+          "err": 0,
+          "err_codes": {},
+          "submits_by_owner": {
+            "val1": 626,
+            "val2": 624
+          },
+          "submit_tps": 46.06,
+          "exec_delta": {
+            "val1": 1175,
+            "val2": 1116
+          },
+          "exec_delta_min": 1116,
+          "exec_delta_max": 1175,
+          "exec_tps_min": 41.13,
+          "exec_tps_max": 43.3,
+          "health_before": {
+            "exec_min": 650,
+            "exec_max": 650,
+            "exec_spread": 0,
+            "lag_max": 0,
+            "vals_up": 2,
+            "roots_agree": true,
+            "arch1_exec": 650,
+            "arch2_exec": 650
+          },
+          "health_after": {
+            "exec_min": 1766,
+            "exec_max": 1825,
+            "exec_spread": 59,
+            "lag_max": 0,
+            "vals_up": 2,
+            "roots_agree": false,
+            "arch1_exec": 1825,
+            "arch2_exec": 1825
+          },
+          "lag_after": 0,
+          "spread_after": 59,
+          "snap_after": {
+            "val1": {
+              "exec": 1825,
+              "lag": 0,
+              "certified": 148,
+              "batches": 76,
+              "mempool": 11,
+              "uncertified": 1,
+              "p2p": 6,
+              "root": "dc08b02fdf418afd",
+              "admits": 950
+            },
+            "val2": {
+              "exec": 1766,
+              "lag": 0,
+              "certified": 147,
+              "batches": 72,
+              "mempool": 0,
+              "uncertified": 1,
+              "p2p": 6,
+              "root": "3e0430d97d6a3a07",
+              "admits": 950
+            },
+            "arch1": {
+              "exec": 1825,
+              "lag": 0,
+              "certified": 148,
+              "batches": 0,
+              "profile": "archival",
+              "root": "dc08b02fdf418afd"
+            },
+            "arch2": {
+              "exec": 1825,
+              "lag": 0,
+              "certified": 148,
+              "batches": 0,
+              "profile": "archival",
+              "root": "dc08b02fdf418afd"
+            }
+          },
+          "pass_tight": true
+        },
+        {
+          "label": "mid",
+          "n": 2,
+          "target_rate": 80,
+          "hold_s": 25,
+          "workers": 16,
+          "elapsed_s": 27.21,
+          "ok": 1169,
+          "busy": 831,
+          "err": 0,
+          "err_codes": {},
+          "submits_by_owner": {
+            "val1": 576,
+            "val2": 593
+          },
+          "submit_tps": 42.96,
+          "exec_delta": {
+            "val1": 198,
+            "val2": 134
+          },
+          "exec_delta_min": 134,
+          "exec_delta_max": 198,
+          "exec_tps_min": 4.92,
+          "exec_tps_max": 7.28,
+          "health_before": {
+            "exec_min": 1825,
+            "exec_max": 1830,
+            "exec_spread": 5,
+            "lag_max": 0,
+            "vals_up": 2,
+            "roots_agree": false,
+            "arch1_exec": 1825,
+            "arch2_exec": 1889
+          },
+          "health_after": {
+            "exec_min": 1964,
+            "exec_max": 2023,
+            "exec_spread": 59,
+            "lag_max": 0,
+            "vals_up": 2,
+            "roots_agree": false,
+            "arch1_exec": 2023,
+            "arch2_exec": 2023
+          },
+          "lag_after": 0,
+          "spread_after": 59,
+          "snap_after": {
+            "val1": {
+              "exec": 2023,
+              "lag": 0,
+              "certified": 153,
+              "batches": 80,
+              "mempool": 512,
+              "uncertified": 1,
+              "p2p": 6,
+              "root": "1386b87df15254b7",
+              "admits": 1526
+            },
+            "val2": {
+              "exec": 1964,
+              "lag": 0,
+              "certified": 151,
+              "batches": 75,
+              "mempool": 483,
+              "uncertified": 1,
+              "p2p": 6,
+              "root": "52ef94b0777666e7",
+              "admits": 1543
+            },
+            "arch1": {
+              "exec": 2023,
+              "lag": 0,
+              "certified": 153,
+              "batches": 0,
+              "profile": "archival",
+              "root": "1386b87df15254b7"
+            },
+            "arch2": {
+              "exec": 2023,
+              "lag": 0,
+              "certified": 153,
+              "batches": 0,
+              "profile": "archival",
+              "root": "1386b87df15254b7"
+            }
+          },
+          "pass_tight": false
+        }
+      ],
+      "final_health": {
+        "exec_min": 2028,
+        "exec_max": 2092,
+        "exec_spread": 64,
+        "lag_max": 0,
+        "vals_up": 2,
+        "roots_agree": false,
+        "arch1_exec": 2092,
+        "arch2_exec": 2092
+      },
+      "final_snap": {
+        "val1": {
+          "exec": 2092,
+          "lag": 0,
+          "certified": 156,
+          "batches": 81,
+          "mempool": 486,
+          "uncertified": 1,
+          "p2p": 6,
+          "root": "f0ae68fde979522c",
+          "admits": 1526
+        },
+        "val2": {
+          "exec": 2028,
+          "lag": 0,
+          "certified": 152,
+          "batches": 77,
+          "mempool": 465,
+          "uncertified": 1,
+          "p2p": 6,
+          "root": "45a3cca5c655959a",
+          "admits": 1543
+        },
+        "arch1": {
+          "exec": 2092,
+          "lag": 0,
+          "certified": 156,
+          "batches": 0,
+          "profile": "archival",
+          "root": "f0ae68fde979522c"
+        },
+        "arch2": {
+          "exec": 2092,
+          "lag": 0,
+          "certified": 156,
+          "batches": 0,
+          "profile": "archival",
+          "root": "f0ae68fde979522c"
+        }
+      },
+      "best_exec_tps_min": 41.13,
+      "best_exec_phase": "med",
+      "best_tight_tps_min": 41.13,
+      "best_tight_phase": "med",
+      "any_tight_pass": true
+    },
+    {
+      "n": 3,
+      "network_id": 9223,
+      "placement": {
+        "f1": [
+          1,
+          2
+        ],
+        "f2": [
+          3
+        ]
+      },
+      "phases": [
+        {
+          "label": "warm",
+          "n": 3,
+          "target_rate": 10,
+          "hold_s": 15,
+          "workers": 4,
+          "elapsed_s": 17.03,
+          "ok": 150,
+          "busy": 0,
+          "err": 0,
+          "err_codes": {},
+          "submits_by_owner": {
+            "val1": 45,
+            "val2": 49,
+            "val3": 56
+          },
+          "submit_tps": 8.81,
+          "exec_delta": {
+            "val1": 150,
+            "val2": 150,
+            "val3": 150
+          },
+          "exec_delta_min": 150,
+          "exec_delta_max": 150,
+          "exec_tps_min": 8.81,
+          "exec_tps_max": 8.81,
+          "health_before": {
+            "exec_min": 0,
+            "exec_max": 0,
+            "exec_spread": 0,
+            "lag_max": 0,
+            "vals_up": 3,
+            "roots_agree": true,
+            "arch1_exec": 0,
+            "arch2_exec": 0
+          },
+          "health_after": {
+            "exec_min": 150,
+            "exec_max": 150,
+            "exec_spread": 0,
+            "lag_max": 0,
+            "vals_up": 3,
+            "roots_agree": true,
+            "arch1_exec": 150,
+            "arch2_exec": 150
+          },
+          "lag_after": 0,
+          "spread_after": 0,
+          "snap_after": {
+            "val1": {
+              "exec": 150,
+              "lag": 0,
+              "certified": 46,
+              "batches": 15,
+              "mempool": 0,
+              "uncertified": 0,
+              "p2p": 8,
+              "root": "32075076ee4c7f0b",
+              "admits": 45
+            },
+            "val2": {
+              "exec": 150,
+              "lag": 0,
+              "certified": 46,
+              "batches": 15,
+              "mempool": 0,
+              "uncertified": 0,
+              "p2p": 8,
+              "root": "32075076ee4c7f0b",
+              "admits": 49
+            },
+            "val3": {
+              "exec": 150,
+              "lag": 0,
+              "certified": 46,
+              "batches": 15,
+              "mempool": 0,
+              "uncertified": 0,
+              "p2p": 8,
+              "root": "32075076ee4c7f0b",
+              "admits": 56
+            },
+            "arch1": {
+              "exec": 150,
+              "lag": 0,
+              "certified": 46,
+              "batches": 0,
+              "profile": "archival",
+              "root": "32075076ee4c7f0b"
+            },
+            "arch2": {
+              "exec": 150,
+              "lag": 0,
+              "certified": 46,
+              "batches": 0,
+              "profile": "archival",
+              "root": "32075076ee4c7f0b"
+            }
+          },
+          "pass_tight": true
+        },
+        {
+          "label": "light",
+          "n": 3,
+          "target_rate": 25,
+          "hold_s": 20,
+          "workers": 8,
+          "elapsed_s": 22.03,
+          "ok": 500,
+          "busy": 0,
+          "err": 0,
+          "err_codes": {},
+          "submits_by_owner": {
+            "val1": 148,
+            "val2": 164,
+            "val3": 188
+          },
+          "submit_tps": 22.7,
+          "exec_delta": {
+            "val1": 500,
+            "val2": 500,
+            "val3": 500
+          },
+          "exec_delta_min": 500,
+          "exec_delta_max": 500,
+          "exec_tps_min": 22.7,
+          "exec_tps_max": 22.7,
+          "health_before": {
+            "exec_min": 150,
+            "exec_max": 150,
+            "exec_spread": 0,
+            "lag_max": 0,
+            "vals_up": 3,
+            "roots_agree": true,
+            "arch1_exec": 150,
+            "arch2_exec": 150
+          },
+          "health_after": {
+            "exec_min": 650,
+            "exec_max": 650,
+            "exec_spread": 0,
+            "lag_max": 0,
+            "vals_up": 3,
+            "roots_agree": true,
+            "arch1_exec": 650,
+            "arch2_exec": 650
+          },
+          "lag_after": 0,
+          "spread_after": 0,
+          "snap_after": {
+            "val1": {
+              "exec": 650,
+              "lag": 0,
+              "certified": 104,
+              "batches": 33,
+              "mempool": 0,
+              "uncertified": 0,
+              "p2p": 8,
+              "root": "9cbc8afd5312dcc5",
+              "admits": 193
+            },
+            "val2": {
+              "exec": 650,
+              "lag": 0,
+              "certified": 104,
+              "batches": 35,
+              "mempool": 0,
+              "uncertified": 0,
+              "p2p": 8,
+              "root": "9cbc8afd5312dcc5",
+              "admits": 213
+            },
+            "val3": {
+              "exec": 650,
+              "lag": 0,
+              "certified": 104,
+              "batches": 35,
+              "mempool": 0,
+              "uncertified": 0,
+              "p2p": 8,
+              "root": "9cbc8afd5312dcc5",
+              "admits": 244
+            },
+            "arch1": {
+              "exec": 650,
+              "lag": 0,
+              "certified": 104,
+              "batches": 0,
+              "profile": "archival",
+              "root": "9cbc8afd5312dcc5"
+            },
+            "arch2": {
+              "exec": 650,
+              "lag": 0,
+              "certified": 104,
+              "batches": 0,
+              "profile": "archival",
+              "root": "9cbc8afd5312dcc5"
+            }
+          },
+          "pass_tight": true
+        },
+        {
+          "label": "med",
+          "n": 3,
+          "target_rate": 50,
+          "hold_s": 25,
+          "workers": 12,
+          "elapsed_s": 27.04,
+          "ok": 1250,
+          "busy": 0,
+          "err": 0,
+          "err_codes": {},
+          "submits_by_owner": {
+            "val1": 375,
+            "val2": 406,
+            "val3": 469
+          },
+          "submit_tps": 46.22,
+          "exec_delta": {
+            "val1": 1250,
+            "val2": 1250,
+            "val3": 1250
+          },
+          "exec_delta_min": 1250,
+          "exec_delta_max": 1250,
+          "exec_tps_min": 46.22,
+          "exec_tps_max": 46.22,
+          "health_before": {
+            "exec_min": 650,
+            "exec_max": 650,
+            "exec_spread": 0,
+            "lag_max": 0,
+            "vals_up": 3,
+            "roots_agree": true,
+            "arch1_exec": 650,
+            "arch2_exec": 650
+          },
+          "health_after": {
+            "exec_min": 1900,
+            "exec_max": 1900,
+            "exec_spread": 0,
+            "lag_max": 0,
+            "vals_up": 3,
+            "roots_agree": true,
+            "arch1_exec": 1900,
+            "arch2_exec": 1900
+          },
+          "lag_after": 0,
+          "spread_after": 0,
+          "snap_after": {
+            "val1": {
+              "exec": 1900,
+              "lag": 0,
+              "certified": 179,
+              "batches": 55,
+              "mempool": 0,
+              "uncertified": 0,
+              "p2p": 8,
+              "root": "ed8bba6639f8aa46",
+              "admits": 568
+            },
+            "val2": {
+              "exec": 1900,
+              "lag": 0,
+              "certified": 179,
+              "batches": 61,
+              "mempool": 0,
+              "uncertified": 0,
+              "p2p": 8,
+              "root": "ed8bba6639f8aa46",
+              "admits": 619
+            },
+            "val3": {
+              "exec": 1900,
+              "lag": 0,
+              "certified": 179,
+              "batches": 62,
+              "mempool": 0,
+              "uncertified": 0,
+              "p2p": 8,
+              "root": "ed8bba6639f8aa46",
+              "admits": 713
+            },
+            "arch1": {
+              "exec": 1900,
+              "lag": 0,
+              "certified": 179,
+              "batches": 0,
+              "profile": "archival",
+              "root": "ed8bba6639f8aa46"
+            },
+            "arch2": {
+              "exec": 1900,
+              "lag": 0,
+              "certified": 179,
+              "batches": 0,
+              "profile": "archival",
+              "root": "ed8bba6639f8aa46"
+            }
+          },
+          "pass_tight": true
+        },
+        {
+          "label": "mid",
+          "n": 3,
+          "target_rate": 80,
+          "hold_s": 25,
+          "workers": 16,
+          "elapsed_s": 27.55,
+          "ok": 2000,
+          "busy": 0,
+          "err": 0,
+          "err_codes": {},
+          "submits_by_owner": {
+            "val1": 600,
+            "val2": 650,
+            "val3": 750
+          },
+          "submit_tps": 72.59,
+          "exec_delta": {
+            "val1": 1653,
+            "val2": 1653,
+            "val3": 1293
+          },
+          "exec_delta_min": 1293,
+          "exec_delta_max": 1653,
+          "exec_tps_min": 46.93,
+          "exec_tps_max": 60.0,
+          "health_before": {
+            "exec_min": 1900,
+            "exec_max": 1900,
+            "exec_spread": 0,
+            "lag_max": 0,
+            "vals_up": 3,
+            "roots_agree": true,
+            "arch1_exec": 1900,
+            "arch2_exec": 1900
+          },
+          "health_after": {
+            "exec_min": 3193,
+            "exec_max": 3553,
+            "exec_spread": 360,
+            "lag_max": 0,
+            "vals_up": 3,
+            "roots_agree": false,
+            "arch1_exec": 3553,
+            "arch2_exec": 3553
+          },
+          "lag_after": 0,
+          "spread_after": 360,
+          "snap_after": {
+            "val1": {
+              "exec": 3553,
+              "lag": 0,
+              "certified": 254,
+              "batches": 88,
+              "mempool": 0,
+              "uncertified": 0,
+              "p2p": 8,
+              "root": "a67823e79d05b61a",
+              "admits": 1168
+            },
+            "val2": {
+              "exec": 3553,
+              "lag": 0,
+              "certified": 254,
+              "batches": 91,
+              "mempool": 0,
+              "uncertified": 0,
+              "p2p": 8,
+              "root": "a67823e79d05b61a",
+              "admits": 1269
+            },
+            "val3": {
+              "exec": 3193,
+              "lag": 0,
+              "certified": 243,
+              "batches": 74,
+              "mempool": 347,
+              "uncertified": 1,
+              "p2p": 8,
+              "root": "83fb112d57945fc7",
+              "admits": 1463
+            },
+            "arch1": {
+              "exec": 3553,
+              "lag": 0,
+              "certified": 254,
+              "batches": 0,
+              "profile": "archival",
+              "root": "a67823e79d05b61a"
+            },
+            "arch2": {
+              "exec": 3553,
+              "lag": 0,
+              "certified": 254,
+              "batches": 0,
+              "profile": "archival",
+              "root": "a67823e79d05b61a"
+            }
+          },
+          "pass_tight": false
+        }
+      ],
+      "final_health": {
+        "exec_min": 3681,
+        "exec_max": 3681,
+        "exec_spread": 0,
+        "lag_max": 0,
+        "vals_up": 3,
+        "roots_agree": true,
+        "arch1_exec": 3681,
+        "arch2_exec": 3681
+      },
+      "final_snap": {
+        "val1": {
+          "exec": 3681,
+          "lag": 0,
+          "certified": 256,
+          "batches": 88,
+          "mempool": 0,
+          "uncertified": 0,
+          "p2p": 8,
+          "root": "11a67d7c7c3b5b51",
+          "admits": 1168
+        },
+        "val2": {
+          "exec": 3681,
+          "lag": 0,
+          "certified": 256,
+          "batches": 91,
+          "mempool": 0,
+          "uncertified": 0,
+          "p2p": 8,
+          "root": "11a67d7c7c3b5b51",
+          "admits": 1269
+        },
+        "val3": {
+          "exec": 3681,
+          "lag": 0,
+          "certified": 256,
+          "batches": 76,
+          "mempool": 219,
+          "uncertified": 0,
+          "p2p": 8,
+          "root": "11a67d7c7c3b5b51",
+          "admits": 1463
+        },
+        "arch1": {
+          "exec": 3681,
+          "lag": 0,
+          "certified": 256,
+          "batches": 0,
+          "profile": "archival",
+          "root": "11a67d7c7c3b5b51"
+        },
+        "arch2": {
+          "exec": 3681,
+          "lag": 0,
+          "certified": 256,
+          "batches": 0,
+          "profile": "archival",
+          "root": "11a67d7c7c3b5b51"
+        }
+      },
+      "best_exec_tps_min": 46.93,
+      "best_exec_phase": "mid",
+      "best_tight_tps_min": 46.22,
+      "best_tight_phase": "med",
+      "any_tight_pass": true
+    },
+    {
+      "n": 4,
+      "network_id": 9224,
+      "placement": {
+        "f1": [
+          1,
+          2
+        ],
+        "f2": [
+          3,
+          4
+        ]
+      },
+      "phases": [
+        {
+          "label": "warm",
+          "n": 4,
+          "target_rate": 10,
+          "hold_s": 15,
+          "workers": 4,
+          "elapsed_s": 17.09,
+          "ok": 150,
+          "busy": 0,
+          "err": 0,
+          "err_codes": {},
+          "submits_by_owner": {
+            "val1": 38,
+            "val2": 38,
+            "val3": 36,
+            "val4": 38
+          },
+          "submit_tps": 8.78,
+          "exec_delta": {
+            "val1": 150,
+            "val2": 150,
+            "val3": 150,
+            "val4": 150
+          },
+          "exec_delta_min": 150,
+          "exec_delta_max": 150,
+          "exec_tps_min": 8.78,
+          "exec_tps_max": 8.78,
+          "health_before": {
+            "exec_min": 0,
+            "exec_max": 0,
+            "exec_spread": 0,
+            "lag_max": 0,
+            "vals_up": 4,
+            "roots_agree": true,
+            "arch1_exec": 0,
+            "arch2_exec": 0
+          },
+          "health_after": {
+            "exec_min": 150,
+            "exec_max": 150,
+            "exec_spread": 0,
+            "lag_max": 0,
+            "vals_up": 4,
+            "roots_agree": true,
+            "arch1_exec": 150,
+            "arch2_exec": 150
+          },
+          "lag_after": 0,
+          "spread_after": 0,
+          "snap_after": {
+            "val1": {
+              "exec": 150,
+              "lag": 0,
+              "certified": 54,
+              "batches": 16,
+              "mempool": 0,
+              "uncertified": 0,
+              "p2p": 10,
+              "root": "b095d2c1f9676aad",
+              "admits": 38
+            },
+            "val2": {
+              "exec": 150,
+              "lag": 0,
+              "certified": 54,
+              "batches": 14,
+              "mempool": 0,
+              "uncertified": 0,
+              "p2p": 10,
+              "root": "b095d2c1f9676aad",
+              "admits": 38
+            },
+            "val3": {
+              "exec": 150,
+              "lag": 0,
+              "certified": 54,
+              "batches": 15,
+              "mempool": 0,
+              "uncertified": 0,
+              "p2p": 10,
+              "root": "b095d2c1f9676aad",
+              "admits": 36
+            },
+            "val4": {
+              "exec": 150,
+              "lag": 0,
+              "certified": 54,
+              "batches": 8,
+              "mempool": 0,
+              "uncertified": 0,
+              "p2p": 10,
+              "root": "b095d2c1f9676aad",
+              "admits": 38
+            },
+            "arch1": {
+              "exec": 150,
+              "lag": 0,
+              "certified": 54,
+              "batches": 0,
+              "profile": "archival",
+              "root": "b095d2c1f9676aad"
+            },
+            "arch2": {
+              "exec": 150,
+              "lag": 0,
+              "certified": 54,
+              "batches": 0,
+              "profile": "archival",
+              "root": "b095d2c1f9676aad"
+            }
+          },
+          "pass_tight": true
+        },
+        {
+          "label": "light",
+          "n": 4,
+          "target_rate": 25,
+          "hold_s": 20,
+          "workers": 8,
+          "elapsed_s": 22.27,
+          "ok": 500,
+          "busy": 0,
+          "err": 0,
+          "err_codes": {},
+          "submits_by_owner": {
+            "val1": 124,
+            "val2": 125,
+            "val3": 126,
+            "val4": 125
+          },
+          "submit_tps": 22.45,
+          "exec_delta": {
+            "val1": 500,
+            "val2": 500,
+            "val3": 500,
+            "val4": 500
+          },
+          "exec_delta_min": 500,
+          "exec_delta_max": 500,
+          "exec_tps_min": 22.45,
+          "exec_tps_max": 22.45,
+          "health_before": {
+            "exec_min": 150,
+            "exec_max": 150,
+            "exec_spread": 0,
+            "lag_max": 0,
+            "vals_up": 4,
+            "roots_agree": true,
+            "arch1_exec": 150,
+            "arch2_exec": 150
+          },
+          "health_after": {
+            "exec_min": 650,
+            "exec_max": 650,
+            "exec_spread": 0,
+            "lag_max": 0,
+            "vals_up": 4,
+            "roots_agree": true,
+            "arch1_exec": 650,
+            "arch2_exec": 650
+          },
+          "lag_after": 0,
+          "spread_after": 0,
+          "snap_after": {
+            "val1": {
+              "exec": 650,
+              "lag": 0,
+              "certified": 129,
+              "batches": 36,
+              "mempool": 0,
+              "uncertified": 0,
+              "p2p": 10,
+              "root": "05743809fa18757a",
+              "admits": 162
+            },
+            "val2": {
+              "exec": 650,
+              "lag": 0,
+              "certified": 129,
+              "batches": 34,
+              "mempool": 0,
+              "uncertified": 0,
+              "p2p": 10,
+              "root": "05743809fa18757a",
+              "admits": 163
+            },
+            "val3": {
+              "exec": 650,
+              "lag": 0,
+              "certified": 129,
+              "batches": 32,
+              "mempool": 0,
+              "uncertified": 0,
+              "p2p": 10,
+              "root": "05743809fa18757a",
+              "admits": 162
+            },
+            "val4": {
+              "exec": 650,
+              "lag": 0,
+              "certified": 129,
+              "batches": 26,
+              "mempool": 0,
+              "uncertified": 0,
+              "p2p": 10,
+              "root": "05743809fa18757a",
+              "admits": 163
+            },
+            "arch1": {
+              "exec": 650,
+              "lag": 0,
+              "certified": 129,
+              "batches": 0,
+              "profile": "archival",
+              "root": "05743809fa18757a"
+            },
+            "arch2": {
+              "exec": 650,
+              "lag": 0,
+              "certified": 129,
+              "batches": 0,
+              "profile": "archival",
+              "root": "05743809fa18757a"
+            }
+          },
+          "pass_tight": true
+        },
+        {
+          "label": "med",
+          "n": 4,
+          "target_rate": 50,
+          "hold_s": 25,
+          "workers": 12,
+          "elapsed_s": 27.62,
+          "ok": 1250,
+          "busy": 0,
+          "err": 0,
+          "err_codes": {},
+          "submits_by_owner": {
+            "val1": 314,
+            "val2": 312,
+            "val3": 312,
+            "val4": 312
+          },
+          "submit_tps": 45.26,
+          "exec_delta": {
+            "val1": 1054,
+            "val2": 1054,
+            "val3": 1054,
+            "val4": 1054
+          },
+          "exec_delta_min": 1054,
+          "exec_delta_max": 1054,
+          "exec_tps_min": 38.16,
+          "exec_tps_max": 38.16,
+          "health_before": {
+            "exec_min": 650,
+            "exec_max": 650,
+            "exec_spread": 0,
+            "lag_max": 0,
+            "vals_up": 4,
+            "roots_agree": true,
+            "arch1_exec": 650,
+            "arch2_exec": 650
+          },
+          "health_after": {
+            "exec_min": 1704,
+            "exec_max": 1704,
+            "exec_spread": 0,
+            "lag_max": 0,
+            "vals_up": 4,
+            "roots_agree": true,
+            "arch1_exec": 1704,
+            "arch2_exec": 1704
+          },
+          "lag_after": 0,
+          "spread_after": 0,
+          "snap_after": {
+            "val1": {
+              "exec": 1704,
+              "lag": 0,
+              "certified": 211,
+              "batches": 57,
+              "mempool": 38,
+              "uncertified": 2,
+              "p2p": 10,
+              "root": "e81f63c57fc51008",
+              "admits": 476
+            },
+            "val2": {
+              "exec": 1704,
+              "lag": 0,
+              "certified": 211,
+              "batches": 56,
+              "mempool": 52,
+              "uncertified": 2,
+              "p2p": 10,
+              "root": "e81f63c57fc51008",
+              "admits": 475
+            },
+            "val3": {
+              "exec": 1704,
+              "lag": 0,
+              "certified": 211,
+              "batches": 52,
+              "mempool": 14,
+              "uncertified": 2,
+              "p2p": 10,
+              "root": "e81f63c57fc51008",
+              "admits": 474
+            },
+            "val4": {
+              "exec": 1704,
+              "lag": 0,
+              "certified": 211,
+              "batches": 47,
+              "mempool": 31,
+              "uncertified": 2,
+              "p2p": 10,
+              "root": "e81f63c57fc51008",
+              "admits": 475
+            },
+            "arch1": {
+              "exec": 1704,
+              "lag": 0,
+              "certified": 211,
+              "batches": 0,
+              "profile": "archival",
+              "root": "e81f63c57fc51008"
+            },
+            "arch2": {
+              "exec": 1704,
+              "lag": 0,
+              "certified": 211,
+              "batches": 0,
+              "profile": "archival",
+              "root": "e81f63c57fc51008"
+            }
+          },
+          "pass_tight": true
+        },
+        {
+          "label": "mid",
+          "n": 4,
+          "target_rate": 80,
+          "hold_s": 25,
+          "workers": 16,
+          "elapsed_s": 27.77,
+          "ok": 1520,
+          "busy": 0,
+          "err": 0,
+          "err_codes": {},
+          "submits_by_owner": {
+            "val1": 380,
+            "val2": 380,
+            "val3": 380,
+            "val4": 380
+          },
+          "submit_tps": 54.74,
+          "exec_delta": {
+            "val1": 984,
+            "val2": 958,
+            "val3": 920,
+            "val4": 920
+          },
+          "exec_delta_min": 920,
+          "exec_delta_max": 984,
+          "exec_tps_min": 33.13,
+          "exec_tps_max": 35.44,
+          "health_before": {
+            "exec_min": 1810,
+            "exec_max": 1810,
+            "exec_spread": 0,
+            "lag_max": 0,
+            "vals_up": 4,
+            "roots_agree": true,
+            "arch1_exec": 1810,
+            "arch2_exec": 1810
+          },
+          "health_after": {
+            "exec_min": 2730,
+            "exec_max": 2794,
+            "exec_spread": 64,
+            "lag_max": 0,
+            "vals_up": 4,
+            "roots_agree": false,
+            "arch1_exec": 2666,
+            "arch2_exec": 2730
+          },
+          "lag_after": 0,
+          "spread_after": 64,
+          "snap_after": {
+            "val1": {
+              "exec": 2794,
+              "lag": 0,
+              "certified": 236,
+              "batches": 63,
+              "mempool": 188,
+              "uncertified": 0,
+              "p2p": 10,
+              "root": "acf927fbd9bf0268",
+              "admits": 856
+            },
+            "val2": {
+              "exec": 2768,
+              "lag": 0,
+              "certified": 235,
+              "batches": 63,
+              "mempool": 44,
+              "uncertified": 2,
+              "p2p": 10,
+              "root": "7ce8831e0e6cd11a",
+              "admits": 855
+            },
+            "val3": {
+              "exec": 2730,
+              "lag": 0,
+              "certified": 235,
+              "batches": 58,
+              "mempool": 108,
+              "uncertified": 2,
+              "p2p": 10,
+              "root": "7591040020e2fb84",
+              "admits": 854
+            },
+            "val4": {
+              "exec": 2730,
+              "lag": 0,
+              "certified": 235,
+              "batches": 53,
+              "mempool": 158,
+              "uncertified": 2,
+              "p2p": 10,
+              "root": "7591040020e2fb84",
+              "admits": 855
+            },
+            "arch1": {
+              "exec": 2666,
+              "lag": 0,
+              "certified": 234,
+              "batches": 0,
+              "profile": "archival",
+              "root": "3e93449a307580c0"
+            },
+            "arch2": {
+              "exec": 2730,
+              "lag": 0,
+              "certified": 235,
+              "batches": 0,
+              "profile": "archival",
+              "root": "7591040020e2fb84"
+            }
+          },
+          "pass_tight": true
+        }
+      ],
+      "final_health": {
+        "exec_min": 2986,
+        "exec_max": 3114,
+        "exec_spread": 128,
+        "lag_max": 0,
+        "vals_up": 4,
+        "roots_agree": false,
+        "arch1_exec": 2666,
+        "arch2_exec": 2986
+      },
+      "final_snap": {
+        "val1": {
+          "exec": 3114,
+          "lag": 0,
+          "certified": 241,
+          "batches": 64,
+          "mempool": 124,
+          "uncertified": 0,
+          "p2p": 10,
+          "root": "ba1aa9aeaaf28234",
+          "admits": 856
+        },
+        "val2": {
+          "exec": 3114,
+          "lag": 0,
+          "certified": 241,
+          "batches": 63,
+          "mempool": 44,
+          "uncertified": 0,
+          "p2p": 10,
+          "root": "ba1aa9aeaaf28234",
+          "admits": 855
+        },
+        "val3": {
+          "exec": 2986,
+          "lag": 0,
+          "certified": 239,
+          "batches": 59,
+          "mempool": 44,
+          "uncertified": 2,
+          "p2p": 10,
+          "root": "c154bf82e7be2c24",
+          "admits": 854
+        },
+        "val4": {
+          "exec": 3050,
+          "lag": 0,
+          "certified": 240,
+          "batches": 55,
+          "mempool": 30,
+          "uncertified": 2,
+          "p2p": 10,
+          "root": "2afcff0872c20a53",
+          "admits": 855
+        },
+        "arch1": {
+          "exec": 2666,
+          "lag": 0,
+          "certified": 234,
+          "batches": 0,
+          "profile": "archival",
+          "root": "3e93449a307580c0"
+        },
+        "arch2": {
+          "exec": 2986,
+          "lag": 0,
+          "certified": 239,
+          "batches": 0,
+          "profile": "archival",
+          "root": "c154bf82e7be2c24"
+        }
+      },
+      "best_exec_tps_min": 38.16,
+      "best_exec_phase": "med",
+      "best_tight_tps_min": 38.16,
+      "best_tight_phase": "med",
+      "any_tight_pass": true
+    },
+    {
+      "n": 6,
+      "network_id": 9226,
+      "placement": {
+        "f1": [
+          1,
+          2,
+          3
+        ],
+        "f2": [
+          4,
+          5,
+          6
+        ]
+      },
+      "phases": [
+        {
+          "label": "warm",
+          "n": 6,
+          "target_rate": 10,
+          "hold_s": 15,
+          "workers": 4,
+          "elapsed_s": 17.4,
+          "ok": 150,
+          "busy": 0,
+          "err": 0,
+          "err_codes": {},
+          "submits_by_owner": {
+            "val1": 25,
+            "val2": 27,
+            "val3": 27,
+            "val4": 20,
+            "val5": 22,
+            "val6": 29
+          },
+          "submit_tps": 8.62,
+          "exec_delta": {
+            "val1": 150,
+            "val2": 150,
+            "val3": 150,
+            "val4": 150,
+            "val5": 150,
+            "val6": 150
+          },
+          "exec_delta_min": 150,
+          "exec_delta_max": 150,
+          "exec_tps_min": 8.62,
+          "exec_tps_max": 8.62,
+          "health_before": {
+            "exec_min": 0,
+            "exec_max": 0,
+            "exec_spread": 0,
+            "lag_max": 0,
+            "vals_up": 6,
+            "roots_agree": true,
+            "arch1_exec": 0,
+            "arch2_exec": 0
+          },
+          "health_after": {
+            "exec_min": 150,
+            "exec_max": 150,
+            "exec_spread": 0,
+            "lag_max": 0,
+            "vals_up": 6,
+            "roots_agree": true,
+            "arch1_exec": 150,
+            "arch2_exec": 150
+          },
+          "lag_after": 0,
+          "spread_after": 0,
+          "snap_after": {
+            "val1": {
+              "exec": 150,
+              "lag": 0,
+              "certified": 56,
+              "batches": 10,
+              "mempool": 0,
+              "uncertified": 0,
+              "p2p": 14,
+              "root": "b095d2c1f9676aad",
+              "admits": 25
+            },
+            "val2": {
+              "exec": 150,
+              "lag": 0,
+              "certified": 56,
+              "batches": 8,
+              "mempool": 0,
+              "uncertified": 0,
+              "p2p": 14,
+              "root": "b095d2c1f9676aad",
+              "admits": 27
+            },
+            "val3": {
+              "exec": 150,
+              "lag": 0,
+              "certified": 56,
+              "batches": 8,
+              "mempool": 0,
+              "uncertified": 0,
+              "p2p": 14,
+              "root": "b095d2c1f9676aad",
+              "admits": 27
+            },
+            "val4": {
+              "exec": 150,
+              "lag": 0,
+              "certified": 56,
+              "batches": 10,
+              "mempool": 0,
+              "uncertified": 0,
+              "p2p": 14,
+              "root": "b095d2c1f9676aad",
+              "admits": 20
+            },
+            "val5": {
+              "exec": 150,
+              "lag": 0,
+              "certified": 56,
+              "batches": 10,
+              "mempool": 0,
+              "uncertified": 0,
+              "p2p": 14,
+              "root": "b095d2c1f9676aad",
+              "admits": 22
+            },
+            "val6": {
+              "exec": 150,
+              "lag": 0,
+              "certified": 56,
+              "batches": 9,
+              "mempool": 0,
+              "uncertified": 0,
+              "p2p": 14,
+              "root": "b095d2c1f9676aad",
+              "admits": 29
+            },
+            "arch1": {
+              "exec": 150,
+              "lag": 0,
+              "certified": 56,
+              "batches": 0,
+              "profile": "archival",
+              "root": "b095d2c1f9676aad"
+            },
+            "arch2": {
+              "exec": 150,
+              "lag": 0,
+              "certified": 56,
+              "batches": 0,
+              "profile": "archival",
+              "root": "b095d2c1f9676aad"
+            }
+          },
+          "pass_tight": true
+        },
+        {
+          "label": "light",
+          "n": 6,
+          "target_rate": 25,
+          "hold_s": 20,
+          "workers": 8,
+          "elapsed_s": 25.05,
+          "ok": 450,
+          "busy": 0,
+          "err": 0,
+          "err_codes": {},
+          "submits_by_owner": {
+            "val1": 80,
+            "val2": 78,
+            "val3": 78,
+            "val4": 55,
+            "val5": 68,
+            "val6": 91
+          },
+          "submit_tps": 17.96,
+          "exec_delta": {
+            "val1": 352,
+            "val2": 314,
+            "val3": 374,
+            "val4": 338,
+            "val5": 338,
+            "val6": 338
+          },
+          "exec_delta_min": 314,
+          "exec_delta_max": 374,
+          "exec_tps_min": 12.53,
+          "exec_tps_max": 14.93,
+          "health_before": {
+            "exec_min": 150,
+            "exec_max": 150,
+            "exec_spread": 0,
+            "lag_max": 0,
+            "vals_up": 6,
+            "roots_agree": true,
+            "arch1_exec": 150,
+            "arch2_exec": 150
+          },
+          "health_after": {
+            "exec_min": 464,
+            "exec_max": 524,
+            "exec_spread": 60,
+            "lag_max": 0,
+            "vals_up": 6,
+            "roots_agree": false,
+            "arch1_exec": 464,
+            "arch2_exec": 488
+          },
+          "lag_after": 0,
+          "spread_after": 60,
+          "snap_after": {
+            "val1": {
+              "exec": 502,
+              "lag": 0,
+              "certified": 88,
+              "batches": 15,
+              "mempool": 11,
+              "uncertified": 2,
+              "p2p": 14,
+              "root": "f0f82daefbf28ab5",
+              "admits": 105
+            },
+            "val2": {
+              "exec": 464,
+              "lag": 0,
+              "certified": 86,
+              "batches": 11,
+              "mempool": 29,
+              "uncertified": 4,
+              "p2p": 14,
+              "root": "080a3fd6501a7dfa",
+              "admits": 105
+            },
+            "val3": {
+              "exec": 524,
+              "lag": 0,
+              "certified": 89,
+              "batches": 13,
+              "mempool": 6,
+              "uncertified": 1,
+              "p2p": 14,
+              "root": "0ec37ddfdea44757",
+              "admits": 105
+            },
+            "val4": {
+              "exec": 488,
+              "lag": 0,
+              "certified": 87,
+              "batches": 17,
+              "mempool": 0,
+              "uncertified": 3,
+              "p2p": 14,
+              "root": "0848c3ebb483ec92",
+              "admits": 75
+            },
+            "val5": {
+              "exec": 488,
+              "lag": 0,
+              "certified": 87,
+              "batches": 17,
+              "mempool": 6,
+              "uncertified": 3,
+              "p2p": 14,
+              "root": "0848c3ebb483ec92",
+              "admits": 90
+            },
+            "val6": {
+              "exec": 488,
+              "lag": 0,
+              "certified": 87,
+              "batches": 16,
+              "mempool": 0,
+              "uncertified": 3,
+              "p2p": 14,
+              "root": "0848c3ebb483ec92",
+              "admits": 120
+            },
+            "arch1": {
+              "exec": 464,
+              "lag": 0,
+              "certified": 86,
+              "batches": 0,
+              "profile": "archival",
+              "root": "080a3fd6501a7dfa"
+            },
+            "arch2": {
+              "exec": 488,
+              "lag": 0,
+              "certified": 87,
+              "batches": 0,
+              "profile": "archival",
+              "root": "0848c3ebb483ec92"
+            }
+          },
+          "pass_tight": false
+        },
+        {
+          "label": "med",
+          "n": 6,
+          "target_rate": 50,
+          "hold_s": 25,
+          "workers": 12,
+          "elapsed_s": 28.26,
+          "ok": 548,
+          "busy": 0,
+          "err": 2,
+          "err_codes": {
+            "TimeoutError": 2
+          },
+          "submits_by_owner": {
+            "val1": 95,
+            "val2": 97,
+            "val3": 97,
+            "val4": 69,
+            "val5": 82,
+            "val6": 108
+          },
+          "submit_tps": 19.39,
+          "exec_delta": {
+            "val1": 252,
+            "val2": 226,
+            "val3": 226,
+            "val4": 399,
+            "val5": 399,
+            "val6": 399
+          },
+          "exec_delta_min": 226,
+          "exec_delta_max": 399,
+          "exec_tps_min": 8.0,
+          "exec_tps_max": 14.12,
+          "health_before": {
+            "exec_min": 488,
+            "exec_max": 548,
+            "exec_spread": 60,
+            "lag_max": 0,
+            "vals_up": 6,
+            "roots_agree": false,
+            "arch1_exec": 526,
+            "arch2_exec": 513
+          },
+          "health_after": {
+            "exec_min": 774,
+            "exec_max": 887,
+            "exec_spread": 113,
+            "lag_max": 0,
+            "vals_up": 6,
+            "roots_agree": false,
+            "arch1_exec": 653,
+            "arch2_exec": 887
+          },
+          "lag_after": 0,
+          "spread_after": 113,
+          "snap_after": {
+            "val1": {
+              "exec": 800,
+              "lag": 0,
+              "certified": 100,
+              "batches": 19,
+              "mempool": 2,
+              "uncertified": 5,
+              "p2p": 14,
+              "root": "b673defb6684bba6",
+              "admits": 200
+            },
+            "val2": {
+              "exec": 774,
+              "lag": 0,
+              "certified": 99,
+              "batches": 13,
+              "mempool": 3,
+              "uncertified": 4,
+              "p2p": 14,
+              "root": "541981a71689a649",
+              "admits": 203
+            },
+            "val3": {
+              "exec": 774,
+              "lag": 0,
+              "certified": 99,
+              "batches": 16,
+              "mempool": 9,
+              "uncertified": 4,
+              "p2p": 14,
+              "root": "541981a71689a649",
+              "admits": 203
+            },
+            "val4": {
+              "exec": 887,
+              "lag": 0,
+              "certified": 102,
+              "batches": 19,
+              "mempool": 38,
+              "uncertified": 4,
+              "p2p": 14,
+              "root": "661afeaf0d520faf",
+              "admits": 144
+            },
+            "val5": {
+              "exec": 887,
+              "lag": 0,
+              "certified": 102,
+              "batches": 19,
+              "mempool": 45,
+              "uncertified": 4,
+              "p2p": 14,
+              "root": "661afeaf0d520faf",
+              "admits": 172
+            },
+            "val6": {
+              "exec": 887,
+              "lag": 0,
+              "certified": 102,
+              "batches": 18,
+              "mempool": 53,
+              "uncertified": 4,
+              "p2p": 14,
+              "root": "661afeaf0d520faf",
+              "admits": 228
+            },
+            "arch1": {
+              "exec": 653,
+              "lag": 0,
+              "certified": 96,
+              "batches": 0,
+              "profile": "archival",
+              "root": "9b87e7fe0354b942"
+            },
+            "arch2": {
+              "exec": 887,
+              "lag": 0,
+              "certified": 102,
+              "batches": 0,
+              "profile": "archival",
+              "root": "661afeaf0d520faf"
+            }
+          },
+          "pass_tight": false
+        },
+        {
+          "label": "mid",
+          "n": 6,
+          "target_rate": 80,
+          "hold_s": 25,
+          "workers": 16,
+          "elapsed_s": 29.76,
+          "ok": 960,
+          "busy": 0,
+          "err": 0,
+          "err_codes": {},
+          "submits_by_owner": {
+            "val1": 168,
+            "val2": 168,
+            "val3": 168,
+            "val4": 120,
+            "val5": 144,
+            "val6": 192
+          },
+          "submit_tps": 32.26,
+          "exec_delta": {
+            "val1": 404,
+            "val2": 232,
+            "val3": 482,
+            "val4": 469,
+            "val5": 469,
+            "val6": 416
+          },
+          "exec_delta_min": 232,
+          "exec_delta_max": 482,
+          "exec_tps_min": 7.8,
+          "exec_tps_max": 16.2,
+          "health_before": {
+            "exec_min": 833,
+            "exec_max": 1000,
+            "exec_spread": 167,
+            "lag_max": 0,
+            "vals_up": 6,
+            "roots_agree": false,
+            "arch1_exec": 717,
+            "arch2_exec": 966
+          },
+          "health_after": {
+            "exec_min": 1232,
+            "exec_max": 1404,
+            "exec_spread": 172,
+            "lag_max": 0,
+            "vals_up": 6,
+            "roots_agree": false,
+            "arch1_exec": 1103,
+            "arch2_exec": 1382
+          },
+          "lag_after": 0,
+          "spread_after": 172,
+          "snap_after": {
+            "val1": {
+              "exec": 1404,
+              "lag": 0,
+              "certified": 115,
+              "batches": 23,
+              "mempool": 79,
+              "uncertified": 5,
+              "p2p": 14,
+              "root": "e29fba4ad5fc50a9",
+              "admits": 368
+            },
+            "val2": {
+              "exec": 1232,
+              "lag": 0,
+              "certified": 111,
+              "batches": 16,
+              "mempool": 107,
+              "uncertified": 3,
+              "p2p": 14,
+              "root": "a65087702b4fb453",
+              "admits": 371
+            },
+            "val3": {
+              "exec": 1315,
+              "lag": 0,
+              "certified": 113,
+              "batches": 19,
+              "mempool": 60,
+              "uncertified": 6,
+              "p2p": 14,
+              "root": "761a4847e217673f",
+              "admits": 371
+            },
+            "val4": {
+              "exec": 1382,
+              "lag": 0,
+              "certified": 115,
+              "batches": 21,
+              "mempool": 60,
+              "uncertified": 3,
+              "p2p": 14,
+              "root": "6486170d069af333",
+              "admits": 264
+            },
+            "val5": {
+              "exec": 1382,
+              "lag": 0,
+              "certified": 115,
+              "batches": 21,
+              "mempool": 74,
+              "uncertified": 3,
+              "p2p": 14,
+              "root": "6486170d069af333",
+              "admits": 316
+            },
+            "val6": {
+              "exec": 1382,
+              "lag": 0,
+              "certified": 115,
+              "batches": 20,
+              "mempool": 117,
+              "uncertified": 3,
+              "p2p": 14,
+              "root": "6486170d069af333",
+              "admits": 420
+            },
+            "arch1": {
+              "exec": 1103,
+              "lag": 0,
+              "certified": 108,
+              "batches": 0,
+              "profile": "archival",
+              "root": "a456dd68164dbe92"
+            },
+            "arch2": {
+              "exec": 1382,
+              "lag": 0,
+              "certified": 115,
+              "batches": 0,
+              "profile": "archival",
+              "root": "6486170d069af333"
+            }
+          },
+          "pass_tight": false
+        }
+      ],
+      "final_health": {
+        "exec_min": 1416,
+        "exec_max": 1569,
+        "exec_spread": 153,
+        "lag_max": 0,
+        "vals_up": 6,
+        "roots_agree": false,
+        "arch1_exec": 1232,
+        "arch2_exec": 1416
+      },
+      "final_snap": {
+        "val1": {
+          "exec": 1569,
+          "lag": 0,
+          "certified": 118,
+          "batches": 23,
+          "mempool": 87,
+          "uncertified": 3,
+          "p2p": 14,
+          "root": "ebc341f1ab49864f",
+          "admits": 368
+        },
+        "val2": {
+          "exec": 1569,
+          "lag": 0,
+          "certified": 118,
+          "batches": 16,
+          "mempool": 107,
+          "uncertified": 2,
+          "p2p": 14,
+          "root": "ebc341f1ab49864f",
+          "admits": 371
+        },
+        "val3": {
+          "exec": 1569,
+          "lag": 0,
+          "certified": 118,
+          "batches": 19,
+          "mempool": 94,
+          "uncertified": 2,
+          "p2p": 14,
+          "root": "ebc341f1ab49864f",
+          "admits": 371
+        },
+        "val4": {
+          "exec": 1416,
+          "lag": 0,
+          "certified": 116,
+          "batches": 21,
+          "mempool": 60,
+          "uncertified": 3,
+          "p2p": 14,
+          "root": "2706da98a93b2f7f",
+          "admits": 264
+        },
+        "val5": {
+          "exec": 1416,
+          "lag": 0,
+          "certified": 116,
+          "batches": 21,
+          "mempool": 74,
+          "uncertified": 4,
+          "p2p": 14,
+          "root": "2706da98a93b2f7f",
+          "admits": 316
+        },
+        "val6": {
+          "exec": 1480,
+          "lag": 0,
+          "certified": 117,
+          "batches": 20,
+          "mempool": 117,
+          "uncertified": 3,
+          "p2p": 14,
+          "root": "896520d0e74d411a",
+          "admits": 420
+        },
+        "arch1": {
+          "exec": 1232,
+          "lag": 0,
+          "certified": 111,
+          "batches": 0,
+          "profile": "archival",
+          "root": "a65087702b4fb453"
+        },
+        "arch2": {
+          "exec": 1416,
+          "lag": 0,
+          "certified": 116,
+          "batches": 0,
+          "profile": "archival",
+          "root": "2706da98a93b2f7f"
+        }
+      },
+      "best_exec_tps_min": 12.53,
+      "best_exec_phase": "light",
+      "best_tight_tps_min": 8.62,
+      "best_tight_phase": "warm",
+      "any_tight_pass": true
+    }
+  ],
+  "analysis": {
+    "series_best_exec_tps_min": [
+      [
+        2,
+        41.13
+      ],
+      [
+        3,
+        46.93
+      ],
+      [
+        4,
+        38.16
+      ],
+      [
+        6,
+        12.53
+      ]
+    ],
+    "series_tight_exec_tps_min": [
+      [
+        2,
+        41.13
+      ],
+      [
+        3,
+        46.22
+      ],
+      [
+        4,
+        38.16
+      ],
+      [
+        6,
+        8.62
+      ]
+    ],
+    "scale_out_pass_tight": false,
+    "scale_out_detail_tight": {
+      "overall_up": false,
+      "non_decreasing_steps": 1,
+      "steps": 3,
+      "series": [
+        [
+          2,
+          41.13
+        ],
+        [
+          3,
+          46.22
+        ],
+        [
+          4,
+          38.16
+        ],
+        [
+          6,
+          8.62
+        ]
+      ]
+    },
+    "scale_out_pass_best_effort": false,
+    "scale_out_detail_best": {
+      "overall_up": false,
+      "non_decreasing_steps": 1,
+      "steps": 3,
+      "series": [
+        [
+          2,
+          41.13
+        ],
+        [
+          3,
+          46.93
+        ],
+        [
+          4,
+          38.16
+        ],
+        [
+          6,
+          12.53
+        ]
+      ]
+    },
+    "verdict": "FAIL: tight multi-host throughput does NOT grow with N (or insufficient tight passes)"
+  }
+}

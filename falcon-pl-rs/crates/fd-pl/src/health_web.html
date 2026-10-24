@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Falcon PL node dashboard</title>
+<style>
+body{margin:0;background:#060a13;color:#d6e2f0;font-family:Inter,"Segoe UI",Helvetica,Arial,sans-serif}
+header{display:flex;align-items:center;justify-content:space-between;padding:18px 32px;border-bottom:1px solid #15243a;background:#0a1120}
+.logo{font-size:22px;font-weight:800}.logo b{color:#2dd4bf}.logo small{color:#8aa0b8;font-weight:400;font-size:16px}
+.meta{color:#6f88a3;font-size:13px;margin-right:14px}
+.pill{display:inline-block;padding:5px 14px;border-radius:20px;font-weight:700;font-size:13px;border:1px solid}
+.wrap{padding:24px 32px}.card{background:#0c1526;border:1px solid #17304a;border-radius:12px;padding:18px;min-width:0}
+h2{font-size:15px;color:#8fb4cf;margin:0 0 12px;text-transform:uppercase;letter-spacing:1px}
+.kpis{display:grid;grid-template-columns:repeat(6,1fr);gap:14px;margin-bottom:18px}
+.k .l{font-size:12px;color:#7d94ad;text-transform:uppercase}.k .v{font-size:28px;font-weight:700;margin-top:6px;white-space:nowrap}.k .s{font-size:12px;color:#5f7790;margin-top:4px}
+.charts{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:18px}
+svg{width:100%;height:180px;display:block}.leg{font-size:12px;color:#6f88a3;margin-top:6px}
+table{width:100%;border-collapse:collapse;font-size:14px}th{text-align:left;color:#6f88a3;font-weight:600;padding:9px;border-bottom:1px solid #1b3350}td{padding:9px;border-bottom:1px solid #111f33;word-break:break-word}
+.b{display:inline-block;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700}
+.WARN{background:#facc1522;color:#facc15}.ERROR{background:#f8717122;color:#f87171}
+#down{display:none;background:#7f1d1d;color:#fecaca;padding:8px 32px;font-size:14px}
+.ok{color:#4ade80}.w{color:#facc15}.e{color:#f87171}.c{color:#2dd4bf}.muted{color:#5f7790}
+@media(max-width:1100px){.kpis{grid-template-columns:repeat(3,1fr)}.charts{grid-template-columns:1fr}}
+</style></head><body>
+<header><div class="logo">🦅 Falcon<b>PL</b> <small>Node Dashboard · <span id="nid">…</span></small></div>
+<div><span class="meta" id="meta"></span><span class="pill" id="pill">…</span></div></header>
+<div id="down"></div>
+<div class="wrap">
+<div class="kpis">
+ <div class="card k"><div class="l">Height</div><div class="v c" id="k-h">–</div><div class="s" id="k-hs"></div></div>
+ <div class="card k"><div class="l">Lag</div><div class="v" id="k-l">–</div><div class="s" id="k-ls"></div></div>
+ <div class="card k"><div class="l">Peers</div><div class="v" id="k-p">–</div><div class="s" id="k-ps"></div></div>
+ <div class="card k"><div class="l">Uptime</div><div class="v" id="k-u">–</div><div class="s" id="k-us"></div></div>
+ <div class="card k"><div class="l">Missed turns</div><div class="v" id="k-m">–</div><div class="s">rolling, inactive at limit</div></div>
+ <div class="card k"><div class="l" id="k-el">Epoch activity</div><div class="v" id="k-e">–</div><div class="s" id="k-es"></div></div>
+</div>
+<div class="charts">
+ <div class="card"><h2 id="t-hl">Block height &amp; lag</h2><svg id="c-hl" viewBox="0 0 600 180" preserveAspectRatio="none"></svg>
+  <div class="leg"><span class="c">━ height (left axis)</span> &nbsp; <span class="w">━ lag, blocks (right axis)</span> <span id="l-hl"></span></div></div>
+ <div class="card"><h2 id="t-pv">Proposals / votes</h2><svg id="c-pv" viewBox="0 0 600 180" preserveAspectRatio="none"></svg>
+  <div class="leg"><span style="color:#f59e0b">■ proposals (left)</span> &nbsp; <span class="c">■ votes (right)</span> <span id="l-pv"></span></div></div>
+ <div class="card"><h2 id="t-m">Memory usage</h2><svg id="c-m" viewBox="0 0 600 180" preserveAspectRatio="none"></svg>
+  <div class="leg" id="l-m"></div></div>
+</div>
+<div class="card" id="bal" style="margin-bottom:18px"><h2>Balance <span class="muted" id="bal-acct" style="text-transform:none;letter-spacing:0"></span></h2>
+<div class="kpis" style="margin:0">
+ <div class="k"><div class="l">Liquid (withdrawable)</div><div class="v c" id="b-liq">–</div><div class="s">FPL</div></div>
+ <div class="k"><div class="l">Bonded</div><div class="v" id="b-bond">–</div><div class="s">FPL in seat bond</div></div>
+ <div class="k"><div class="l">Pending rewards</div><div class="v ok" id="b-rwd">–</div><div class="s">FPL claimable</div></div>
+ <div class="k"><div class="l">Seat rewards</div><div class="v ok" id="b-srw">–</div><div class="s" id="b-srws">FPL · validator bucket</div></div>
+ <div class="k"><div class="l">Unbonding</div><div class="v" id="b-unb">–</div><div class="s" id="b-unbs">FPL</div></div>
+ <div class="k"><div class="l">Bond account</div><div class="v" id="b-ba">–</div><div class="s" id="b-bas"></div></div>
+ <div class="k"><div class="l">Total</div><div class="v" id="b-tot">–</div><div class="s">liquid + bonded + pending + unbonding</div></div>
+</div></div>
+<div class="card"><h2>Recent warnings</h2>
+<table><thead><tr><th style="width:110px">Time</th><th style="width:90px">Level</th><th>Event</th></tr></thead><tbody id="warn"></tbody></table></div>
+<p class="muted" style="font-size:12px">Local only · polls <code>/health/v1</code> every 2 s · history sampled by the server in memory (lost on restart).</p>
+</div>
+<script>
+"use strict";
+const $=id=>document.getElementById(id);
+const NS="http:"+"//www.w3.org/2000/svg"; // XML namespace id, not a request
+const fmt=n=>n==null?"–":Number(n).toLocaleString("en-GB");
+const gb=b=>b>=1073741824?(b/1073741824).toFixed(b>=1073741824*10?0:1)+" GB":Math.round(b/1048576)+" MB";
+function dur(s){const d=Math.floor(s/86400),h=Math.floor(s/3600)%24,m=Math.floor(s/60)%60;return d?`${d}d ${h}h`:h?`${h}h ${m}m`:`${m}m ${s%60}s`}
+function g(o,p){return p.split(".").reduce((a,k)=>a==null?a:a[k],o)}
+function el(t,a,parent){const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);parent&&parent.appendChild(e);return e}
+function clear(s){while(s.firstChild)s.removeChild(s.firstChild)}
+const W=600,H=180,PL=8,PR=8,PT=10,PB=22;
+function grid(s){for(let i=0;i<4;i++){const y=PT+i*(H-PT-PB)/3;el("line",{x1:0,x2:W,y1:y,y2:y,stroke:"#14263d"},s)}}
+function scale(v,lo,hi){return hi>lo?(v-lo)/(hi-lo):0.5}
+function label(s,x,y,txt,col,anchor){const t=el("text",{x,y,fill:col,"font-size":11,"text-anchor":anchor||"start"},s);t.textContent=txt}
+function line(s,xs,ys,lo,hi,col,w,fill){if(!xs.length)return;const pts=xs.map((x,i)=>[x,PT+(1-scale(ys[i],lo,hi))*(H-PT-PB)]);
+ if(fill)el("polygon",{points:pts.map(p=>p.join(",")).join(" ")+` ${pts[pts.length-1][0]},${H-PB} ${pts[0][0]},${H-PB}`,fill:col,"fill-opacity":.18},s);
+ el("polyline",{points:pts.map(p=>p.map(v=>v.toFixed(1)).join(",")).join(" "),fill:"none",stroke:col,"stroke-width":w,"stroke-linejoin":"round"},s)}
+function xpos(t,t0,t1){return PL+scale(t,t0,t1)*(W-PL-PR)}
+function span(ms){const h=ms/3600000;return h>=1?h.toFixed(h<10?1:0)+"h":Math.max(1,Math.round(ms/60000))+" min"}
+function hm(ms){const d=new Date(ms);return d.toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"})}
+
+function drawHeightLag(h){const s=$("c-hl");clear(s);grid(s);const t=h.t_ms;if(t.length<2){label(s,W/2,H/2,"collecting history…","#5f7790","middle");return}
+ const t0=t[0],t1=t[t.length-1],xs=t.map(v=>xpos(v,t0,t1));
+ const hlo=Math.min(...h.height),hhi=Math.max(...h.height,hlo+1);
+ const lagMax=Math.max(4,...h.lag);
+ // lag on its own right axis so small values are not flattened by height
+ line(s,xs,h.lag,0,lagMax,"#facc15",2,true);
+ line(s,xs,h.height,hlo,hhi,"#2dd4bf",2.5,false);
+ label(s,PL,H-6,fmt(hlo),"#2dd4bf");label(s,PL+2,PT+12,fmt(hhi),"#2dd4bf");
+ label(s,W-PR,PT+10,lagMax+" blk","#facc15","end");label(s,W-PR,H-6,"0","#facc15","end");
+ label(s,W/2,H-6,hm(t0)+" – "+hm(t1),"#5f7790","middle");
+ const pk=Math.max(...h.lag),i=h.lag.indexOf(pk);$("l-hl").textContent=pk>0?`· peak ${pk} @ ${hm(t[i])}`:"";
+ $("t-hl").textContent="Block height & lag — "+span(t1-t0)}
+
+function drawPV(h){const s=$("c-pv");clear(s);grid(s);const t=h.t_ms;if(t.length<2){label(s,W/2,H/2,"collecting history…","#5f7790","middle");return}
+ const total=t[t.length-1]-t[0],bucket=total>6*3600000?3600000:total>3600000?600000:60000;
+ const b0=Math.floor(t[0]/bucket)*bucket,n=Math.floor((t[t.length-1]-b0)/bucket)+1,P=new Array(n).fill(0),V=new Array(n).fill(0);
+ for(let i=1;i<t.length;i++){const k=Math.floor((t[i]-b0)/bucket),same=h.epoch[i]===h.epoch[i-1];
+  P[k]+=Math.max(0,same?h.proposals_this_epoch[i]-h.proposals_this_epoch[i-1]:h.proposals_this_epoch[i]);
+  V[k]+=Math.max(0,same?h.votes_this_epoch[i]-h.votes_this_epoch[i-1]:h.votes_this_epoch[i])}
+ const pm=Math.max(1,...P),vm=Math.max(1,...V),bw=(W-PL-PR)/n,ih=H-PT-PB;
+ for(let k=0;k<n;k++){const x=PL+k*bw;
+  el("rect",{x:x+bw*.12,width:bw*.36,y:PT+ih*(1-P[k]/pm),height:ih*P[k]/pm,fill:"#f59e0b"},s);
+  el("rect",{x:x+bw*.52,width:bw*.36,y:PT+ih*(1-V[k]/vm),height:ih*V[k]/vm,fill:"#2dd4bf"},s)}
+ label(s,PL,PT+10,pm+"","#f59e0b");label(s,W-PR,PT+10,fmt(vm),"#2dd4bf","end");
+ const per=bucket===3600000?"hour":bucket===600000?"10 min":"min";$("t-pv").textContent="Proposals / votes per "+per;
+ $("l-pv").textContent=`· ${P.reduce((a,b)=>a+b,0)} / ${fmt(V.reduce((a,b)=>a+b,0))} in ${span(total)}`}
+
+let memTotal=0;
+function drawMem(h){const s=$("c-m");clear(s);grid(s);const t=h.t_ms;if(t.length<2){label(s,W/2,H/2,"collecting history…","#5f7790","middle");return}
+ const t0=t[0],t1=t[t.length-1],xs=t.map(v=>xpos(v,t0,t1)),pk=Math.max(...h.rss_bytes),hi=Math.max(pk*1.25,1);
+ line(s,xs,h.rss_bytes,0,hi,"#2dd4bf",2,true);label(s,PL,PT+10,gb(hi),"#5f7790");
+ $("t-m").textContent="Memory usage — "+span(t1-t0);
+ $("l-m").textContent=`${gb(h.rss_bytes[h.rss_bytes.length-1])}${memTotal?" of "+gb(memTotal):""} · peak ${gb(pk)}`}
+
+function pill(st){const c={active:"#4ade80",syncing:"#facc15",observer:"#60a5fa"}[st]||"#f87171",p=$("pill");
+ p.textContent="● "+String(st||"?").toUpperCase();p.style.color=c;p.style.borderColor=c;p.style.background=c+"22"}
+
+function renderBal(b){const x=b.balance;if(!x){$("bal-acct").textContent="· n/a on this node";return}
+ const n=k=>x[k]||0;$("bal-acct").textContent="· "+(x.account||"");
+ $("b-liq").textContent=fmt(n("liquid"));$("b-bond").textContent=fmt(n("bonded"));$("b-rwd").textContent=fmt(n("pending_rewards"));
+ $("b-srw").textContent=fmt(n("seat_claimable"));$("b-srws").textContent=x.seat_payout?"FPL · auto payout → "+x.seat_payout:"FPL · claim-seat";
+ $("b-unb").textContent=fmt(n("unbonding"));$("b-unb").className="v "+(n("unbonding")>0?"w":"muted");
+ $("b-unbs").textContent=n("unbonding")>0&&x.unbond_ready_ms?"FPL · ready "+new Date(x.unbond_ready_ms).toLocaleString("en-GB"):"FPL";
+ $("b-ba").textContent=x.bond_account_liquid==null?"–":fmt(x.bond_account_liquid);$("b-bas").textContent=x.bond_account?x.bond_account+" · FPL":"same as node id";
+ $("b-tot").textContent=fmt(n("liquid")+n("bonded")+n("pending_rewards")+n("seat_claimable")+n("unbonding"))}
+function render(b){$("down").style.display="none";renderBal(b);
+ $("nid").textContent=g(b,"node.id")||"?";$("meta").textContent=`v${g(b,"node.version")} · network ${g(b,"node.network_id")}`;pill(g(b,"node.status"));
+ document.title=`${g(b,"node.id")} · ${String(g(b,"node.status")).toUpperCase()} · Falcon PL`;
+ $("k-h").textContent=fmt(g(b,"chain.local_height"));$("k-hs").textContent="tip "+fmt(g(b,"chain.network_tip"));
+ const lag=g(b,"chain.lag")||0;$("k-l").textContent=lag;$("k-l").className="v "+(lag<3?"ok":lag<8?"w":"e");
+ $("k-ls").textContent=`blocks · ${(g(b,"chain.blocks_per_min")||0).toFixed(1)} blk/min`;
+ $("k-p").textContent=fmt(g(b,"peers.count"));$("k-ps").textContent=`${g(b,"peers.inbound")??"?"} in / ${g(b,"peers.outbound")??"?"} out`;
+ $("k-u").textContent=dur(g(b,"node.uptime_secs")||0);$("k-us").textContent=`cpu ${(g(b,"system.process.cpu_pct")??0).toFixed(1)}% · mempool ${fmt(g(b,"mempool.size"))}`;
+ const mt=g(b,"consensus.missed_turns")||0,ml=g(b,"consensus.missed_turns_limit")||20;
+ $("k-m").textContent=`${mt}/${ml}`;$("k-m").className="v "+(mt===0?"ok":mt*2<ml?"w":"e");
+ $("k-el").textContent=`Epoch ${g(b,"consensus.epoch")} activity`;$("k-e").textContent=fmt(g(b,"consensus.proposals_this_epoch"));
+ $("k-es").textContent=`proposals · ${fmt(g(b,"consensus.votes_this_epoch"))} votes · ${g(b,"consensus.epoch_progress_pct")}% through`;
+ memTotal=g(b,"system.process.mem_total_bytes")||0;
+ const tb=$("warn");tb.textContent="";const ws=(b.warnings||[]).slice().reverse();
+ if(!ws.length){const r=tb.insertRow(),c=r.insertCell();c.colSpan=3;c.className="ok";c.textContent="No warnings since start"}
+ for(const w of ws.slice(0,12)){const r=tb.insertRow();r.insertCell().textContent=new Date(w.at_ms).toLocaleTimeString("en-GB");
+  const s=document.createElement("span");s.className="b "+(w.level==="ERROR"?"ERROR":"WARN");s.textContent=w.level;r.insertCell().appendChild(s);
+  r.insertCell().textContent=w.msg}}
+
+async function pollHealth(){try{const r=await fetch("/health/v1",{cache:"no-store"});if(!r.ok)throw new Error((await r.text())||r.status);render(await r.json())}
+ catch(e){const d=$("down");d.style.display="block";d.textContent="Node health endpoint not answering: "+e.message+" (retrying)";pill("unreachable")}}
+async function pollHistory(){try{const r=await fetch("/history/v1",{cache:"no-store"});if(r.ok){const h=await r.json();drawHeightLag(h);drawPV(h);drawMem(h)}}catch(e){}}
+pollHealth();pollHistory();setInterval(pollHealth,2000);setInterval(pollHistory,10000);
+</script></body></html>

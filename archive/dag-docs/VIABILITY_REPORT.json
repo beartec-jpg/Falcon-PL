@@ -1,0 +1,366 @@
+{
+  "project": "falcon-dag",
+  "architecture": "narwhal-da + federated-ordering",
+  "timestamp": "2026-08-03T16:55:53Z",
+  "verdict": {
+    "decision": "CONTINUE",
+    "confidence": "medium-high for research spinoff / layer-upgrade path",
+    "must_pass_ok": true,
+    "peak_sim_tps": 3173.6,
+    "live_regtest_ok": false,
+    "positioning": "spinoff or optional layer upgrade \u2014 NOT a production Falcon replacement",
+    "goal_fit": "Increase throughput while retaining large Falcon signatures by amortizing DA into fat batches and ordering only certificates."
+  },
+  "cases": [
+    {
+      "name": "validators_3",
+      "ok": false,
+      "detail": {
+        "validators": 3,
+        "txs": 200,
+        "executed": 187,
+        "elapsed_s": 0.401,
+        "tps": 466.3,
+        "agree_exec": true,
+        "agree_order": false,
+        "certified": 59,
+        "ordered": 59
+      }
+    },
+    {
+      "name": "validators_5",
+      "ok": true,
+      "detail": {
+        "validators": 5,
+        "txs": 200,
+        "executed": 200,
+        "elapsed_s": 0.0914,
+        "tps": 2187.1,
+        "agree_exec": true,
+        "agree_order": true,
+        "certified": 11,
+        "ordered": 11
+      }
+    },
+    {
+      "name": "validators_7",
+      "ok": true,
+      "detail": {
+        "validators": 7,
+        "txs": 200,
+        "executed": 200,
+        "elapsed_s": 0.4558,
+        "tps": 438.8,
+        "agree_exec": true,
+        "agree_order": true,
+        "certified": 29,
+        "ordered": 29
+      }
+    },
+    {
+      "name": "validators_9",
+      "ok": true,
+      "detail": {
+        "validators": 9,
+        "txs": 200,
+        "executed": 200,
+        "elapsed_s": 1.9013,
+        "tps": 105.2,
+        "agree_exec": true,
+        "agree_order": true,
+        "certified": 55,
+        "ordered": 55
+      }
+    },
+    {
+      "name": "validators_11",
+      "ok": true,
+      "detail": {
+        "validators": 11,
+        "txs": 200,
+        "executed": 200,
+        "elapsed_s": 0.7209,
+        "tps": 277.4,
+        "agree_exec": true,
+        "agree_order": true,
+        "certified": 23,
+        "ordered": 23
+      }
+    },
+    {
+      "name": "agreement_v5_tx200",
+      "ok": true,
+      "detail": {
+        "validators": 5,
+        "txs": 200,
+        "executed": 200,
+        "elapsed_s": 0.1113,
+        "tps": 1797.6,
+        "agree_exec": true,
+        "agree_order": true,
+        "certified": 11,
+        "ordered": 11
+      }
+    },
+    {
+      "name": "agreement_v5_tx800",
+      "ok": true,
+      "detail": {
+        "validators": 5,
+        "txs": 800,
+        "executed": 800,
+        "elapsed_s": 0.9544,
+        "tps": 838.2,
+        "agree_exec": true,
+        "agree_order": true,
+        "certified": 36,
+        "ordered": 36
+      }
+    },
+    {
+      "name": "tps_sim_tx100",
+      "ok": true,
+      "detail": {
+        "txs": 100,
+        "executed": 100,
+        "elapsed_s": 0.0331,
+        "tps": 3024.0,
+        "agree": true,
+        "batches": 6,
+        "certified": 6
+      }
+    },
+    {
+      "name": "tps_sim_tx500",
+      "ok": true,
+      "detail": {
+        "txs": 500,
+        "executed": 500,
+        "elapsed_s": 0.1576,
+        "tps": 3173.6,
+        "agree": true,
+        "batches": 11,
+        "certified": 11
+      }
+    },
+    {
+      "name": "tps_sim_tx1500",
+      "ok": true,
+      "detail": {
+        "txs": 1500,
+        "executed": 1500,
+        "elapsed_s": 0.8583,
+        "tps": 1747.7,
+        "agree": true,
+        "batches": 31,
+        "certified": 31
+      }
+    },
+    {
+      "name": "tps_sim_tx3000",
+      "ok": true,
+      "detail": {
+        "txs": 3000,
+        "executed": 3000,
+        "elapsed_s": 2.6229,
+        "tps": 1143.8,
+        "agree": true,
+        "batches": 61,
+        "certified": 61
+      }
+    },
+    {
+      "name": "fault_1_of_5_silent",
+      "ok": true,
+      "detail": {
+        "executed_active": 80,
+        "agree_active": true,
+        "certified": 5
+      }
+    },
+    {
+      "name": "fault_2_of_5_no_certify",
+      "ok": true,
+      "detail": {
+        "certified": 1,
+        "expected": "genesis_only"
+      }
+    },
+    {
+      "name": "conflict_double_spend",
+      "ok": true,
+      "detail": {
+        "winners": 1,
+        "agree": true
+      }
+    },
+    {
+      "name": "signature_amortization_model",
+      "ok": true,
+      "detail": {
+        "note": "Live Falcon-512 sizes when falcon-python installed",
+        "measured": {
+          "avg_sig_bytes": 654,
+          "cert_4of5_bytes": 2648,
+          "pk_bytes": 897,
+          "sk_bytes": 1281,
+          "live": true
+        },
+        "falcon512_sig_bytes": 654,
+        "ed25519_sig_bytes": 64,
+        "rows": [
+          {
+            "txs_per_batch": 1,
+            "falcon_tx_bytes": 774,
+            "ed25519_tx_bytes": 184,
+            "ordering_cert_bytes": 2648,
+            "bytes_per_tx_amortized_order_path": 2648.0
+          },
+          {
+            "txs_per_batch": 10,
+            "falcon_tx_bytes": 774,
+            "ed25519_tx_bytes": 184,
+            "ordering_cert_bytes": 2648,
+            "bytes_per_tx_amortized_order_path": 264.8
+          },
+          {
+            "txs_per_batch": 50,
+            "falcon_tx_bytes": 774,
+            "ed25519_tx_bytes": 184,
+            "ordering_cert_bytes": 2648,
+            "bytes_per_tx_amortized_order_path": 52.96
+          },
+          {
+            "txs_per_batch": 128,
+            "falcon_tx_bytes": 774,
+            "ed25519_tx_bytes": 184,
+            "ordering_cert_bytes": 2648,
+            "bytes_per_tx_amortized_order_path": 20.69
+          },
+          {
+            "txs_per_batch": 256,
+            "falcon_tx_bytes": 774,
+            "ed25519_tx_bytes": 184,
+            "ordering_cert_bytes": 2648,
+            "bytes_per_tx_amortized_order_path": 10.34
+          }
+        ]
+      }
+    },
+    {
+      "name": "adaptive_fat_vs_thin_batches",
+      "ok": true,
+      "detail": {
+        "explanation": "Under high load, longer batch intervals / larger batches amortize certificate overhead \u2192 higher txs per cert (throughput).",
+        "fat_batches_max256": {
+          "executed": 800,
+          "elapsed_s": 0.3769,
+          "tps": 2122.6,
+          "certified_batches": 21,
+          "txs_per_cert": 40.0
+        },
+        "thin_batches_max16": {
+          "executed": 800,
+          "elapsed_s": 32.8003,
+          "tps": 24.4,
+          "certified_batches": 248,
+          "txs_per_cert": 3.24
+        },
+        "thinking_check": "Correct intuition: at high load, SLOW the cadence (longer interval) so each batch is fuller \u2192 more TPS. At low load, FAST cadence for latency."
+      }
+    },
+    {
+      "name": "falcon512_live_sim",
+      "ok": true,
+      "detail": {
+        "scheme": "falcon-512",
+        "executed": 80,
+        "elapsed_s": 0.241,
+        "tps": 332.2,
+        "certified": 11,
+        "rejected_sigs": 0,
+        "crypto": {
+          "scheme": "falcon-512",
+          "public_key_bytes": 897,
+          "secret_key_bytes": 1281,
+          "sample_sig_bytes": 656,
+          "unl_size": 5,
+          "timing": {
+            "sign": {
+              "n": 50,
+              "min_ms": 0.3061,
+              "p50_ms": 0.3566,
+              "p95_ms": 0.4927,
+              "max_ms": 0.5035,
+              "mean_ms": 0.3732
+            },
+            "verify": {
+              "n": 512,
+              "min_ms": 0.0661,
+              "p50_ms": 0.0783,
+              "p95_ms": 0.1197,
+              "max_ms": 0.2029,
+              "mean_ms": 0.0852
+            },
+            "signature_bytes": {
+              "n": 50,
+              "min_b": 648,
+              "max_b": 661,
+              "mean_b": 654.9
+            }
+          }
+        },
+        "agree": true
+      }
+    },
+    {
+      "name": "live_regtest",
+      "ok": false,
+      "detail": {
+        "submitted_ok": 60,
+        "executed": 163,
+        "elapsed_s": 4.33,
+        "tps_wall": 37.6,
+        "agree_canonical": false,
+        "per_node_exec": [
+          163,
+          163,
+          163,
+          163,
+          104
+        ],
+        "certified": [
+          42,
+          42,
+          42,
+          42,
+          14
+        ]
+      }
+    },
+    {
+      "name": "falcon_baseline_probe",
+      "ok": true,
+      "detail": {
+        "binary_found": true,
+        "binary_path": "/home/scott/qXRP/.build/xrpld",
+        "published_testnet_notes": {
+          "source": "qXRP ROADMAP.md (project docs)",
+          "sustained_load": "850k+ payments over 71+ hours",
+          "convergence": "~3s typical",
+          "stalls": 0,
+          "signature": "Falcon-512 standard (large vs ed25519)",
+          "consensus": "Classic single-ledger RPCA"
+        },
+        "note": "Live Falcon TPS max was NOT stress-tested in this suite to avoid interfering with production config. Use published figures as baseline; run scripts/load-test.py against a dedicated Falcon regtest separately.",
+        "binary_help_rc": 0,
+        "binary_runs": true
+      }
+    }
+  ],
+  "summary_table": {
+    "passed": 17,
+    "failed": 2,
+    "total": 19
+  }
+}

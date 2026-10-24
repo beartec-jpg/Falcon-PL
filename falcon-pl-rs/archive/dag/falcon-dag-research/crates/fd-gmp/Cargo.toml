@@ -1,0 +1,31 @@
+[package]
+name = "fd-gmp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Global mempool (GMP-B sharded) + capacity-weighted leases + GCP-B registry v0"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+clap = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+anyhow = { workspace = true }
+parking_lot = { workspace = true }
+
+[[bin]]
+name = "falcon-gmpd"
+path = "src/bin/falcon_gmpd.rs"
+
+[[bin]]
+name = "falcon-gcpd"
+path = "src/bin/falcon_gcpd.rs"
+
+[[bin]]
+name = "falcon-gmp-facade"
+path = "src/bin/falcon_gmp_facade.rs"

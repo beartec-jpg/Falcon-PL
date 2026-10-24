@@ -1,0 +1,18 @@
+[package]
+name = "fd-crypto"
+version.workspace = true
+edition.workspace = true
+license = "LicenseRef-All-Rights-Reserved"
+
+[dependencies]
+fd-types = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+hmac = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+pqcrypto-falcon = "0.4"
+pqcrypto-traits = "0.3"
+dashmap = "5"
+parking_lot = "0.12"

@@ -1,0 +1,300 @@
+{
+  "suite": "pack_workers_unl_split",
+  "verdict": "C_REGRESS: 20.21 < A 26.33 | B_REGRESS: 20.05 < A 26.33",
+  "win_c": false,
+  "A": {
+    "mode": "A_classic_n3",
+    "unl": [
+      "val1",
+      "val2",
+      "val3"
+    ],
+    "packers": [
+      "val1",
+      "val2",
+      "val3"
+    ],
+    "elapsed_s": 45.05,
+    "exec_tps_min": 26.33,
+    "exec_tps_max": 26.33,
+    "exec_delta": [
+      1186,
+      1186,
+      1186
+    ],
+    "health": {
+      "vals_up": 3,
+      "exec_min": 1186,
+      "exec_max": 1186,
+      "exec_spread": 0,
+      "lag_max": 0,
+      "roots_agree": true
+    },
+    "gmp_ok": 1500,
+    "gmp_err": 0,
+    "pack_batches_created": {
+      "val1": 37,
+      "val2": 38,
+      "val3": 34
+    },
+    "gmp_status": {
+      "active_leases": 0,
+      "max_pending": 50000,
+      "num_shards": 16,
+      "pending": 0,
+      "validators": {
+        "val1": {
+          "advert_age_s": 0.020053386688232422,
+          "completed": 180,
+          "expired": 0,
+          "in_flight": 0,
+          "mem_budget_mb": 4096,
+          "mem_used_mb": 36,
+          "weight": 0.49808349609374997
+        },
+        "val2": {
+          "advert_age_s": 0.0008645057678222656,
+          "completed": 178,
+          "expired": 0,
+          "in_flight": 0,
+          "mem_budget_mb": 4096,
+          "mem_used_mb": 44,
+          "weight": 0.49710205078124997
+        },
+        "val3": {
+          "advert_age_s": 0.05216336250305176,
+          "completed": 87,
+          "expired": 0,
+          "in_flight": 0,
+          "mem_budget_mb": 4096,
+          "mem_used_mb": 224,
+          "weight": 0.47501953124999996
+        }
+      }
+    },
+    "gcp_status": {
+      "certified": 109,
+      "open": 0,
+      "total": 109
+    },
+    "pass_stable": true
+  },
+  "B": {
+    "mode": "B_unl3_pack6",
+    "unl": [
+      "val1",
+      "val2",
+      "val3"
+    ],
+    "packers": [
+      "val1",
+      "val2",
+      "val3",
+      "pack1",
+      "pack2",
+      "pack3"
+    ],
+    "elapsed_s": 45.09,
+    "exec_tps_min": 20.05,
+    "exec_tps_max": 20.05,
+    "exec_delta": [
+      904,
+      904,
+      904
+    ],
+    "health": {
+      "vals_up": 3,
+      "exec_min": 904,
+      "exec_max": 904,
+      "exec_spread": 0,
+      "lag_max": 0,
+      "roots_agree": true
+    },
+    "gmp_ok": 1500,
+    "gmp_err": 0,
+    "pack_batches_created": {
+      "val1": 23,
+      "val2": 23,
+      "val3": 5,
+      "pack1": 33,
+      "pack2": 6,
+      "pack3": 8
+    },
+    "gmp_status": {
+      "active_leases": 0,
+      "max_pending": 50000,
+      "num_shards": 16,
+      "pending": 0,
+      "validators": {
+        "pack1": {
+          "advert_age_s": 0.045241594314575195,
+          "completed": 138,
+          "expired": 0,
+          "in_flight": 0,
+          "mem_budget_mb": 4096,
+          "mem_used_mb": 0,
+          "weight": 0.5025
+        },
+        "pack2": {
+          "advert_age_s": 0.19304847717285156,
+          "completed": 36,
+          "expired": 0,
+          "in_flight": 0,
+          "mem_budget_mb": 4096,
+          "mem_used_mb": 238,
+          "weight": 0.47330200195312494
+        },
+        "pack3": {
+          "advert_age_s": 0.04976797103881836,
+          "completed": 36,
+          "expired": 0,
+          "in_flight": 0,
+          "mem_budget_mb": 4096,
+          "mem_used_mb": 248,
+          "weight": 0.4720751953125
+        },
+        "val1": {
+          "advert_age_s": 0.04355025291442871,
+          "completed": 333,
+          "expired": 0,
+          "in_flight": 0,
+          "mem_budget_mb": 4096,
+          "mem_used_mb": 0,
+          "weight": 0.5025
+        },
+        "val2": {
+          "advert_age_s": 0.011876583099365234,
+          "completed": 329,
+          "expired": 0,
+          "in_flight": 0,
+          "mem_budget_mb": 4096,
+          "mem_used_mb": 0,
+          "weight": 0.5025
+        },
+        "val3": {
+          "advert_age_s": 0.1370830535888672,
+          "completed": 122,
+          "expired": 0,
+          "in_flight": 0,
+          "mem_budget_mb": 4096,
+          "mem_used_mb": 42,
+          "weight": 0.49734741210937494
+        }
+      }
+    },
+    "gcp_status": {
+      "certified": 207,
+      "open": 0,
+      "total": 207
+    },
+    "pass_stable": true
+  },
+  "C": {
+    "mode": "C_pure_pack3_unl3",
+    "unl": [
+      "val1",
+      "val2",
+      "val3"
+    ],
+    "packers": [
+      "pack1",
+      "pack2",
+      "pack3"
+    ],
+    "elapsed_s": 45.04,
+    "exec_tps_min": 20.21,
+    "exec_tps_max": 20.21,
+    "exec_delta": [
+      910,
+      910,
+      910
+    ],
+    "health": {
+      "vals_up": 3,
+      "exec_min": 910,
+      "exec_max": 910,
+      "exec_spread": 0,
+      "lag_max": 0,
+      "roots_agree": true
+    },
+    "gmp_ok": 1500,
+    "gmp_err": 0,
+    "pack_batches_created": {
+      "pack1": 40,
+      "pack2": 19,
+      "pack3": 12
+    },
+    "gmp_status": {
+      "active_leases": 0,
+      "max_pending": 50000,
+      "num_shards": 16,
+      "pending": 0,
+      "validators": {
+        "pack1": {
+          "advert_age_s": 0.04608035087585449,
+          "completed": 512,
+          "expired": 0,
+          "in_flight": 0,
+          "mem_budget_mb": 4096,
+          "mem_used_mb": 0,
+          "weight": 0.5025
+        },
+        "pack2": {
+          "advert_age_s": 0.034018754959106445,
+          "completed": 99,
+          "expired": 0,
+          "in_flight": 0,
+          "mem_budget_mb": 4096,
+          "mem_used_mb": 328,
+          "weight": 0.46226074218749996
+        },
+        "pack3": {
+          "advert_age_s": 0.03999042510986328,
+          "completed": 99,
+          "expired": 0,
+          "in_flight": 0,
+          "mem_budget_mb": 4096,
+          "mem_used_mb": 488,
+          "weight": 0.44263183593749994
+        },
+        "val1": {
+          "advert_age_s": 50.7715630531311,
+          "completed": 333,
+          "expired": 0,
+          "in_flight": 0,
+          "mem_budget_mb": 4096,
+          "mem_used_mb": 0,
+          "weight": 0.5025
+        },
+        "val2": {
+          "advert_age_s": 50.73989152908325,
+          "completed": 329,
+          "expired": 0,
+          "in_flight": 0,
+          "mem_budget_mb": 4096,
+          "mem_used_mb": 0,
+          "weight": 0.5025
+        },
+        "val3": {
+          "advert_age_s": 50.44950008392334,
+          "completed": 122,
+          "expired": 0,
+          "in_flight": 0,
+          "mem_budget_mb": 4096,
+          "mem_used_mb": 42,
+          "weight": 0.49734741210937494
+        }
+      }
+    },
+    "gcp_status": {
+      "certified": 278,
+      "open": 0,
+      "total": 278
+    },
+    "pass_stable": true
+  },
+  "hypothesis": {
+    "B": "UNL+extra packers vs classic N=3",
+    "C": "Pure pack-only workers (UNL never packs) vs classic N=3"
+  }
+}

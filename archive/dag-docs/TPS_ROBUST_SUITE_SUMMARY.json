@@ -1,0 +1,820 @@
+{
+  "out": "/tmp/tps-robust-1785890427",
+  "reps": 5,
+  "configs": {
+    "SP_A1": {
+      "desc": "single-packer 1-acct (classic)",
+      "overrides": {},
+      "n": 5,
+      "full_ok_n": 4,
+      "success_rate": 0.8,
+      "full_tps_mean": 282.1859469691379,
+      "full_tps_min": 261.1830910839589,
+      "full_tps_max": 300.8545831450439,
+      "full_tps_stdev": 17.18398200804367,
+      "runs": [
+        {
+          "name": "SP_A1_r1",
+          "full_tps": 290.19065472547874,
+          "exec": 200,
+          "agree": true,
+          "wall": 0.689202070236206
+        },
+        {
+          "name": "SP_A1_r2",
+          "full_tps": 261.1830910839589,
+          "exec": 200,
+          "agree": true,
+          "wall": 0.7657463550567627
+        },
+        {
+          "name": "SP_A1_r3",
+          "full_tps": 300.8545831450439,
+          "exec": 200,
+          "agree": true,
+          "wall": 0.6647729873657227
+        },
+        {
+          "name": "SP_A1_r4",
+          "full_tps": null,
+          "exec": 138,
+          "agree": true,
+          "wall": 30.450665950775146
+        },
+        {
+          "name": "SP_A1_r5",
+          "full_tps": 276.51545892207,
+          "exec": 200,
+          "agree": true,
+          "wall": 0.7232868671417236
+        }
+      ]
+    },
+    "SP_A10": {
+      "desc": "single-packer 10-acct",
+      "overrides": {
+        "ACCOUNTS": "10"
+      },
+      "n": 5,
+      "full_ok_n": 2,
+      "success_rate": 0.4,
+      "full_tps_mean": 269.5571673382512,
+      "full_tps_min": 260.5979213944768,
+      "full_tps_max": 278.51641328202555,
+      "full_tps_stdev": 12.670287122321843,
+      "runs": [
+        {
+          "name": "SP_A10_r1",
+          "full_tps": 260.5979213944768,
+          "exec": 200,
+          "agree": true,
+          "wall": 0.7674658298492432
+        },
+        {
+          "name": "SP_A10_r2",
+          "full_tps": null,
+          "exec": 138,
+          "agree": true,
+          "wall": 30.469509840011597
+        },
+        {
+          "name": "SP_A10_r3",
+          "full_tps": null,
+          "exec": 0,
+          "agree": false,
+          "wall": 30.555495023727417
+        },
+        {
+          "name": "SP_A10_r4",
+          "full_tps": 278.51641328202555,
+          "exec": 200,
+          "agree": true,
+          "wall": 0.7180905342102051
+        },
+        {
+          "name": "SP_A10_r5",
+          "full_tps": null,
+          "exec": 16,
+          "agree": false,
+          "wall": 30.472100734710693
+        }
+      ]
+    },
+    "SP_A20": {
+      "desc": "single-packer 20-acct",
+      "overrides": {
+        "ACCOUNTS": "20"
+      },
+      "n": 5,
+      "full_ok_n": 5,
+      "success_rate": 1.0,
+      "full_tps_mean": 248.08136145687072,
+      "full_tps_min": 182.82912578573448,
+      "full_tps_max": 293.5211340543465,
+      "full_tps_stdev": 40.28243323886922,
+      "runs": [
+        {
+          "name": "SP_A20_r1",
+          "full_tps": 249.70427904603685,
+          "exec": 200,
+          "agree": true,
+          "wall": 0.8009474277496338
+        },
+        {
+          "name": "SP_A20_r2",
+          "full_tps": 293.5211340543465,
+          "exec": 200,
+          "agree": true,
+          "wall": 0.6813819408416748
+        },
+        {
+          "name": "SP_A20_r3",
+          "full_tps": 257.23475508506255,
+          "exec": 200,
+          "agree": true,
+          "wall": 0.7774999141693115
+        },
+        {
+          "name": "SP_A20_r4",
+          "full_tps": 182.82912578573448,
+          "exec": 200,
+          "agree": true,
+          "wall": 1.0939176082611084
+        },
+        {
+          "name": "SP_A20_r5",
+          "full_tps": 257.1175133131733,
+          "exec": 200,
+          "agree": true,
+          "wall": 0.7778544425964355
+        }
+      ]
+    },
+    "MP_A1": {
+      "desc": "multi-pack sharded 1-acct (expect ~1 packer)",
+      "overrides": {
+        "SINGLE_PACKER": "false",
+        "ACCOUNTS": "1"
+      },
+      "n": 5,
+      "full_ok_n": 2,
+      "success_rate": 0.4,
+      "full_tps_mean": 238.70984637806345,
+      "full_tps_min": 229.63519175256604,
+      "full_tps_max": 247.78450100356082,
+      "full_tps_stdev": 12.833499645230146,
+      "runs": [
+        {
+          "name": "MP_A1_r1",
+          "full_tps": null,
+          "exec": 28,
+          "agree": false,
+          "wall": 30.494681119918823
+        },
+        {
+          "name": "MP_A1_r2",
+          "full_tps": 247.78450100356082,
+          "exec": 200,
+          "agree": true,
+          "wall": 0.8071529865264893
+        },
+        {
+          "name": "MP_A1_r3",
+          "full_tps": null,
+          "exec": 156,
+          "agree": false,
+          "wall": 30.474600553512573
+        },
+        {
+          "name": "MP_A1_r4",
+          "full_tps": 229.63519175256604,
+          "exec": 200,
+          "agree": true,
+          "wall": 0.8709466457366943
+        },
+        {
+          "name": "MP_A1_r5",
+          "full_tps": null,
+          "exec": 0,
+          "agree": false,
+          "wall": 30.552377223968506
+        }
+      ]
+    },
+    "MP_A5": {
+      "desc": "multi-pack sharded 5-acct",
+      "overrides": {
+        "SINGLE_PACKER": "false",
+        "ACCOUNTS": "5"
+      },
+      "n": 5,
+      "full_ok_n": 0,
+      "success_rate": 0.0,
+      "full_tps_mean": null,
+      "full_tps_min": null,
+      "full_tps_max": null,
+      "full_tps_stdev": null,
+      "runs": [
+        {
+          "name": "MP_A5_r1",
+          "full_tps": null,
+          "exec": 120,
+          "agree": true,
+          "wall": 30.57741141319275
+        },
+        {
+          "name": "MP_A5_r2",
+          "full_tps": null,
+          "exec": 161,
+          "agree": true,
+          "wall": 0.7086677551269531
+        },
+        {
+          "name": "MP_A5_r3",
+          "full_tps": null,
+          "exec": 83,
+          "agree": true,
+          "wall": 30.531062364578247
+        },
+        {
+          "name": "MP_A5_r4",
+          "full_tps": null,
+          "exec": 183,
+          "agree": true,
+          "wall": 0.8552868366241455
+        },
+        {
+          "name": "MP_A5_r5",
+          "full_tps": null,
+          "exec": 161,
+          "agree": true,
+          "wall": 0.6739532947540283
+        }
+      ]
+    },
+    "MP_A10": {
+      "desc": "multi-pack sharded 10-acct",
+      "overrides": {
+        "SINGLE_PACKER": "false",
+        "ACCOUNTS": "10"
+      },
+      "n": 5,
+      "full_ok_n": 0,
+      "success_rate": 0.0,
+      "full_tps_mean": null,
+      "full_tps_min": null,
+      "full_tps_max": null,
+      "full_tps_stdev": null,
+      "runs": [
+        {
+          "name": "MP_A10_r1",
+          "full_tps": null,
+          "exec": 160,
+          "agree": true,
+          "wall": 0.9344308376312256
+        },
+        {
+          "name": "MP_A10_r2",
+          "full_tps": null,
+          "exec": 93,
+          "agree": true,
+          "wall": 30.57835030555725
+        },
+        {
+          "name": "MP_A10_r3",
+          "full_tps": null,
+          "exec": 180,
+          "agree": false,
+          "wall": 30.449878454208374
+        },
+        {
+          "name": "MP_A10_r4",
+          "full_tps": null,
+          "exec": 160,
+          "agree": true,
+          "wall": 0.934551477432251
+        },
+        {
+          "name": "MP_A10_r5",
+          "full_tps": null,
+          "exec": 166,
+          "agree": false,
+          "wall": 0.7012825012207031
+        }
+      ]
+    },
+    "MP_A20": {
+      "desc": "multi-pack sharded 20-acct",
+      "overrides": {
+        "SINGLE_PACKER": "false",
+        "ACCOUNTS": "20"
+      },
+      "n": 5,
+      "full_ok_n": 0,
+      "success_rate": 0.0,
+      "full_tps_mean": null,
+      "full_tps_min": null,
+      "full_tps_max": null,
+      "full_tps_stdev": null,
+      "runs": [
+        {
+          "name": "MP_A20_r1",
+          "full_tps": null,
+          "exec": 90,
+          "agree": false,
+          "wall": 30.583792448043823
+        },
+        {
+          "name": "MP_A20_r2",
+          "full_tps": null,
+          "exec": 170,
+          "agree": true,
+          "wall": 0.8387861251831055
+        },
+        {
+          "name": "MP_A20_r3",
+          "full_tps": null,
+          "exec": 101,
+          "agree": false,
+          "wall": 30.554858922958374
+        },
+        {
+          "name": "MP_A20_r4",
+          "full_tps": null,
+          "exec": 181,
+          "agree": true,
+          "wall": 0.9723141193389893
+        },
+        {
+          "name": "MP_A20_r5",
+          "full_tps": null,
+          "exec": 100,
+          "agree": false,
+          "wall": 30.471993684768677
+        }
+      ]
+    },
+    "MP_A10_B512": {
+      "desc": "multi-pack 10-acct batch512",
+      "overrides": {
+        "SINGLE_PACKER": "false",
+        "ACCOUNTS": "10",
+        "MAX_BATCH_TXS": "512"
+      },
+      "n": 5,
+      "full_ok_n": 0,
+      "success_rate": 0.0,
+      "full_tps_mean": null,
+      "full_tps_min": null,
+      "full_tps_max": null,
+      "full_tps_stdev": null,
+      "runs": [
+        {
+          "name": "MP_A10_B512_r1",
+          "full_tps": null,
+          "exec": 187,
+          "agree": true,
+          "wall": 0.7651691436767578
+        },
+        {
+          "name": "MP_A10_B512_r2",
+          "full_tps": null,
+          "exec": 140,
+          "agree": false,
+          "wall": 30.58031678199768
+        },
+        {
+          "name": "MP_A10_B512_r3",
+          "full_tps": null,
+          "exec": 140,
+          "agree": false,
+          "wall": 30.504242658615112
+        },
+        {
+          "name": "MP_A10_B512_r4",
+          "full_tps": null,
+          "exec": 161,
+          "agree": true,
+          "wall": 0.9194531440734863
+        },
+        {
+          "name": "MP_A10_B512_r5",
+          "full_tps": null,
+          "exec": 84,
+          "agree": false,
+          "wall": 30.58759117126465
+        }
+      ]
+    },
+    "MP_A10_U8": {
+      "desc": "multi-pack 10-acct uncert8",
+      "overrides": {
+        "SINGLE_PACKER": "false",
+        "ACCOUNTS": "10",
+        "MAX_UNCERTIFIED_PER_CREATOR": "8"
+      },
+      "n": 5,
+      "full_ok_n": 0,
+      "success_rate": 0.0,
+      "full_tps_mean": null,
+      "full_tps_min": null,
+      "full_tps_max": null,
+      "full_tps_stdev": null,
+      "runs": [
+        {
+          "name": "MP_A10_U8_r1",
+          "full_tps": null,
+          "exec": 160,
+          "agree": true,
+          "wall": 0.5924336910247803
+        },
+        {
+          "name": "MP_A10_U8_r2",
+          "full_tps": null,
+          "exec": 175,
+          "agree": true,
+          "wall": 0.6915299892425537
+        },
+        {
+          "name": "MP_A10_U8_r3",
+          "full_tps": null,
+          "exec": 147,
+          "agree": true,
+          "wall": 30.4566171169281
+        },
+        {
+          "name": "MP_A10_U8_r4",
+          "full_tps": null,
+          "exec": 160,
+          "agree": true,
+          "wall": 0.8256807327270508
+        },
+        {
+          "name": "MP_A10_U8_r5",
+          "full_tps": null,
+          "exec": 93,
+          "agree": true,
+          "wall": 30.453235149383545
+        }
+      ]
+    },
+    "MP_A10_FAST": {
+      "desc": "multi-pack 10-acct interval 0.03/min0.01",
+      "overrides": {
+        "SINGLE_PACKER": "false",
+        "ACCOUNTS": "10",
+        "BATCH_INTERVAL": "0.03",
+        "BATCH_INTERVAL_MIN": "0.01",
+        "ADAPTIVE_MEMPOOL_HIGH": "64"
+      },
+      "n": 5,
+      "full_ok_n": 0,
+      "success_rate": 0.0,
+      "full_tps_mean": null,
+      "full_tps_min": null,
+      "full_tps_max": null,
+      "full_tps_stdev": null,
+      "runs": [
+        {
+          "name": "MP_A10_FAST_r1",
+          "full_tps": null,
+          "exec": 96,
+          "agree": false,
+          "wall": 30.608124494552612
+        },
+        {
+          "name": "MP_A10_FAST_r2",
+          "full_tps": null,
+          "exec": 143,
+          "agree": false,
+          "wall": 30.512242794036865
+        },
+        {
+          "name": "MP_A10_FAST_r3",
+          "full_tps": null,
+          "exec": 141,
+          "agree": true,
+          "wall": 30.560041904449463
+        },
+        {
+          "name": "MP_A10_FAST_r4",
+          "full_tps": null,
+          "exec": 131,
+          "agree": false,
+          "wall": 30.817232847213745
+        },
+        {
+          "name": "MP_A10_FAST_r5",
+          "full_tps": null,
+          "exec": 54,
+          "agree": false,
+          "wall": 30.63727355003357
+        }
+      ]
+    },
+    "MP_A20_B512_U8": {
+      "desc": "multi-pack 20-acct batch512 uncert8",
+      "overrides": {
+        "SINGLE_PACKER": "false",
+        "ACCOUNTS": "20",
+        "MAX_BATCH_TXS": "512",
+        "MAX_UNCERTIFIED_PER_CREATOR": "8"
+      },
+      "n": 5,
+      "full_ok_n": 0,
+      "success_rate": 0.0,
+      "full_tps_mean": null,
+      "full_tps_min": null,
+      "full_tps_max": null,
+      "full_tps_stdev": null,
+      "runs": [
+        {
+          "name": "MP_A20_B512_U8_r1",
+          "full_tps": null,
+          "exec": 157,
+          "agree": true,
+          "wall": 30.52417492866516
+        },
+        {
+          "name": "MP_A20_B512_U8_r2",
+          "full_tps": null,
+          "exec": 169,
+          "agree": true,
+          "wall": 0.7174315452575684
+        },
+        {
+          "name": "MP_A20_B512_U8_r3",
+          "full_tps": null,
+          "exec": 57,
+          "agree": true,
+          "wall": 30.392457246780396
+        },
+        {
+          "name": "MP_A20_B512_U8_r4",
+          "full_tps": null,
+          "exec": 40,
+          "agree": false,
+          "wall": 30.492177724838257
+        },
+        {
+          "name": "MP_A20_B512_U8_r5",
+          "full_tps": null,
+          "exec": 161,
+          "agree": true,
+          "wall": 0.9531550407409668
+        }
+      ]
+    },
+    "SP_A10_B512": {
+      "desc": "single-pack 10-acct batch512",
+      "overrides": {
+        "ACCOUNTS": "10",
+        "MAX_BATCH_TXS": "512"
+      },
+      "n": 5,
+      "full_ok_n": 4,
+      "success_rate": 0.8,
+      "full_tps_mean": 260.7627807708711,
+      "full_tps_min": 255.24916178270766,
+      "full_tps_max": 269.45619919554457,
+      "full_tps_stdev": 6.174672146865494,
+      "runs": [
+        {
+          "name": "SP_A10_B512_r1",
+          "full_tps": 269.45619919554457,
+          "exec": 200,
+          "agree": true,
+          "wall": 0.7422356605529785
+        },
+        {
+          "name": "SP_A10_B512_r2",
+          "full_tps": 257.87892435269794,
+          "exec": 200,
+          "agree": true,
+          "wall": 0.7755577564239502
+        },
+        {
+          "name": "SP_A10_B512_r3",
+          "full_tps": 255.24916178270766,
+          "exec": 200,
+          "agree": true,
+          "wall": 0.78354811668396
+        },
+        {
+          "name": "SP_A10_B512_r4",
+          "full_tps": 260.46683775253405,
+          "exec": 200,
+          "agree": true,
+          "wall": 0.7678520679473877
+        },
+        {
+          "name": "SP_A10_B512_r5",
+          "full_tps": null,
+          "exec": 16,
+          "agree": false,
+          "wall": 30.507110118865967
+        }
+      ]
+    },
+    "SP_A10_FAST": {
+      "desc": "single-pack 10-acct aggressive",
+      "overrides": {
+        "ACCOUNTS": "10",
+        "BATCH_INTERVAL": "0.03",
+        "BATCH_INTERVAL_MIN": "0.01",
+        "ADAPTIVE_MEMPOOL_HIGH": "64"
+      },
+      "n": 5,
+      "full_ok_n": 0,
+      "success_rate": 0.0,
+      "full_tps_mean": null,
+      "full_tps_min": null,
+      "full_tps_max": null,
+      "full_tps_stdev": null,
+      "runs": [
+        {
+          "name": "SP_A10_FAST_r1",
+          "full_tps": null,
+          "exec": 174,
+          "agree": true,
+          "wall": 0.46786999702453613
+        },
+        {
+          "name": "SP_A10_FAST_r2",
+          "full_tps": null,
+          "exec": 172,
+          "agree": true,
+          "wall": 0.4753408432006836
+        },
+        {
+          "name": "SP_A10_FAST_r3",
+          "full_tps": null,
+          "exec": 174,
+          "agree": true,
+          "wall": 0.46550726890563965
+        },
+        {
+          "name": "SP_A10_FAST_r4",
+          "full_tps": null,
+          "exec": 168,
+          "agree": true,
+          "wall": 0.4752383232116699
+        },
+        {
+          "name": "SP_A10_FAST_r5",
+          "full_tps": null,
+          "exec": 174,
+          "agree": true,
+          "wall": 0.45673632621765137
+        }
+      ]
+    },
+    "MP_A10_NTX400": {
+      "desc": "multi-pack 10-acct NTX=400 stress",
+      "overrides": {
+        "SINGLE_PACKER": "false",
+        "ACCOUNTS": "10",
+        "NTX": "400"
+      },
+      "n": 5,
+      "full_ok_n": 0,
+      "success_rate": 0.0,
+      "full_tps_mean": null,
+      "full_tps_min": null,
+      "full_tps_max": null,
+      "full_tps_stdev": null,
+      "runs": [
+        {
+          "name": "MP_A10_NTX400_r1",
+          "full_tps": null,
+          "exec": 361,
+          "agree": true,
+          "wall": 1.3416621685028076
+        },
+        {
+          "name": "MP_A10_NTX400_r2",
+          "full_tps": null,
+          "exec": 86,
+          "agree": true,
+          "wall": 30.84556245803833
+        },
+        {
+          "name": "MP_A10_NTX400_r3",
+          "full_tps": null,
+          "exec": 231,
+          "agree": false,
+          "wall": 32.15958571434021
+        },
+        {
+          "name": "MP_A10_NTX400_r4",
+          "full_tps": null,
+          "exec": 361,
+          "agree": true,
+          "wall": 1.3283400535583496
+        },
+        {
+          "name": "MP_A10_NTX400_r5",
+          "full_tps": null,
+          "exec": 281,
+          "agree": false,
+          "wall": 31.40958833694458
+        }
+      ]
+    },
+    "SP_A10_NTX400": {
+      "desc": "single-pack 10-acct NTX=400 stress",
+      "overrides": {
+        "ACCOUNTS": "10",
+        "NTX": "400"
+      },
+      "n": 5,
+      "full_ok_n": 0,
+      "success_rate": 0.0,
+      "full_tps_mean": null,
+      "full_tps_min": null,
+      "full_tps_max": null,
+      "full_tps_stdev": null,
+      "runs": [
+        {
+          "name": "SP_A10_NTX400_r1",
+          "full_tps": null,
+          "exec": 0,
+          "agree": true,
+          "wall": 30.729434490203857
+        },
+        {
+          "name": "SP_A10_NTX400_r2",
+          "full_tps": null,
+          "exec": 112,
+          "agree": false,
+          "wall": 30.770000457763672
+        },
+        {
+          "name": "SP_A10_NTX400_r3",
+          "full_tps": null,
+          "exec": 357,
+          "agree": true,
+          "wall": 0.9554576873779297
+        },
+        {
+          "name": "SP_A10_NTX400_r4",
+          "full_tps": null,
+          "exec": 356,
+          "agree": true,
+          "wall": 0.9903960227966309
+        },
+        {
+          "name": "SP_A10_NTX400_r5",
+          "full_tps": null,
+          "exec": 355,
+          "agree": true,
+          "wall": 0.9776918888092041
+        }
+      ]
+    }
+  },
+  "ranking_stable": [
+    {
+      "cfg": "SP_A20",
+      "desc": "single-packer 20-acct",
+      "score": 248.08136145687072,
+      "success_rate": 1.0,
+      "full_tps_mean": 248.08136145687072
+    },
+    {
+      "cfg": "SP_A1",
+      "desc": "single-packer 1-acct (classic)",
+      "score": 225.74875757531032,
+      "success_rate": 0.8,
+      "full_tps_mean": 282.1859469691379
+    },
+    {
+      "cfg": "SP_A10_B512",
+      "desc": "single-pack 10-acct batch512",
+      "score": 208.61022461669688,
+      "success_rate": 0.8,
+      "full_tps_mean": 260.7627807708711
+    },
+    {
+      "cfg": "SP_A10",
+      "desc": "single-packer 10-acct",
+      "score": 107.82286693530048,
+      "success_rate": 0.4,
+      "full_tps_mean": 269.5571673382512
+    },
+    {
+      "cfg": "MP_A1",
+      "desc": "multi-pack sharded 1-acct (expect ~1 packer)",
+      "score": 95.48393855122538,
+      "success_rate": 0.4,
+      "full_tps_mean": 238.70984637806345
+    }
+  ],
+  "best_stable_80": {
+    "cfg": "SP_A20",
+    "desc": "single-packer 20-acct",
+    "success_rate": 1.0,
+    "full_tps_mean": 248.08136145687072,
+    "score": 248.08136145687072
+  }
+}

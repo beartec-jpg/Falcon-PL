@@ -1,0 +1,38 @@
+{
+ "body": {
+  "kind": "operator_slash",
+  "operator_btc_xonly": "eb9d44938c30cee3c7d01135d35d07e41597b305b7a15584da630d95a2b44d48",
+  "deposit_txid": "2a16224ad2dc6cd4ade3cee24049449a3d4ddc8c2652e616a92b93f0407179a7",
+  "raw_tx_hex": "02000000021f926a0b4f019707b43441f723f5c6ebdaa2e826251cdf7bf8f82b7689a8e6c70100000000ffffffff1f926a0b4f019707b43441f723f5c6ebdaa2e826251cdf7bf8f82b7689a8e6c70200000000ffffffff025efb1000000000002200205fd7370835e2e8fdbf7b0ed32ddfebe40491c22876c901f127275711d29ea9535efb100000000000232103c6693bbd912d945499a6741cdd49c3156e9fdb7de8e9708eba8dee7cf2f6fb82ac00000000",
+  "btc_height": 95474,
+  "merkle_path": [
+   "d36e6cd1c2d753d6d0e08a5f326967e6d9ccad8cf9237ab863cf34ab2b3f6020"
+  ],
+  "merkle_index": 1
+ },
+ "header": {
+  "height": 95474,
+  "hash": "69f1cb780c0e5fe412d0f4697ef53386cd5f882a21ee0305ff893210968ad530",
+  "prev": "5f978e6a0b270f92d6bd188d7b65e9d04d33201bd4475e26d9b7f7f641e7b059",
+  "merkle_root": "a129d7337757487bae54d409048e4e2347d54c3229e4b0858d482ce8f816c1bf",
+  "raw": "0000002059b0e741f6f7b7d9265e47d41b20334dd0e9657b8d18bdd6920f270b6a8e975fbfc116f8e82c488d85b0e429324cd547234e8e0409d454ae7b48577733d729a1660bd66affff7f2000000000"
+ },
+ "graph": {
+  "kind": "disprove",
+  "assert_final_txid": "c7e6a889762bf8f87bdf1c2526e8a2daebc6f523f74134b40797014f0b6a921f",
+  "assert_initial_txid": "d8685b041c95ed739f831600ada8bcd81e08b227ddf3a3e9cc77c702ece387fd",
+  "kick_off_2_txid": "ccdda6576d7c57d3df98f1a62de1119fb8e62bae529dfcba531b076e6ea1b02d",
+  "kick_off_2_vout_spent_by_assert_initial": 1
+ },
+ "outputs": [
+  {
+   "sats": 1112926,
+   "spk": "00205fd7370835e2e8fdbf7b0ed32ddfebe40491c22876c901f127275711d29ea953"
+  },
+  {
+   "sats": 1112926,
+   "spk": "2103c6693bbd912d945499a6741cdd49c3156e9fdb7de8e9708eba8dee7cf2f6fb82ac"
+  }
+ ],
+ "source": "regtest 2026-10-19 test_fpl_watcher_disproves_dishonest_operator on merged BitVM patch (feat/bridge-integration); slash_evidence.py; witness stripped (txid unchanged)"
+}

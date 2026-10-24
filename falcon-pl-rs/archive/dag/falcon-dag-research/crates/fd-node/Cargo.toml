@@ -1,0 +1,36 @@
+[package]
+name = "fd-node"
+version.workspace = true
+edition.workspace = true
+license = "LicenseRef-All-Rights-Reserved"
+
+[[bin]]
+name = "falcon-dagd"
+path = "src/main.rs"
+
+[[bin]]
+name = "fd_sim"
+path = "src/bin/fd_sim.rs"
+
+[[bin]]
+name = "falcon-dag-wallet"
+path = "src/bin/falcon_dag_wallet.rs"
+
+[dependencies]
+fd-types = { workspace = true }
+fd-crypto = { workspace = true }
+fd-mempool = { workspace = true }
+fd-dag = { workspace = true }
+fd-order = { workspace = true }
+fd-exec = { workspace = true }
+fd-net = { workspace = true }
+fd-store = { workspace = true }
+fd-gmp = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+clap = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+anyhow = { workspace = true }
+parking_lot = "0.12"

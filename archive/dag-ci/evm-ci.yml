@@ -1,0 +1,36 @@
+name: FalconRailLock Foundry
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "contracts/evm/**"
+      - ".github/workflows/evm-ci.yml"
+  pull_request:
+    paths:
+      - "contracts/evm/**"
+      - ".github/workflows/evm-ci.yml"
+
+jobs:
+  forge-test:
+    name: forge test (claim codec)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: contracts/evm
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: stable
+
+      - name: Install forge-std
+        run: forge install foundry-rs/forge-std --no-git --shallow
+
+      - name: forge build
+        run: forge build
+
+      - name: forge test
+        run: forge test -vv

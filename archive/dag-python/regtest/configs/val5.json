@@ -1,0 +1,71 @@
+{
+  "validator_id": "val5",
+  "network_id": 9002,
+  "rpc_host": "127.0.0.1",
+  "rpc_port": 18005,
+  "peer_host": "127.0.0.1",
+  "peer_port": 19005,
+  "peers": [
+    [
+      "127.0.0.1",
+      19001
+    ],
+    [
+      "127.0.0.1",
+      19002
+    ],
+    [
+      "127.0.0.1",
+      19003
+    ],
+    [
+      "127.0.0.1",
+      19004
+    ]
+  ],
+  "unl": {
+    "val1": 1.0,
+    "val2": 1.0,
+    "val3": 1.0,
+    "val4": 1.0,
+    "val5": 1.0
+  },
+  "unl_threshold": 0.8,
+  "max_batch_parents": 6,
+  "target_batch_interval_s": 0.35,
+  "max_batch_txs": 128,
+  "hard_finality_h": 6,
+  "worker_sharding": true,
+  "worker_index": 4,
+  "worker_count": 5,
+  "adaptive_interval": true,
+  "require_sig_verify": true,
+  "crypto_scheme": "falcon-512",
+  "keys_dir": "/home/scott/falcon-dag/data/regtest/keys",
+  "data_dir": "/home/scott/falcon-dag/data/regtest/nodes/val5",
+  "snapshot_interval_s": 5.0,
+  "max_uncertified_batches": 2000,
+  "max_uncertified_per_creator": 64,
+  "genesis_balances": {
+    "acct1": 1000000000,
+    "acct2": 1000000000,
+    "acct3": 1000000000,
+    "acct4": 1000000000,
+    "acct5": 1000000000,
+    "acct6": 1000000000,
+    "acct7": 1000000000,
+    "acct8": 1000000000,
+    "acct9": 1000000000,
+    "acct10": 1000000000,
+    "acct11": 1000000000,
+    "acct12": 1000000000,
+    "acct13": 1000000000,
+    "acct14": 1000000000,
+    "acct15": 1000000000,
+    "acct16": 1000000000,
+    "acct17": 1000000000,
+    "acct18": 1000000000,
+    "acct19": 1000000000,
+    "acct20": 1000000000
+  }
+}

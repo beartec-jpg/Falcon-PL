@@ -1,0 +1,24 @@
+[package]
+name = "falcon-pl-bitvm2-c1b-export"
+version = "0.1.0"
+edition = "2021"
+license = "LicenseRef-All-Rights-Reserved"
+publish = false
+description = "Export BitVM BN254/Groth16 partial-script digests for Falcon C.1b"
+
+# Standalone from Falcon workspace (BitVM uses ark 0.5).
+[workspace]
+
+[[bin]]
+name = "falcon-pl-bitvm2-c1b-export"
+path = "src/main.rs"
+
+[dependencies]
+bitvm = { path = "../../vendor/BitVM/bitvm" }
+hex = "0.4"
+serde_json = "1"
+sha2 = "0.10"
+
+[profile.release]
+lto = true
+opt-level = 3

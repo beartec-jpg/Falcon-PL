@@ -1,0 +1,46 @@
+[package]
+name = "fd-pl-bitvm2"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "BitVM2 engine: FplWithdrawValid + optimistic Claim/Challenge/Disprove core"
+
+[[bin]]
+name = "falcon-pl-bitvm2-emu"
+path = "src/bin/falcon_pl_bitvm2_emu.rs"
+
+[[bin]]
+name = "falcon-pl-bitvm2-v3-proof"
+path = "src/bin/fpl_v3_proof.rs"
+
+[[bin]]
+name = "falcon-pl-bitvm2-setup"
+path = "src/bin/fpl_setup.rs"
+
+[[bin]]
+name = "falcon-pl-bitvm2-v2-proof"
+path = "src/bin/fpl_v2_proof.rs"
+
+[dependencies]
+ark-bn254 = "0.4"
+ark-ff = "0.4"
+ark-groth16 = { version = "0.4", default-features = false, features = ["std"] }
+ark-r1cs-std = { version = "0.4", default-features = false, features = ["std"] }
+ark-relations = { version = "0.4", default-features = false }
+ark-serialize = { version = "0.4", features = ["derive"] }
+ark-snark = "0.4"
+ark-std = { version = "0.4", features = ["std"] }
+clap = { workspace = true }
+hex = { workspace = true }
+rand = "0.8"
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+ark-crypto-primitives = { version = "0.4", default-features = false, features = ["std", "crh", "r1cs"] }
+thiserror = { workspace = true }
+
+fd-pl-snark = { path = "../fd-pl-snark" }
+
+[dev-dependencies]
+ark-groth16 = { version = "0.4", default-features = false, features = ["std"] }

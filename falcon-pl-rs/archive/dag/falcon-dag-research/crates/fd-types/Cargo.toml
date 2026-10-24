@@ -1,0 +1,11 @@
+[package]
+name = "fd-types"
+version.workspace = true
+edition.workspace = true
+license = "LicenseRef-All-Rights-Reserved"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }

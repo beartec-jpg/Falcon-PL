@@ -1,0 +1,74 @@
+[package]
+name = "fd-pl"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Falcon PL (FPL) — Participation Ledger prototype; Falcon Consensus + Falcon-512"
+
+[[bin]]
+name = "falcon-pl-demo"
+path = "src/bin/falcon_pl_demo.rs"
+
+[[bin]]
+name = "falcon-pl-node"
+path = "src/bin/falcon_pl_node.rs"
+
+[[bin]]
+name = "falcon-pl-ctl"
+path = "src/bin/falcon_pl_ctl.rs"
+
+[[bin]]
+name = "falcon-pl-load"
+path = "src/bin/falcon_pl_load.rs"
+
+[[bin]]
+name = "falcon-pl-bitvm2-attest"
+path = "src/bin/falcon_pl_bitvm2_attest.rs"
+
+[[bin]]
+name = "falcon-pl-bitvm2-prove"
+path = "src/bin/falcon_pl_bitvm2_prove.rs"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+ring = { workspace = true }
+hex = { workspace = true }
+hmac = { workspace = true }
+anyhow = { workspace = true }
+clap = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+parking_lot = { workspace = true }
+libc = "0.2"
+k256 = { workspace = true }
+ripemd = { workspace = true }
+sha3 = { workspace = true }
+blst = { workspace = true }
+pqcrypto-falcon = "0.3"
+pqcrypto-traits = "0.3"
+frost-secp256k1-tr = { version = "2.2", features = ["serde", "serialization"] }
+rand = "0.8"
+rand_core = "0.6"
+fd-pl-snark = { path = "../fd-pl-snark" }
+fd-pl-bitvm2 = { path = "../fd-pl-bitvm2" }
+
+[[bin]]
+name = "falcon-pl-bench"
+path = "src/bin/falcon_pl_bench.rs"
+
+[[bin]]
+name = "falcon-pl-load-net"
+path = "src/bin/falcon_pl_load_net.rs"
+
+[[bin]]
+name = "falcon-pl-loadgen"
+path = "src/bin/falcon_pl_loadgen.rs"
+
+[dev-dependencies]
+ark-bn254 = "0.4"
+ark-groth16 = { version = "0.4", default-features = false, features = ["std"] }

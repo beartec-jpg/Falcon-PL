@@ -1,0 +1,56 @@
+{
+  "suite": "facade_xshard",
+  "pass": true,
+  "route_ok": true,
+  "same_shard": {
+    "ok": 20,
+    "err": 0
+  },
+  "xshard": {
+    "accept": true,
+    "xfer_id": "xs-1-1786374917727",
+    "status": {
+      "account": "acct5",
+      "amount": 5,
+      "credit": {
+        "shard": 14,
+        "status": "pending",
+        "tx_id": "96fa2f99b22eb6e7238cf7c6778386f0"
+      },
+      "credit_attempt": 0,
+      "credit_sequence": 1,
+      "debit_executed": true,
+      "debit_gmp": {
+        "shard": 13,
+        "status": "pending",
+        "tx_id": "c3d919aa638208d84f135701db2bd4ea"
+      },
+      "debit_sequence": 5,
+      "dest_shard": 1,
+      "destination": "acct25",
+      "fee": 10,
+      "idem_key": "k:acct5:5:acct25:5:10",
+      "source_shard": 0,
+      "status": "credited",
+      "xfer_id": "xs-1-1786374917727"
+    },
+    "debit_exec": true,
+    "seq_before": 5,
+    "seq_after": 6,
+    "bal25_before": 1000000000,
+    "bal25_after": 1000000005,
+    "credit_ok": true,
+    "bal_ok": true
+  },
+  "facade_stats": {
+    "same_shard_err": 0,
+    "same_shard_ok": 20,
+    "xshard_credit_err": 0,
+    "xshard_credit_ok": 1,
+    "xshard_idempotent_hits": 0,
+    "xshard_refund_err": 0,
+    "xshard_refund_ok": 0,
+    "xshard_started": 1,
+    "xshard_timeout": 0
+  }
+}

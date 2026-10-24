@@ -1,0 +1,18 @@
+[Unit]
+Description=Falcon PL Falcon-512 QC sig collection (one-shot)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=falcon
+WorkingDirectory=/home/falcon/falcon-pl-public-testnet-2300
+EnvironmentFile=-/home/falcon/falcon-pl-public-testnet-2300/run/bridge/falcon-pl-bridge.env
+Environment=FALCON_QC_SIGS=/home/falcon/falcon-pl-public-testnet-2300/keys/falcon-qc/sigs
+Environment=FALCON_QC_SAMPLE_GAP=48
+ExecStart=/usr/bin/python3 /home/falcon/falcon-pl-public-testnet-2300/scripts/pl-falcon-qc-catchup.py collect
+StandardOutput=append:/home/falcon/falcon-pl-public-testnet-2300/logs/falcon-qc-catchup.log
+StandardError=append:/home/falcon/falcon-pl-public-testnet-2300/logs/falcon-qc-catchup.log
+
+[Install]
+WantedBy=multi-user.target

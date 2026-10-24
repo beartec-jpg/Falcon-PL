@@ -1,0 +1,60 @@
+{
+  "suite": "packer_vs_unl_isolation",
+  "rows": [
+    {
+      "n": 3,
+      "multipack_best_min": 46.18,
+      "multipack_tight": 46.18,
+      "single_best_min": 22.69,
+      "single_tight": 22.69,
+      "multipack_phases": {
+        "warm": 8.79,
+        "light": 22.7,
+        "med": 46.18
+      },
+      "single_phases": {
+        "warm": 8.81,
+        "light": 22.69,
+        "med": 12.95
+      }
+    },
+    {
+      "n": 6,
+      "multipack_best_min": 14.49,
+      "multipack_tight": 8.37,
+      "single_best_min": 5.71,
+      "single_tight": 5.71,
+      "multipack_phases": {
+        "warm": 8.37,
+        "light": 8.89,
+        "med": 14.49
+      },
+      "single_phases": {
+        "warm": 5.71,
+        "light": 3.77,
+        "med": 2.39
+      }
+    }
+  ],
+  "notes": [
+    {
+      "q": "N=6 single vs multipack",
+      "multi": 14.49,
+      "single": 5.71,
+      "ratio": 0.39
+    },
+    {
+      "q": "single-packer N=6 vs N=3 (UNL-only)",
+      "n3": 22.69,
+      "n6": 5.71,
+      "ratio": 0.25
+    },
+    {
+      "q": "multipack N=6 vs N=3",
+      "n3": 46.18,
+      "n6": 14.49,
+      "ratio": 0.31
+    }
+  ],
+  "verdict": "PRIMARY: multipack still helps at N=6. UNL-only: larger UNL under single-packer still loses TPS (cert/quorum tax)."
+}

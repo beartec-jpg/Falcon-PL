@@ -1,0 +1,126 @@
+{
+  "title": "Falcon DAG vs Falcon C++ RPCA \u2014 local TPS head-to-head",
+  "timestamp": "2026-08-03T16:19:58Z",
+  "caveats": [
+    "Localhost only; not WAN.",
+    "Falcon DAG is a Python research prototype.",
+    "Falcon C++ is production-shaped xrpld with Falcon-512 tx sigs.",
+    "Numbers are directional for architecture comparison, not marketing claims."
+  ],
+  "results": [
+    {
+      "system": "falcon-dag",
+      "mode": "in-process-sim",
+      "crypto": "falcon-512",
+      "validators": 5,
+      "txs_requested": 400,
+      "txs_executed": 400,
+      "elapsed_s": 0.794,
+      "tps": 503.76,
+      "agree": true,
+      "certified": 21,
+      "avg_sig_bytes": 655.0,
+      "est_cert_bytes_4sigs": 2652.0,
+      "notes": "Python prototype; not C++. Includes Falcon-512 cert sign/verify when scheme=falcon-512."
+    },
+    {
+      "system": "falcon-dag",
+      "mode": "in-process-sim",
+      "crypto": "hmac-sha256-dev",
+      "validators": 5,
+      "txs_requested": 400,
+      "txs_executed": 400,
+      "elapsed_s": 1.0373,
+      "tps": 385.62,
+      "agree": true,
+      "certified": 21,
+      "avg_sig_bytes": 32.0,
+      "est_cert_bytes_4sigs": 160.0,
+      "notes": "Python prototype; not C++. Includes Falcon-512 cert sign/verify when scheme=falcon-512."
+    },
+    {
+      "system": "falcon-dag",
+      "mode": "live-regtest-5node",
+      "crypto": "falcon-512",
+      "submitted_ok": 29,
+      "executed_reported": 395,
+      "canonical_lens": [
+        395,
+        395,
+        395,
+        395,
+        395
+      ],
+      "elapsed_s": 2.562,
+      "tps_submit_to_settle": 11.32,
+      "architecture": "narwhal-da + federated-ordering + falcon-512-certs",
+      "notes": "5 Python processes, Falcon-512 certs, localhost."
+    },
+    {
+      "system": "falcon-rpca-cpp",
+      "mode": "ledger-close-rate",
+      "server_state": "proposing",
+      "build_version": "3.2.0-b0",
+      "pubkey_node": "",
+      "seq_start": 8,
+      "seq_end": 12,
+      "ledgers_closed": 4,
+      "elapsed_s": 12.005,
+      "ledgers_per_s": 0.333,
+      "est_seconds_per_ledger": 3.001,
+      "notes": "Idle close rate only \u2014 not max TPS. Use load-test for flood."
+    },
+    {
+      "system": "falcon-rpca-cpp",
+      "mode": "load-test",
+      "returncode": 1,
+      "elapsed_wall_s": 0.26,
+      "stdout_tail": "Network ready: ledger=12  state=proposing  load_factor=1\n\nSetting up 15 load accounts...\n  wallet_propose failed for account 0: Classical wallets are disabled on Falcon Ledger; use key_type falcon512 or host1024\n\n"
+    },
+    {
+      "system": "falcon-rpca-cpp",
+      "mode": "falcon512-payment-flood",
+      "submit_tps": 95.72,
+      "settle_tps_approx": 22.12,
+      "payments_ok": 288,
+      "payments_requested": 300,
+      "ledger_close_s_idle": 3.0
+    }
+  ],
+  "summary": {
+    "dag_sim_falcon512_tps": 503.76,
+    "dag_sim_hmac_tps": 385.62,
+    "dag_live_tps": 11.32,
+    "falcon_cpp_ledger_s": 3.0,
+    "falcon_cpp_load_tps": null,
+    "interpretation": [
+      "DAG sim TPS is algorithmic upper bound in Python with real Falcon-512 cert crypto.",
+      "DAG live TPS reflects multi-process Python + HTTP; C++ Falcon will dominate raw TPS if both healthy.",
+      "Architecture win for DAG is cert amortization under large Falcon-512 sigs, not Python beating xrpld.",
+      "HMAC-dev sim ~0.8\u00d7 faster than Falcon-512 certs in this prototype (crypto cost)."
+    ],
+    "hmac_vs_falcon512_sim_speedup": 0.77,
+    "falcon_cpp_falcon512_submit_tps": 95.72,
+    "falcon_cpp_settle_tps_approx": 22.12,
+    "report_md": "docs/HEAD_TO_HEAD_TPS.md"
+  },
+  "headline": {
+    "falcon_cpp": {
+      "ledger_close_s": 3.0,
+      "converge_s": 2.0,
+      "falcon512_payment_submit_tps": 95.72,
+      "falcon512_payment_settle_tps_approx": 22.12,
+      "flood_ok": "288/300 then 288+/300-class",
+      "build": "3.2.0-b0",
+      "validators": 5
+    },
+    "falcon_dag": {
+      "sim_falcon512_tps": 503.76,
+      "sim_hmac_tps": 385.62,
+      "live_settle_tps_range": "11-177",
+      "cert_sig_bytes": 655,
+      "est_4of5_cert_bytes": 2652
+    },
+    "verdict": "Continue DAG as research; do not replace C++ Falcon. Architecture goal = PQ-sig amortization, not Python>C++ TPS."
+  }
+}

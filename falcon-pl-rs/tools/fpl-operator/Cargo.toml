@@ -1,0 +1,26 @@
+[package]
+name = "fpl-operator"
+version = "0.6.0"
+edition = "2021"
+license = "LicenseRef-All-Rights-Reserved"
+description = "Falcon PL BitVM2 bridge operator service (fronts BTC withdrawals from the operator's own wallet)"
+
+[[bin]]
+name = "fpl-operatord"
+path = "src/main.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+k256 = { version = "0.13", default-features = false, features = ["schnorr", "std"] }
+sha2 = "0.10"
+hex = "0.4"
+ripemd = "0.1"
+bech32 = "0.11"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+strip = true
+
+[workspace]

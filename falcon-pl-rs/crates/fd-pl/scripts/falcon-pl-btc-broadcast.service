@@ -1,0 +1,14 @@
+[Unit]
+Description=Falcon PL 2300 BTC withdraw broadcaster (ledger-signed txs only, no key)
+After=network-online.target
+
+[Service]
+Type=simple
+User=falcon
+Restart=always
+RestartSec=15
+Environment=FPL_RPC=127.0.0.1:19301
+ExecStart=/usr/bin/python3 /home/falcon/falcon-pl/falcon-pl-rs/crates/fd-pl/scripts/pl-btc-broadcast.py
+
+[Install]
+WantedBy=multi-user.target

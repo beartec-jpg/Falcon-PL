@@ -1,0 +1,12 @@
+[profile.default]
+src = "."
+out = "out"
+libs = ["lib"]
+test = "test"
+solc_version = "0.8.20"
+optimizer = true
+optimizer_runs = 200
+fs_permissions = [{ access = "read", path = "./" }]
+
+# Local:  forge install foundry-rs/forge-std --no-git --shallow && forge test
+# CI:     foundry-rs/foundry-toolchain + forge install + forge test

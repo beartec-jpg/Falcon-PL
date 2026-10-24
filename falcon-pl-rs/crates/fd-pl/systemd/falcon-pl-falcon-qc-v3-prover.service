@@ -1,0 +1,42 @@
+[Unit]
+Description=Falcon PL 2300 FalconQcBridgeV3 prover (jump headers, Groth16)
+After=network-online.target falcon-pl-v1.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Runs as the node user: it needs keys/falcon-qc (public keys + sigs-v2), the
+# V2 pk.bin and falcon-pl-ctl. ETH_V3_DEPOSITS.md recommends a dedicated user;
+# on host1 the proving inputs are falcon-owned.
+User=falcon
+WorkingDirectory=/home/falcon/falcon-pl-public-testnet-2300
+# Key: root-owned 0400 file with 32-byte hex, handed over by systemd. Never in
+# Environment=/EnvironmentFile= (systemctl show prints those), never in argv.
+LoadCredential=FPL_V3_PROVER_KEY:/etc/falcon-pl/creds/fpl-v3-prover.key
+Environment=FALCON_QC_V3_BRIDGE=0xEd4eE497F21a9255a59e87535FF2A6097592Cfd4
+Environment=ETH_RPC=https://sepolia.gateway.tenderly.co
+Environment=FPL_CTL=/home/falcon/falcon-pl-public-testnet-2300/bin/falcon-pl-ctl
+Environment=FALCON_QC_PK=/home/falcon/falcon-pl-public-testnet-2300/run/snark/falcon-qc-v2-one/pk.bin
+Environment=FALCON_QC_KEYS=/home/falcon/falcon-pl-public-testnet-2300/keys/falcon-qc
+Environment=FALCON_QC_SIGS=/home/falcon/falcon-pl-public-testnet-2300/keys/falcon-qc/sigs-v2
+Environment=FALCON_QC_THRESHOLD=4
+# One proof at a time on host1: each falcon-prove-one peaks at ~5-6 GB RSS. On
+# 2026-10-09 07:26 BST four in parallel OOM-killed the v1 archive node (global
+# OOM, auto-restarted 07:27). Parallel only on a host with >= 6 GB free per worker.
+Environment=FALCON_QC_PROVE_PARALLEL=0
+Environment=FALCON_QC_PROVE_WORKERS=1
+# Seconds between rounds (each round proves 4 Groth16 proofs, ~16.5 min each on host1).
+Environment=POLL_SEC=900
+# The node must never be the OOM victim: cap the prover and make it the preferred kill.
+MemoryMax=7G
+OOMScoreAdjust=1000
+# Jump mode (default): one submitHeaderWithProofs per round, H = min(mesh tip,
+# fplTip + maxJump). Gas limit = eth_estimateGas x1.25 (refuses on revert).
+ExecStart=/usr/bin/python3 /home/falcon/falcon-pl-public-testnet-2300/scripts/pl-falcon-qc-v3-prover.py --send
+Restart=on-failure
+RestartSec=60
+StandardOutput=append:/home/falcon/falcon-pl-public-testnet-2300/logs/falcon-qc-v3-prover.log
+StandardError=append:/home/falcon/falcon-pl-public-testnet-2300/logs/falcon-qc-v3-prover.log
+
+[Install]
+WantedBy=multi-user.target

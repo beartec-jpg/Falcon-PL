@@ -1,0 +1,63 @@
+{
+  "description": "Seed peers for falcon-dag-testnet-1. Replace HOST with public IP/DNS of seed.",
+  "shards": [
+    {
+      "id": 0,
+      "network_id": 9003,
+      "peers": [
+        {
+          "id": "val1",
+          "host": "HOST",
+          "rpc": 18001,
+          "p2p": 19001,
+          "role": "validator"
+        },
+        {
+          "id": "val2",
+          "host": "HOST",
+          "rpc": 18002,
+          "p2p": 19002,
+          "role": "validator"
+        },
+        {
+          "id": "val3",
+          "host": "HOST_F2",
+          "rpc": 18003,
+          "p2p": 19003,
+          "role": "validator"
+        }
+      ]
+    },
+    {
+      "id": 1,
+      "network_id": 9004,
+      "peers": [
+        {
+          "id": "val4",
+          "host": "HOST",
+          "rpc": 18004,
+          "p2p": 19004,
+          "role": "validator"
+        },
+        {
+          "id": "val5",
+          "host": "HOST",
+          "rpc": 18005,
+          "p2p": 19005,
+          "role": "validator"
+        },
+        {
+          "id": "val6",
+          "host": "HOST_F2",
+          "rpc": 18006,
+          "p2p": 19006,
+          "role": "validator"
+        }
+      ]
+    }
+  ],
+  "facade": "http://HOST:18499",
+  "faucet": "http://HOST:18550",
+  "public_rpc_s0": "http://HOST:18001",
+  "public_rpc_s1": "http://HOST:18004"
+}

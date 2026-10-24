@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "falcon-dag"
+version = "0.3.3"
+description = "Falcon DAG — Narwhal-style mempool DAG + federated UNL ordering"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Research / proprietary" }
+authors = [{ name = "BEARTEC" }]
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+falcon = ["falcon-python>=0.1.0"]
+all = ["pytest>=8.0", "falcon-python>=0.1.0"]
+
+[project.scripts]
+falcon-dag-node = "falcon_dag.node:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

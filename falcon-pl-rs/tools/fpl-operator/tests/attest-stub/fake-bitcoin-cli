@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+D=$(dirname "$0"); F="$D/fx.json"
+case "$1" in
+ getrawtransaction) python3 -c 'import json;f=json.load(open("'$F'"));print(json.dumps({"hex":f["pegout_raw_hex"],"blockhash":"00"*32}))';;
+ getblockheader) echo '{"height":200}';;
+ getblock) python3 -c 'import json;f=json.load(open("'$F'"));print(json.dumps({"tx":[f["pegout_txid"]]}))';;
+ *) exit 1;; esac

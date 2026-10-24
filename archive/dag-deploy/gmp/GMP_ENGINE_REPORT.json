@@ -1,0 +1,134 @@
+{
+  "suite": "gmp_engine_pr_g4",
+  "design": "docs/GLOBAL_MEMPOOL_CONF_POOL_DESIGN.md",
+  "gmp_url": "http://192.0.2.1:18500",
+  "phase_a": {
+    "elapsed_s": 70.06,
+    "exec_tps_min": 17.56,
+    "exec_delta": [
+      1230,
+      1230,
+      1230
+    ],
+    "health": {
+      "exec_min": 1231,
+      "exec_max": 1231,
+      "exec_spread": 0,
+      "lag_max": 0,
+      "vals_up": 3,
+      "roots_agree": true,
+      "arch1_exec": 1231,
+      "arch2_exec": 1231
+    },
+    "stats": {
+      "gmp_ok": 1500
+    },
+    "lease_shares": {
+      "val1": 174,
+      "val2": 180,
+      "val3": 117
+    },
+    "capacity_skew_ok": true,
+    "agent_stats": {
+      "val1": {
+        "admit_err": 0,
+        "admit_ok": 562,
+        "complete_ok": 174,
+        "enabled": true,
+        "last_error": null,
+        "leases_empty": 883,
+        "leases_ok": 174,
+        "nack": 0,
+        "url": "http://192.0.2.1:18500"
+      },
+      "val2": {
+        "admit_err": 0,
+        "admit_ok": 576,
+        "complete_ok": 180,
+        "enabled": true,
+        "last_error": null,
+        "leases_empty": 877,
+        "leases_ok": 180,
+        "nack": 0,
+        "url": "http://192.0.2.1:18500"
+      },
+      "val3": {
+        "admit_err": 0,
+        "admit_ok": 362,
+        "complete_ok": 117,
+        "enabled": true,
+        "last_error": null,
+        "leases_empty": 578,
+        "leases_ok": 117,
+        "nack": 0,
+        "url": "http://192.0.2.1:18500"
+      }
+    },
+    "gmp_status": {
+      "active_leases": 0,
+      "max_pending": 50000,
+      "num_shards": 16,
+      "pending": 0,
+      "validators": {
+        "val1": {
+          "advert_age_s": 0.003775358200073242,
+          "completed": 174,
+          "expired": 0,
+          "in_flight": 0,
+          "mem_budget_mb": 8192,
+          "mem_used_mb": 24,
+          "weight": 0.747802734375
+        },
+        "val2": {
+          "advert_age_s": 0.005514383316040039,
+          "completed": 180,
+          "expired": 0,
+          "in_flight": 0,
+          "mem_budget_mb": 4096,
+          "mem_used_mb": 66,
+          "weight": 0.7379150390625
+        },
+        "val3": {
+          "advert_age_s": 0.05895113945007324,
+          "completed": 117,
+          "expired": 0,
+          "in_flight": 0,
+          "mem_budget_mb": 1024,
+          "mem_used_mb": 170,
+          "weight": 0.62548828125
+        }
+      }
+    },
+    "gcp_status": {
+      "certified": 0,
+      "open": 471,
+      "total": 471
+    },
+    "pass": true
+  },
+  "phase_b_kill_val3_agent": {
+    "elapsed_s": 45.2,
+    "exec_tps_min": 6.9,
+    "exec_delta": [
+      315,
+      315,
+      312
+    ],
+    "health": {
+      "exec_min": 1543,
+      "exec_max": 1546,
+      "exec_spread": 3,
+      "lag_max": 0,
+      "vals_up": 3,
+      "roots_agree": false,
+      "arch1_exec": 1546,
+      "arch2_exec": 1546
+    },
+    "stats": {
+      "gmp_ok": 750
+    },
+    "gmp_pending_after": 0,
+    "pass": true
+  },
+  "pass": true
+}

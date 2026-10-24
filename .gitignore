@@ -1,0 +1,20 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+dist/
+build/
+data/
+*.pid
+.DS_Store
+.idea/
+.vscode/
+.env
+.env.*
+**/ts-ssh-hosts.env
+
+# Rust build
+**/target/

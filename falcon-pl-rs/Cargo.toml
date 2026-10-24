@@ -1,0 +1,41 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/fd-pl",
+    "crates/fd-pl-snark",
+    "crates/fd-pl-bitvm2",
+    "crates/fd-pl-graph",
+]
+default-members = ["crates/fd-pl"]
+
+# BitVM export tool is a separate workspace (ark 0.5 / BitVM deps).
+exclude = ["tools/bitvm-c1b-export", "vendor/BitVM", "vendor/BitVM/*"]
+
+[workspace.package]
+version = "2.9.81"
+edition = "2021"
+license = "LicenseRef-All-Rights-Reserved"
+authors = ["BEARTEC"]
+# Product: Falcon PL (FPL) — Participation Ledger / Falcon Consensus
+repository = "https://github.com/beartec-jpg/Falcon-PL"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive", "rc"] }
+serde_json = "1"
+sha2 = "0.10"
+# v2.9.59: SHA-256 for the large state-root / snapshot hashes (runtime-detected
+# SHA-NI / AVX2 / SSSE3 asm; ~1.8x sha2 on CPUs without SHA-NI).
+ring = { version = "0.17", default-features = false }
+hex = "0.4"
+hmac = "0.12"
+thiserror = "1"
+tokio = { version = "1", features = ["full"] }
+clap = { version = "4", features = ["derive"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+anyhow = "1"
+parking_lot = "0.12"
+k256 = { version = "0.13", features = ["ecdsa", "arithmetic"] }
+ripemd = "0.1"
+sha3 = "0.10"
+blst = "0.3"

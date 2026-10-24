@@ -1,0 +1,48 @@
+{
+  "all_peg_ins_presigned": true,
+  "attestations": [
+    {
+      "graph_ids": [
+        "2C881D33D94819F04396FC8856455A3E094DC8C90EEC6A01C577A28AB3FF9FA8",
+        "A0D561EC59C6AE62981758D316899944DB65AA00EB39F595D19203A1C382E31A"
+      ],
+      "id": "depositor-wallet",
+      "public_key": "026fc24875c3dc6054ddccebf60a1596ee11e5468e923c381f7903d5bed22abfc5",
+      "signature_hex": "7840672f0054ac7081b6e328c1484ae687f481d9a20d8820ee47ff63ab412aca811c55843b45c5feaa665717ab0e74fb1c07f0ca3008379a39866a9081c32256",
+      "transcript_sha256": "bcc9c9cf2d1a6515a2ec0bddfd5b8de42af548a8773bd83d99a349ea690ea99f",
+      "wiped_at_unix": 1792315799
+    },
+    {
+      "graph_ids": [
+        "2C881D33D94819F04396FC8856455A3E094DC8C90EEC6A01C577A28AB3FF9FA8",
+        "A0D561EC59C6AE62981758D316899944DB65AA00EB39F595D19203A1C382E31A"
+      ],
+      "id": "fpl-signer",
+      "public_key": "02ea44f3cb0a35744bd5dd5f0570977b9a3b4837d299892c312a7437e9c5313c5a",
+      "signature_hex": "5270334f93aa1ca2f7bab733b3ff5080dd1f4d9c830e2d73cc0af51c886f59935c591cc4deaa9120714bbec8b94ceac514120087c1af4d7a0ad2964324c09b08",
+      "transcript_sha256": "bcc9c9cf2d1a6515a2ec0bddfd5b8de42af548a8773bd83d99a349ea690ea99f",
+      "wiped_at_unix": 1792315800
+    }
+  ],
+  "connector_c_spks": [
+    "5120aa938e64b931da7d96bf0035221797e9fb0c61b86e28c4fa0e970803668e42fd"
+  ],
+  "graphs": [
+    {
+      "peg_in": "A0D561EC59C6AE62981758D316899944DB65AA00EB39F595D19203A1C382E31A",
+      "peg_out": "2C881D33D94819F04396FC8856455A3E094DC8C90EEC6A01C577A28AB3FF9FA8"
+    }
+  ],
+  "network": "regtest",
+  "nonced_sha256": "bcc9c9cf2d1a6515a2ec0bddfd5b8de42af548a8773bd83d99a349ea690ea99f",
+  "seats": [
+    {
+      "id": "depositor-wallet",
+      "pubkey": "026fc24875c3dc6054ddccebf60a1596ee11e5468e923c381f7903d5bed22abfc5"
+    },
+    {
+      "id": "fpl-signer",
+      "pubkey": "02ea44f3cb0a35744bd5dd5f0570977b9a3b4837d299892c312a7437e9c5313c5a"
+    }
+  ]
+}

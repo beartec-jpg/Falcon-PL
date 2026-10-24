@@ -1,0 +1,10 @@
+[package]
+name = "fd-dag"
+version.workspace = true
+edition.workspace = true
+license = "LicenseRef-All-Rights-Reserved"
+
+[dependencies]
+fd-types = { workspace = true }
+fd-crypto = { workspace = true }
+fd-exec = { workspace = true }

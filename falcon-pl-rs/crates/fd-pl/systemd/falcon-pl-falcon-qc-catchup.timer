@@ -1,0 +1,11 @@
+[Unit]
+Description=Falcon PL Falcon QC sig collection timer (every 10 min)
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=10min
+Persistent=true
+Unit=falcon-pl-falcon-qc-catchup.service
+
+[Install]
+WantedBy=timers.target
