@@ -11894,6 +11894,8 @@ impl Node {
             || err.contains("admin-only")
             || err.contains("allowlist")
             || err.contains("vault:")
+            || err.contains("only Hot can convert account type once")
+            || err.contains("pay_to_key:")
             || err.contains("name:")
             || err.contains("BTC header parent mismatch")
             || err.contains("BTC duplicate header")
