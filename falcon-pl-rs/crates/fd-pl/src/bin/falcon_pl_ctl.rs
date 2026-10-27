@@ -1373,6 +1373,12 @@ enum Cmd {
         #[arg(long, default_value_t = NETWORK_ID_PRIVATE_V22)]
         network_id: u32,
     },
+    /// Operator-only: manually evict a stuck tx hash or `account[:seq]` from the local node's mempool.
+    #[command(name = "mempool-drop", alias = "drop-tx")]
+    MempoolDrop {
+        /// Transaction hash (`tx_id`), `account:seq`, or `account` to evict.
+        target: String,
+    },
     SnapshotSave {
         #[arg(long)]
         path: PathBuf,
@@ -6065,6 +6071,15 @@ async fn run() -> Result<()> {
                 tx.tx_id,
                 serde_json::to_string_pretty(&r)?
             );
+        }
+        Cmd::MempoolDrop { target } => {
+            let r = rpc_admin(
+                &args.addr,
+                &args.admin_sock,
+                WireMsg::MempoolDrop { target },
+            )
+            .await?;
+            print_reply(&r)?;
         }
         Cmd::SnapshotSave { path } => {
             let r = rpc_admin(

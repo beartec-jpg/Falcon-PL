@@ -3324,6 +3324,10 @@ pub struct Node {
     /// v2.9.76: tx id whose apply failed in the last [`Self::stage_drafts`]
     /// (local diagnostic; lets a proposer evict a tx that fails self-accept).
     pub last_apply_fail_tx: Option<String>,
+    /// v2.10.0 (Item #16): true when invalid/permanent-failing mempool heads
+    /// were evicted on the current open height so the leader can still seal a
+    /// valid empty/heartbeat block instead of stalling the view-change round.
+    pub evicted_since_last_seal: bool,
     /// v2.9.57: last (height, logical ms) this cert-holding seat joined a
     /// peer's recert round for our tip (see [`Self::recert_assist`]). Local.
     pub recert_assist_h: u64,
@@ -3679,6 +3683,7 @@ impl Node {
             perm_head_dry_runs: 0,
             perm_dropped: PermDropSet::default(),
             last_apply_fail_tx: None,
+            evicted_since_last_seal: false,
             recert_assist_h: 0,
             recert_assist_ms: 0,
             tip_cert_votes: BTreeMap::new(),
@@ -7627,7 +7632,44 @@ impl Node {
             .map(|t| t.tx_id.clone())
             .collect();
         self.mempool.remove_many(&ids);
+        self.evicted_since_last_seal = true;
         Some(id)
+    }
+
+    /// Operator / admin manual eviction of stuck mempool transactions by
+    /// `tx_id`, `account:sequence`, or `account`. Also records evicted tx IDs
+    /// in `perm_dropped` at the current tip so gossip does not re-insert them.
+    pub fn drop_mempool_target(&mut self, target: &str) -> Vec<String> {
+        let t = target.trim();
+        if t.is_empty() {
+            return Vec::new();
+        }
+        let acct_seq: Option<(&str, u64)> = t
+            .rsplit_once(':')
+            .and_then(|(a, s)| s.parse::<u64>().ok().map(|seq| (a, seq)));
+        let ids: Vec<String> = self
+            .mempool
+            .iter_candidates()
+            .filter(|tx| {
+                if tx.tx_id == t {
+                    return true;
+                }
+                if let Some((acct, seq)) = acct_seq {
+                    return tx.account == acct && tx.sequence == seq;
+                }
+                tx.account == t
+            })
+            .map(|tx| tx.tx_id.clone())
+            .collect();
+        if !ids.is_empty() {
+            let tip = self.tip_hash.clone();
+            let now = self.now_ms;
+            for id in &ids {
+                self.perm_dropped.insert(id, now, &tip);
+            }
+            self.mempool.remove_many(&ids);
+        }
+        ids
     }
 
     pub fn skip_set_for(&self, height: u64) -> BTreeSet<String> {
@@ -9845,24 +9887,134 @@ impl Node {
         })
     }
 
-    /// True if at least one pending tx has `sequence == account.need` (can pack now).
+    /// Pre-check whether `tx` can be packed at the current committed state.
+    /// Checks sequence match, key-bind gate, and the 4 permanent/non-packable
+    /// error classes from Alert #16 (`OperatorGraphBind` already bound,
+    /// `LendBorrow` LTV exceeded, `PayToKey` destination already has a key,
+    /// and `VaultOpen` on a non-Hot account).
+    pub fn is_tx_packable(&self, tx: &Tx) -> Result<(), String> {
+        let need = self.state.get(&tx.account).sequence;
+        if tx.sequence != need {
+            return Err(format!("bad sequence want {need} got {}", tx.sequence));
+        }
+        Self::pack_key_bind_check(self.key_bind_gate_open(), &self.state, tx)?;
+        match &tx.body {
+            TxBody::OperatorGraphBind {
+                deposit_txid,
+                kick_off_2_txid,
+                assert_final_txid,
+                depositor_account,
+                cosign,
+            } => {
+                if !depositor_account.is_empty()
+                    && !self.state.accounts.contains_key(depositor_account.trim())
+                {
+                    return Err("operator: depositor_account is not a Falcon account".into());
+                }
+                let r = self
+                    .bridge
+                    .operators
+                    .by_account(&tx.account)
+                    .ok_or_else(|| "operator: unknown operator".to_string())?;
+                let gkey = format!(
+                    "{}:{}",
+                    deposit_txid.trim().to_ascii_lowercase(),
+                    r.btc_xonly_hex
+                );
+                if self.bridge.operators.graphs.contains_key(&gkey) {
+                    return Err("operator: graph already bound for this deposit".into());
+                }
+                if !*cosign {
+                    let k2 = kick_off_2_txid.trim().to_ascii_lowercase();
+                    let af = assert_final_txid.trim().to_ascii_lowercase();
+                    if self
+                        .bridge
+                        .operators
+                        .graphs
+                        .values()
+                        .any(|g| g.kick_off_2_txid == k2 || g.assert_final_txid == af)
+                    {
+                        return Err("graph txid already bound elsewhere".into());
+                    }
+                }
+            }
+            TxBody::LendBorrow {
+                market_id,
+                amount,
+                collateral_fpl,
+            } => {
+                let m = self
+                    .defi
+                    .markets
+                    .get(market_id)
+                    .ok_or_else(|| "unknown market".to_string())?;
+                let mut m_probe = m.clone();
+                if let Some(px) = self.pool_price_fpl(&m_probe.asset) {
+                    m_probe.set_price(px);
+                }
+                m_probe.borrow(&tx.account, *amount, *collateral_fpl)?;
+            }
+            TxBody::PayToKey { key_hash } => {
+                if !is_key_commit_hex(key_hash) {
+                    return Err("pay_to_key: key_hash must be 64 lowercase hex".into());
+                }
+                if tx.destination.is_empty() || tx.destination == tx.account {
+                    return Err("pay_to_key: bad destination".into());
+                }
+                if self.account_key_bound(&tx.destination) {
+                    return Err("pay_to_key: destination already has a key".into());
+                }
+                if !self.key_bind_gate_open() {
+                    return Err(PAY_TO_KEY_NOT_ACTIVE.into());
+                }
+                let dest = self.state.get(&tx.destination);
+                if !dest.meta.key_commit.is_empty() && dest.meta.key_commit != *key_hash {
+                    return Err("pay_to_key: destination committed to another key".into());
+                }
+            }
+            TxBody::VaultOpen { destination } => {
+                let dest = destination.trim();
+                if dest.is_empty() {
+                    return Err("vault: nominate a destination to activate".into());
+                }
+                if dest == tx.account {
+                    return Err("vault: destination must differ from the vault account".into());
+                }
+                let sender = self.state.get(&tx.account);
+                if sender.meta.account_type != AccountType::Hot {
+                    return Err("only Hot can convert account type once".into());
+                }
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    /// True when `tx` passes [`Self::is_tx_packable`] at the current state.
+    pub fn is_tx_applicable(&self, tx: &Tx) -> bool {
+        self.is_tx_packable(tx).is_ok()
+    }
+
+    /// True if at least one pending tx has `sequence == account.need` and passes
+    /// [`Self::is_tx_applicable`] (can pack now).
     ///
     /// Distinguishes **work the network can seal** from **seq-poison mempool**
-    /// (future sequences only). Non-empty mempool alone is not proof a winner is stuck.
+    /// (future sequences only) or non-packable permanent failures.
     pub fn has_applicable_tx(&self) -> bool {
         if self.mempool.is_empty() {
             return false;
         }
         for tx in self.mempool.iter_candidates() {
             let need = self.state.get(&tx.account).sequence;
-            if tx.sequence == need {
+            if tx.sequence == need && self.is_tx_applicable(tx) {
                 return true;
             }
         }
         false
     }
 
-    /// Transactions whose sequence is the account's next required sequence.
+    /// Transactions whose sequence is the account's next required sequence
+    /// and pass [`Self::is_tx_applicable`].
     /// One head per account can pack on this height; later sequences in the
     /// same pool are not applicable yet.
     pub fn applicable_head_count(&self) -> usize {
@@ -9872,7 +10024,7 @@ impl Node {
         let mut n = 0usize;
         for tx in self.mempool.iter_candidates() {
             let need = self.state.get(&tx.account).sequence;
-            if tx.sequence == need {
+            if tx.sequence == need && self.is_tx_applicable(tx) {
                 n += 1;
             }
         }
@@ -9987,6 +10139,7 @@ impl Node {
         let n = drop_ids.len();
         if n > 0 {
             self.mempool.remove_many(&drop_ids);
+            self.evicted_since_last_seal = true;
         }
         n
     }
@@ -11997,6 +12150,11 @@ impl Node {
             || err.contains("admin-only")
             || err.contains("allowlist")
             || err.contains("vault:")
+            || err.contains("only Hot can convert account type once")
+            || err.contains("pay_to_key:")
+            || err.contains("operator: graph already bound for this deposit")
+            || err.contains("graph txid already bound elsewhere")
+            || err.contains("borrow: LTV exceeded")
             || err.contains("name:")
             || err.contains("external_addrs:")
             || err.contains("BTC header parent mismatch")
@@ -12115,7 +12273,7 @@ impl Node {
             ));
         }
         let _pruned = self.mempool.prune_stale(&self.state);
-        if self.mempool.is_empty() {
+        if self.mempool.is_empty() && !self.evicted_since_last_seal {
             return Err("empty mempool — refuse empty ledger".into());
         }
         // One apply path with ingest (2.7.2 / 2.9.6): fold + select + root at
@@ -12320,17 +12478,10 @@ impl Node {
                         list.remove(0);
                         progressed = true; // continue scanning remaining
                     }
-                    Err(e) => {
-                        eprintln!(
-                            "falcon-pl pack skip {} seq {} {}: {e}",
-                            tx.tx_id, tx.sequence, tx.account
-                        );
-                        // Same-seq sibling: rotate head so a fresh resubmit can pack.
-                        if list.len() > 1 && list[1].sequence == need {
-                            let failed = list.remove(0);
-                            list.push(failed);
-                            progressed = true;
-                        }
+                    Err(_e) => {
+                        // Transient / activation-gated failure (e.g. EthLcUpdate waiting
+                        // for activation height). Permanent failures are matched above and
+                        // evicted into `drop_ids` + `perm_dropped`.
                     }
                 }
             }
@@ -12338,8 +12489,9 @@ impl Node {
         self.now_ms = saved_now;
         if !drop_ids.is_empty() {
             self.mempool.remove_many(&drop_ids);
+            self.evicted_since_last_seal = true;
         }
-        if chosen.is_empty() {
+        if chosen.is_empty() && !self.evicted_since_last_seal {
             if self.mempool.is_empty() {
                 return Err("empty mempool — refuse empty ledger".into());
             }
@@ -13158,9 +13310,6 @@ impl Node {
         if !self.packer_sig_ok(ledger) {
             return Err("bad packer sig".into());
         }
-        if ledger.txs.is_empty() {
-            return Err("empty ledger rejected".into());
-        }
         self.verify_parent_cert(ledger)?;
         if let Some(c) = &ledger.parent_cert {
             self.certs.entry(c.height).or_insert_with(|| c.clone());
@@ -13354,7 +13503,7 @@ impl Node {
         let ckpt = TimeFold::take(self);
         let _seized = self.apply_time_effects_with_slashes(
             ledger.sealed_at_ms,
-            ledger.fee_total > 0,
+            ledger.fee_total > 0 || ledger.txs.is_empty(),
             &ledger.slashes,
         );
         let mut draft_state = self.state.clone();
@@ -13460,7 +13609,6 @@ impl Node {
         if ledger.height != self.tip_height.saturating_add(1)
             || ledger.parent_hash != self.tip_hash
             || ledger.network_id != self.cfg.network_id
-            || ledger.txs.is_empty()
         {
             return Prestage::Skip;
         }
@@ -13676,7 +13824,7 @@ impl Node {
         let ckpt = TimeFold::take(self);
         let _seized = self.apply_time_effects_with_slashes(
             ledger.sealed_at_ms,
-            ledger.fee_total > 0,
+            ledger.fee_total > 0 || ledger.txs.is_empty(),
             &ledger.slashes,
         );
         let saved = self.now_ms;
@@ -13790,7 +13938,7 @@ impl Node {
                 pot = pot.saturating_add(prop);
             }
             draft_work.fee_reward_pool = draft_work.fee_reward_pool.saturating_add(pot);
-            if !locked(&ledger.packer) {
+            if !ledger.txs.is_empty() && !locked(&ledger.packer) {
                 *draft_work.proposer_credit.entry(ledger.packer.clone()).or_insert(0) +=
                     crate::economy::proposer_block_credit(paying);
             }
@@ -13909,6 +14057,7 @@ impl Node {
         self.skip_votes.remove(&ledger.height);
         self.height_open_ms = self.now_ms;
         self.pending_proposal = None;
+        self.evicted_since_last_seal = false;
         // v2.10.0: liveness clock + round state belong to the open height.
         self.tip_advanced_ms = self.now_ms;
         self.round_open_ms = self.now_ms;
@@ -15379,6 +15528,10 @@ pub enum WireMsg {
         #[serde(default)]
         reason: String,
     },
+    /// Operator-only: evict a stuck tx hash or `account[:seq]` from the local mempool.
+    MempoolDrop {
+        target: String,
+    },
     /// Wallet: query one account (seq, balance, claimable, assets).
     AccountQuery {
         account: String,
@@ -15424,6 +15577,7 @@ impl WireMsg {
                 | WireMsg::SnapshotSave { .. }
                 | WireMsg::SnapshotLoad { .. }
                 | WireMsg::OperatorHardReset { .. }
+                | WireMsg::MempoolDrop { .. }
         )
     }
 }
@@ -23267,6 +23421,214 @@ mod account_history_store_tests {
             }
         );
         assert_eq!(b1, b2);
+    }
+
+    #[test]
+    fn item16_four_permanent_error_classes_evicted_and_leader_proposes_empty_block() {
+        let cfg = ChainConfig {
+            pack_budget_ms: 0,
+            max_txs_per_ledger: 16,
+            soft_ok_votes: 1,
+            min_fee: 0,
+            fee_escalate: false,
+            ..Default::default()
+        };
+        let mut net = Network::bootstrap(
+            &["v1", "v2", "v3"],
+            1_000,
+            &[
+                ("alice".into(), 100_000),
+                ("bob".into(), 100_000),
+                ("carol".into(), 100_000),
+                ("dave".into(), 100_000),
+            ],
+            cfg,
+        );
+        net.pong_all();
+        let winner = net.nodes.values().next().unwrap().lottery_packer().unwrap();
+        let nid = net.cfg.network_id;
+        let user_keys = net.user_keys.clone();
+        let n = net.nodes.get_mut(&winner).unwrap();
+
+        // Set up state so all 4 error classes from Alert #16 trigger:
+        // (1) OperatorGraphBind: alice is a registered operator whose graph for deposit "aa"*32 is already bound.
+        n.bitvm2_m1_from_height = 0;
+        let op_xonly = "11".repeat(32);
+        let dep_txid = "aa".repeat(32);
+        let k2_txid = "bb".repeat(32);
+        let af_txid = "cc".repeat(32);
+        let op_params = n.operator_params();
+        n.bridge
+            .operators
+            .register(&op_params, "alice", &op_xonly, op_params.min_bond, 0)
+            .unwrap();
+        n.bridge
+            .operators
+            .bind_graph("alice", &dep_txid, &k2_txid, &af_txid, 0)
+            .unwrap();
+
+        // (2) LendBorrow: market "m-usdc" with liquidity 10_000, price 1, LTV 7000 bps -> max borrow on collateral 100 is 70.
+        n.create_market("m-usdc", "USDC").unwrap();
+        n.defi.credit_asset("bob", "USDC", 50_000);
+        n.lend_supply("m-usdc", "bob", 10_000).unwrap();
+
+        // (3) PayToKey: destination "bob" already has a key in n.keys / on-chain.
+        let mut bob_acct = n.state.get("bob");
+        bob_acct.meta.public_key = user_keys.public_hex("bob").unwrap();
+        n.state.accounts.insert("bob".into(), bob_acct);
+
+        // (4) VaultOpen: "dave" already opened a vault (AccountType::Vault), so a second VaultOpen fails with "only Hot can convert account type once".
+        n.open_vault("dave", "bob").unwrap();
+
+        let tx1 = Tx::sign_body(
+            &user_keys,
+            "alice",
+            n.state.get("alice").sequence,
+            "",
+            0,
+            1,
+            nid,
+            TxBody::OperatorGraphBind {
+                deposit_txid: dep_txid.clone(),
+                kick_off_2_txid: k2_txid.clone(),
+                assert_final_txid: af_txid.clone(),
+                depositor_account: String::new(),
+                cosign: false,
+            },
+        )
+        .unwrap();
+        let tx2 = Tx::sign_body(
+            &user_keys,
+            "bob",
+            n.state.get("bob").sequence,
+            "",
+            0,
+            1,
+            nid,
+            TxBody::LendBorrow {
+                market_id: "m-usdc".into(),
+                amount: 5_000,
+                collateral_fpl: 100,
+            },
+        )
+        .unwrap();
+        let tx3 = Tx::sign_body(
+            &user_keys,
+            "carol",
+            n.state.get("carol").sequence,
+            "bob",
+            10,
+            1,
+            nid,
+            TxBody::PayToKey {
+                key_hash: "33".repeat(32),
+            },
+        )
+        .unwrap();
+        let tx4 = Tx::sign_body(
+            &user_keys,
+            "dave",
+            n.state.get("dave").sequence,
+            "",
+            0,
+            1,
+            nid,
+            TxBody::VaultOpen {
+                destination: "bob".into(),
+            },
+        )
+        .unwrap();
+
+        // Verify pre-check (`is_tx_packable` / `is_tx_applicable`) and `is_permanent_tx_failure` on all 4:
+        for (label, tx, expected_substr) in [
+            ("OperatorGraphBind", &tx1, "operator: graph already bound for this deposit"),
+            ("LendBorrow", &tx2, "borrow: LTV exceeded"),
+            ("PayToKey", &tx3, "pay_to_key: destination already has a key"),
+            ("VaultOpen", &tx4, "only Hot can convert account type once"),
+        ] {
+            let err = n.is_tx_packable(tx).unwrap_err();
+            assert!(
+                err.contains(expected_substr),
+                "{label}: expected {expected_substr:?} in {err:?}"
+            );
+            assert!(!n.is_tx_applicable(tx), "{label} must not be applicable");
+            assert!(
+                Node::is_permanent_tx_failure(&err),
+                "{label} error {err:?} must be classified as permanent"
+            );
+            let _ = n.mempool.insert(tx.clone(), n.cfg.max_mempool_txs);
+        }
+
+        assert_eq!(n.mempool.len(), 4);
+        assert!(!n.has_applicable_tx(), "none of the 4 invalid txs is applicable");
+        assert_eq!(n.applicable_head_count(), 0);
+
+        // When the leader runs `pack_or_skip`, all 4 invalid txs are evicted and the leader
+        // still seals a valid empty fallback block at height 1 instead of stalling!
+        let ledger = n
+            .pack_or_skip(&winner)
+            .expect("pack_or_skip should not error")
+            .expect("leader should propose an empty fallback block after evicting invalid txs");
+        assert_eq!(ledger.height, 1);
+        assert!(ledger.txs.is_empty(), "fallback block must be empty");
+        assert!(n.mempool.is_empty(), "all 4 invalid txs must be evicted from mempool");
+        for tx in [&tx1, &tx2, &tx3, &tx4] {
+            assert!(
+                n.perm_dropped.contains(&tx.tx_id, n.now_ms, &n.tip_hash),
+                "evicted tx {} must be recorded in perm_dropped",
+                tx.tx_id
+            );
+        }
+
+        // Accepting and voting on the empty fallback block advances tip_height to 1 and resets `evicted_since_last_seal`.
+        let res = n.accept_ledger(&ledger).expect("empty fallback block must be accepted");
+        assert_eq!(res.height, 1);
+        assert_eq!(res.n_txs, 0);
+        for v in ["v1", "v2", "v3"] {
+            n.vote_ok(&ledger.ledger_hash, v);
+        }
+        assert_eq!(n.tip_height, 1);
+        assert!(!n.evicted_since_last_seal, "commit must reset evicted_since_last_seal");
+
+        // On the next height with a genuinely idle/empty mempool and no evictions, `pack_or_skip` returns Ok(None).
+        let w2 = n.lottery_packer().unwrap();
+        assert!(n.pack_or_skip(&w2).unwrap().is_none());
+    }
+
+    #[test]
+    fn item16_drop_mempool_target_by_hash_account_seq_and_account() {
+        let mut net = Network::bootstrap(
+            &["v1", "v2", "v3"],
+            1_000,
+            &[("alice".into(), 10_000), ("bob".into(), 10_000)],
+            ChainConfig::default(),
+        );
+        let nid = net.cfg.network_id;
+        let uk = net.user_keys.clone();
+        let n = net.nodes.get_mut("v1").unwrap();
+        let tx_a1 = Tx::sign_with(&uk, "alice", 1, "bob", 10, 2, nid).unwrap();
+        let tx_a2 = Tx::sign_with(&uk, "alice", 2, "bob", 10, 2, nid).unwrap();
+        let tx_b1 = Tx::sign_with(&uk, "bob", 1, "alice", 10, 2, nid).unwrap();
+        assert!(n.submit_tx(tx_a1.clone()).unwrap());
+        assert!(n.submit_tx(tx_a2.clone()).unwrap());
+        assert!(n.submit_tx(tx_b1.clone()).unwrap());
+        assert_eq!(n.mempool.len(), 3);
+
+        // Drop by tx_id
+        let d1 = n.drop_mempool_target(&tx_b1.tx_id);
+        assert_eq!(d1, vec![tx_b1.tx_id.clone()]);
+        assert_eq!(n.mempool.len(), 2);
+        assert_eq!(n.submit_tx(tx_b1).unwrap_err(), TX_PREVIOUSLY_DROPPED);
+
+        // Drop by account:seq
+        let d2 = n.drop_mempool_target("alice:2");
+        assert_eq!(d2, vec![tx_a2.tx_id.clone()]);
+        assert_eq!(n.mempool.len(), 1);
+
+        // Drop by account
+        let d3 = n.drop_mempool_target("alice");
+        assert_eq!(d3, vec![tx_a1.tx_id.clone()]);
+        assert!(n.mempool.is_empty());
     }
 }
 

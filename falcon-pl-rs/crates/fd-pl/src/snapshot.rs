@@ -584,6 +584,7 @@ impl Node {
             mempool_served: 0,
             mempool_absorbed: 0,
             pack_no_applicable: 0,
+            evicted_since_last_seal: false,
             skip_reopen_cooldown_until_ms: 0,
             online_epoch_id: snap.online_epoch_id,
             online_members: snap.online_members.into_iter().collect(),

@@ -3599,7 +3599,10 @@ async fn main() -> Result<()> {
                             if n.pending_proposal.is_some() {
                                 // Locked / already-known body. Re-fan it; do not
                                 // mint another hash for this height.
-                            } else if n.should_pre_pack_need_txs() {
+                            } else if !n.evicted_since_last_seal
+                                && !(n.mempool.len() > 0 && !n.has_applicable_tx())
+                                && n.should_pre_pack_need_txs()
+                            {
                                 n.mark_pre_pack_need_txs();
                                 drop(n);
                                 shared_c.fan_need_txs(
@@ -3608,9 +3611,12 @@ async fn main() -> Result<()> {
                                         max_count: fd_pl::Node::NEED_TXS_BATCH as u64,
                                     },
                                 );
-                            } else if n.waiting_need_txs_grace() {
+                            } else if !n.evicted_since_last_seal
+                                && !(n.mempool.len() > 0 && !n.has_applicable_tx())
+                                && n.waiting_need_txs_grace()
+                            {
                                 // Wait for TxsBatch to land before packing empty.
-                            } else if n.pace_wait() {
+                            } else if !n.evicted_since_last_seal && n.pace_wait() {
                                 // v2.9.59: pacing — let a few more txs arrive
                                 // instead of sealing a tiny block every ~1.4 s.
                             } else if !only_pack.is_empty() && !designated && !force_full {
@@ -6768,6 +6774,16 @@ fn process_msg(
                 Err(e) => Some(WireMsg::Err { msg: e }),
             }
         }
+        WireMsg::MempoolDrop { target } => {
+            let mut n = shared.node.lock();
+            let dropped = n.drop_mempool_target(&target);
+            Some(WireMsg::Ok {
+                msg: format!(
+                    "mempool-drop target={target} evicted={} ids={dropped:?}",
+                    dropped.len()
+                ),
+            })
+        }
         WireMsg::SnapshotSave { path } => {
             let n = shared.node.lock();
             match n.save_snapshot(&path) {
@@ -7132,5 +7148,153 @@ mod inbound_ack_tests {
         assert_eq!(replies.len(), 1);
         assert!(matches!(replies[0], WireMsg::Err { .. }));
         assert!(!should_drop_inbound_reply(false, true, &replies[0]));
+    }
+
+    #[test]
+    fn item16_admin_mempool_drop_and_leader_empty_block_fallback() {
+        let shared = test_shared("v1");
+        let nid = shared.node.lock().cfg.network_id;
+        let mut uk = crate::KeyRing::default();
+        for acct in ["alice", "bob", "carol", "dave"] {
+            let _ = uk.generate_id(acct);
+        }
+
+        {
+            let mut n = shared.node.lock();
+            n.cfg.pack_budget_ms = 0;
+            n.cfg.min_fee = 0;
+            n.cfg.fee_escalate = false;
+            n.bitvm2_m1_from_height = 0;
+            n.register_validator("v1", 10_000_000_000);
+            for v in ["v1", "v9"] {
+                n.pong(v);
+            }
+            for acct in ["alice", "bob", "carol", "dave"] {
+                let _ = n.keys.insert_public(acct, &uk.public_hex(acct).unwrap());
+                let mut a = n.state.get(acct);
+                a.balance = 50_000;
+                if acct == "bob" {
+                    a.meta.public_key = uk.public_hex("bob").unwrap();
+                }
+                n.state.accounts.insert(acct.into(), a);
+            }
+
+            // Insert a valid tx for bob and test admin RPC MempoolDrop
+            let tx_bob = fd_pl::Tx::sign_with(&uk, "bob", 1, "alice", 10, 2, nid).unwrap();
+            assert!(n.submit_tx(tx_bob.clone()).unwrap());
+            drop(n);
+
+            let replies = dispatch_wire(
+                &shared,
+                WireMsg::MempoolDrop {
+                    target: tx_bob.tx_id.clone(),
+                },
+                None,
+                false,
+                true,
+            );
+            assert_eq!(replies.len(), 1);
+            match &replies[0] {
+                WireMsg::Ok { msg } => assert!(msg.contains("evicted=1"), "unexpected msg: {msg}"),
+                other => panic!("expected WireMsg::Ok, got {other:?}"),
+            }
+
+            let mut n = shared.node.lock();
+            assert!(n.mempool.is_empty());
+
+            // Now insert all 4 invalid error classes into the leader's mempool and verify leader seals an empty block:
+            let op_xonly = "11".repeat(32);
+            let dep_txid = "aa".repeat(32);
+            let k2_txid = "bb".repeat(32);
+            let af_txid = "cc".repeat(32);
+            let op_params = n.operator_params();
+            n.bridge
+                .operators
+                .register(&op_params, "alice", &op_xonly, op_params.min_bond, 0)
+                .unwrap();
+            n.bridge
+                .operators
+                .bind_graph("alice", &dep_txid, &k2_txid, &af_txid, 0)
+                .unwrap();
+            n.create_market("m-usdc", "USDC").unwrap();
+            n.defi.credit_asset("bob", "USDC", 50_000);
+            n.lend_supply("m-usdc", "bob", 10_000).unwrap();
+            n.open_vault("dave", "alice").unwrap();
+
+            let tx1 = fd_pl::Tx::sign_body(
+                &uk,
+                "alice",
+                n.state.get("alice").sequence,
+                "",
+                0,
+                2,
+                nid,
+                fd_pl::TxBody::OperatorGraphBind {
+                    deposit_txid: dep_txid,
+                    kick_off_2_txid: k2_txid,
+                    assert_final_txid: af_txid,
+                    depositor_account: String::new(),
+                    cosign: false,
+                },
+            )
+            .unwrap();
+            let tx2 = fd_pl::Tx::sign_body(
+                &uk,
+                "bob",
+                n.state.get("bob").sequence,
+                "",
+                0,
+                2,
+                nid,
+                fd_pl::TxBody::LendBorrow {
+                    market_id: "m-usdc".into(),
+                    amount: 5_000,
+                    collateral_fpl: 100,
+                },
+            )
+            .unwrap();
+            let tx3 = fd_pl::Tx::sign_body(
+                &uk,
+                "carol",
+                n.state.get("carol").sequence,
+                "bob",
+                10,
+                2,
+                nid,
+                fd_pl::TxBody::PayToKey {
+                    key_hash: "33".repeat(32),
+                },
+            )
+            .unwrap();
+            let tx4 = fd_pl::Tx::sign_body(
+                &uk,
+                "dave",
+                n.state.get("dave").sequence,
+                "",
+                0,
+                2,
+                nid,
+                fd_pl::TxBody::VaultOpen {
+                    destination: "alice".into(),
+                },
+            )
+            .unwrap();
+
+            let max_mp = n.cfg.max_mempool_txs;
+            for tx in [tx1, tx2, tx3, tx4] {
+                assert!(!n.is_tx_applicable(&tx));
+                let _ = n.mempool.insert(tx, max_mp);
+            }
+            assert!(n.mempool.len() > 0 && !n.has_applicable_tx());
+
+            let winner = n.lottery_packer().unwrap();
+            let sealed = n
+                .pack_or_skip(&winner)
+                .expect("pack_or_skip must succeed")
+                .expect("leader must seal an empty fallback block after evicting invalid txs");
+            assert_eq!(sealed.height, 1);
+            assert!(sealed.txs.is_empty());
+            assert!(n.mempool.is_empty());
+        }
     }
 }
