@@ -2449,7 +2449,10 @@ mod dash {
         let Frame::Health(b) = f else {
             return Err("node health not available".into());
         };
-        if b.pointer("/node/role").and_then(|x| x.as_str()) != Some("validator") {
+        if !matches!(
+            b.pointer("/node/role").and_then(|x| x.as_str()),
+            Some("validator" | "hub")
+        ) {
             return Err("this node is not a validator seat".into());
         }
         let id = b.pointer("/node/id").and_then(|x| x.as_str()).unwrap_or("").to_string();
@@ -6052,8 +6055,10 @@ mod dash_claim_tests {
     #[test]
     fn target_needs_validator_with_pot() {
         assert_eq!(claim_target(&health("validator", 42)).unwrap(), ("nodesafe".into(), 42));
+        assert_eq!(claim_target(&health("hub", 42)).unwrap(), ("nodesafe".into(), 42));
         assert!(claim_target(&health("observer", 42)).is_err());
         assert!(claim_target(&health("validator", 0)).is_err());
+        assert!(claim_target(&health("hub", 0)).is_err());
         assert!(claim_target(&Frame::Down("x".into())).is_err());
     }
 
