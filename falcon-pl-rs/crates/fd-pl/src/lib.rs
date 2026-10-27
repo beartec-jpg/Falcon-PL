@@ -7468,7 +7468,7 @@ impl Node {
                         parent_hash,
                         merkle_root,
                         raw,
-                    } if asset == crate::bridge::RAIL_BTC => {
+                    } if asset == &rail.asset => {
                         if probe
                             .submit_header_ex(crate::bridge::RailHeader {
                                 height: *height,
@@ -22767,6 +22767,108 @@ mod tests {
     }
 
 
+    #[test]
+    fn btc4_three_consecutive_header_batches_admitted_and_packed_cleanly() {
+        let mut net = Network::bootstrap(
+            &["v1", "v2", "v3", "v4", "v5"],
+            1000,
+            &users(),
+            ChainConfig {
+                fee_escalate: false,
+                min_fee: 1,
+                pack_budget_ms: 0,
+                max_txs_per_ledger: 0,
+                ..Default::default()
+            },
+        );
+        net.pong_all();
+
+        let anchor_hdr = crate::btc_spv::mine_header(&"00".repeat(32), &"aa".repeat(32), 0x207f_ffff, 1_700_000_000).unwrap();
+        let h0 = 155_232u64;
+        for n in net.nodes.values_mut() {
+            n.bitvm2_m1_from_height = 0;
+            let mut rail = crate::bridge::RailState::new_btc4();
+            rail.btc_checkpoint = Some((h0, anchor_hdr.hash_display.clone()));
+            n.bridge.rails.insert(crate::bridge::RAIL_BTC4.into(), rail);
+        }
+
+        // First commit the BTC4 checkpoint anchor at h0 so tip_height == h0.
+        let anchor_tx = Tx::sign_body(
+            &net.user_keys,
+            "alice",
+            1,
+            "",
+            0,
+            1,
+            net.cfg.network_id,
+            TxBody::RailHeader {
+                asset: crate::bridge::RAIL_BTC4.into(),
+                height: h0,
+                hash: String::new(),
+                parent_hash: String::new(),
+                merkle_root: String::new(),
+                raw: anchor_hdr.raw_hex.clone(),
+            },
+        )
+        .unwrap();
+        for n in net.nodes.values_mut() {
+            assert_eq!(n.submit_tx(anchor_tx.clone()), Ok(true));
+        }
+        let r0 = net.seal_next_height().unwrap();
+        assert_eq!(r0.n_txs, 1);
+
+        // Mine 3 consecutive BTC4 headers chaining onto h0.
+        let mut prev_hash = anchor_hdr.hash_display.clone();
+        let mut batches = Vec::new();
+        for i in 1..=3u64 {
+            let merkle = format!("{:02x}", i as u8).repeat(32);
+            let h = crate::btc_spv::mine_header(&prev_hash, &merkle, 0x207f_ffff, 1_700_000_000 + i as u32 * 600).unwrap();
+            prev_hash = h.hash_display.clone();
+            let tx = Tx::sign_body(
+                &net.user_keys,
+                "alice",
+                1 + i,
+                "",
+                0,
+                1,
+                net.cfg.network_id,
+                TxBody::RailHeader {
+                    asset: crate::bridge::RAIL_BTC4.into(),
+                    height: h0 + i,
+                    hash: String::new(),
+                    parent_hash: String::new(),
+                    merkle_root: String::new(),
+                    raw: h.raw_hex.clone(),
+                },
+            )
+            .unwrap();
+            batches.push((i, h, tx));
+        }
+
+        // Submit all 3 consecutive BTC4 header txs to the mempool BEFORE packing a block.
+        for (i, _h, tx) in &batches {
+            for n in net.nodes.values_mut() {
+                assert_eq!(
+                    n.submit_tx(tx.clone()),
+                    Ok(true),
+                    "BTC4 header batch #{i} must be admitted into mempool"
+                );
+            }
+        }
+        for n in net.nodes.values() {
+            assert_eq!(n.mempool.len(), 3);
+        }
+
+        // Pack and seal the next block: all 3 BTC4 headers pack cleanly in one block.
+        let r = net.seal_next_height().unwrap();
+        assert_eq!(r.n_txs, 3, "all 3 consecutive BTC4 headers must pack in one block");
+        for n in net.nodes.values() {
+            let rail = n.bridge.rail(crate::bridge::RAIL_BTC4).unwrap();
+            assert_eq!(rail.tip_height, h0 + 3);
+            assert_eq!(rail.tip_hash, batches[2].1.hash_display);
+            assert!(n.mempool.is_empty());
+        }
+    }
 }
 
 #[cfg(test)]
