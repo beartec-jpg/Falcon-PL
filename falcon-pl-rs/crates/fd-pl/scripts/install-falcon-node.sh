@@ -33,13 +33,15 @@
 # (and an interactive confirmation unless --yes). Docs: docs/PUBLIC_NODE.md in the Falcon-PL repo.
 set -euo pipefail
 
-INSTALLER_VERSION="2.9.81"
+INSTALLER_VERSION="2.10.0"
 RELEASE_REPO="${FALCON_RELEASE_REPO:-beartec-jpg/falcon-pl-releases}"
 # Pinned minisign public key of the Falcon PL release key (key id 8ACFFC29EE09FAEC).
 # A valid SHA256SUMS.minisig is REQUIRED. FALCON_MINISIGN_PUBKEY="" disables the check, but only together
 # with a custom FALCON_RELEASE_BASE (local devnet rehearsals).
 RELEASE_MINISIGN_PUBKEY_PINNED="RWTs+gnuKfzPik0Xbcf+m1hD/JrCUnWqaD/OAZFZEY2fcNc90D67mZlM"
 RELEASE_MINISIGN_PUBKEY="${FALCON_MINISIGN_PUBKEY-$RELEASE_MINISIGN_PUBKEY_PINNED}"
+MINISIGN_TARBALL_URL="${FALCON_MINISIGN_URL:-https://github.com/jedisct1/minisign/releases/download/0.11/minisign-0.11-linux.tar.gz}"
+MINISIGN_TARBALL_SHA256="${FALCON_MINISIGN_SHA256:-f0a0954413df8531befed169e447a66da6868d79052ed7e892e50a4291af7ae0}"
 NETWORK_PROFILE="network-2300.env"
 
 # ---------- output helpers ----------
@@ -74,7 +76,7 @@ POLL_SECS="${FALCON_POLL_SECS:-60}"
 usage() {
   sed -n '2,30p' "${BASH_SOURCE[0]:-/dev/null}" 2>/dev/null | sed 's/^# \{0,1\}//' || true
   cat <<USAGE
-Commands: install (default) | status | balance | dash | web | logs | start | stop | restart | upgrade | validator | heartbeat | uninstall
+Commands: install (default) | status | balance | dash | web | logs | start | stop | restart | upgrade | autoupgrade [on|off|status|run] | validator | heartbeat | uninstall
 Options:
   --validator            validator mode (application -> approval -> funding -> bond -> activation)
   --id NAME              validator id (lowercase letters, digits, '-', 3-32 chars)
@@ -101,10 +103,16 @@ Options:
 USAGE
 }
 
+AUTOUPGRADE_ACTION="status"
+AUTOUPGRADE_JITTER_SECS="${FALCON_AUTOUPGRADE_JITTER_SECS:-}"
+SAVED_NODE_ID=""
+
 parse_args() {
   if [[ $# -gt 0 && "$1" != -* ]]; then CMD="$1"; shift; fi
+  if [[ "$CMD" == "autoupgrade" && $# -gt 0 && "$1" != -* ]]; then AUTOUPGRADE_ACTION="$1"; shift; fi
   while [[ $# -gt 0 ]]; do
     case "$1" in
+      --jitter) AUTOUPGRADE_JITTER_SECS="${2:-0}"; shift 2 ;;
       --validator) ROLE="validator"; shift ;;
       --observer) ROLE="observer"; shift ;;
       --id) VAL_ID="${2:-}"; shift 2 ;;
@@ -184,9 +192,59 @@ kv_get() { # file key
   line="$(grep -E "^$2=" "$1" 2>/dev/null | tail -1 || true)"
   printf '%s' "${line#*=}"
 }
+service_user_for_env() {
+  local u="" up=""
+  if [[ "${SERVICE_MODE:-}" == "system" ]]; then
+    up="$(unit_path 2>/dev/null || true)"
+    if [[ -n "$up" && -f "$up" ]]; then
+      u="$(grep -E '^User=' "$up" 2>/dev/null | tail -1 | cut -d= -f2- || true)"
+    fi
+    [[ -n "$u" ]] || u="${SVC_USER:-falcon-pl}"
+  fi
+  printf '%s' "$u"
+}
+
+ensure_node_env_readable() {
+  local f="${1:-${NODE_ENV:-}}"
+  [[ -n "$f" && -f "$f" ]] || return 0
+  local d; d="$(dirname "$f")"
+  chmod 0755 "$d" 2>/dev/null || true
+  # Recover NODE_ID if missing so upgrades/re-runs never leave node.env without NODE_ID.
+  local cur_id; cur_id="$(kv_get "$f" NODE_ID)"
+  if [[ -z "$cur_id" ]]; then
+    local rec_id="${SAVED_NODE_ID:-}"
+    if [[ -z "$rec_id" && -n "${VALDIR:-}" && -f "$VALDIR/state" ]]; then
+      local vst; vst="$(kv_get "$VALDIR/state" STAGE)"
+      if [[ "$vst" == "bonded" || "$vst" == "active" ]]; then
+        rec_id="$(kv_get "$VALDIR/state" ID)"
+      fi
+    fi
+    [[ -n "$rec_id" ]] || rec_id="$(kv_get "$f" OBSERVER_ID)"
+    if [[ -z "$rec_id" && -n "${DATA:-}" && -d "$DATA" ]]; then
+      local snap
+      for snap in "$DATA"/*.json; do
+        [[ -f "$snap" && "$snap" != *.tmp.json ]] || continue
+        rec_id="$(basename "$snap" .json)"
+        break
+      done
+    fi
+    if [[ -n "$rec_id" ]]; then
+      printf 'NODE_ID=%s\n' "$rec_id" >>"$f"
+    fi
+  fi
+  local u; u="$(service_user_for_env)"
+  if [[ $IS_ROOT -eq 1 && -n "$u" && "$u" != "root" ]] && id "$u" >/dev/null 2>&1; then
+    chown "$u:$u" "$d" "$f" 2>/dev/null || true
+    chmod 0644 "$f" 2>/dev/null || true
+  else
+    chmod 0644 "$f" 2>/dev/null || true
+  fi
+}
+
 kv_set() { # file key value
   local f="$1" k="$2" v="$3" tmp
   [[ "$v" =~ ^[A-Za-z0-9.,:/@_+-]*$ ]] || die "refusing unsafe value for $k"
+  mkdir -p "$(dirname "$f")"
   touch "$f"; tmp="$(mktemp "$f.XXXX")"
   grep -vE "^$k=" "$f" >"$tmp" || true
   printf '%s=%s\n' "$k" "$v" >>"$tmp"
@@ -194,6 +252,9 @@ kv_set() { # file key value
   # with a root:600 file and the service exits 78/CONFIG.
   cat "$tmp" >"$f"
   rm -f "$tmp"
+  if [[ "$f" == "${NODE_ENV:-}" || "$f" == */node.env ]]; then
+    ensure_node_env_readable "$f"
+  fi
 }
 validate_profile() {
   local f="$1" n=0 line
@@ -283,6 +344,37 @@ fetch() { # url dest
   curl -fsSL --proto '=https,file,http' --retry 3 --connect-timeout 15 -o "$2" "$1"
 }
 
+install_minisign_binary() {
+  local mtmp dest_dir="${FALCON_MINISIGN_DEST_DIR:-/usr/local/bin}" dest
+  if [[ -z "${FALCON_MINISIGN_DEST_DIR:-}" && $EUID -ne 0 && ! -w /usr/local/bin ]]; then
+    dest_dir="$HOME/.local/bin"
+  fi
+  mkdir -p "$dest_dir" 2>/dev/null || return 1
+  dest="$dest_dir/minisign"
+  export PATH="$dest_dir:$PATH"
+  mtmp="$(mktemp -d)"
+  say "downloading prebuilt minisign 0.11 ($MINISIGN_TARBALL_URL)"
+  if ! fetch "$MINISIGN_TARBALL_URL" "$mtmp/minisign-0.11-linux.tar.gz"; then
+    rm -rf "$mtmp"
+    return 1
+  fi
+  if ! printf '%s  %s\n' "$MINISIGN_TARBALL_SHA256" "$mtmp/minisign-0.11-linux.tar.gz" | sha256sum -c --quiet -; then
+    warn "minisign tarball SHA-256 checksum mismatch"
+    rm -rf "$mtmp"
+    return 1
+  fi
+  if ! tar -xzf "$mtmp/minisign-0.11-linux.tar.gz" -C "$mtmp" || [[ ! -f "$mtmp/minisign-linux/x86_64/minisign" ]]; then
+    warn "minisign tarball missing minisign-linux/x86_64/minisign"
+    rm -rf "$mtmp"
+    return 1
+  fi
+  cp "$mtmp/minisign-linux/x86_64/minisign" "$dest" || { rm -rf "$mtmp"; return 1; }
+  chmod 0755 "$dest" || { rm -rf "$mtmp"; return 1; }
+  rm -rf "$mtmp"
+  have minisign || return 1
+  ok "installed minisign 0.11 to $dest"
+}
+
 download_release() {
   resolve_release_tag
   local base tmp; base="$(release_base)"
@@ -296,9 +388,11 @@ download_release() {
         say "installing minisign (to verify the release signature)"
         DEBIAN_FRONTEND=noninteractive apt-get install -y -qq minisign >/dev/null 2>&1 \
           || { apt-get update -qq >/dev/null 2>&1 && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq minisign >/dev/null 2>&1; } \
+          || install_minisign_binary \
           || die "could not install minisign; install it (https://jedisct1.github.io/minisign/) and re-run"
       else
-        die "minisign is required to verify the release signature: sudo apt install minisign (or https://jedisct1.github.io/minisign/), then re-run"
+        install_minisign_binary \
+          || die "minisign is required to verify the release signature: sudo apt install minisign (or https://jedisct1.github.io/minisign/), then re-run"
       fi
     fi
     fetch "$base/SHA256SUMS.minisig" "$tmp/SHA256SUMS.minisig" || die "missing SHA256SUMS.minisig"
@@ -342,7 +436,8 @@ public_status() { # dest file; uses the downloaded/installed ctl
 # Same rule as the node's Hello gate after Gloas: 2.9.x with x >= 60, no
 # leading zero. Only these pairs peer; anything else is a real mismatch.
 wire_compatible() {
-  [[ "$1" =~ ^2\.9\.([1-9][0-9]*)$ ]] && (( BASH_REMATCH[1] >= 60 ))
+  { [[ "$1" =~ ^2\.9\.([1-9][0-9]*)$ ]] && (( BASH_REMATCH[1] >= 60 )); } \
+    || [[ "$1" =~ ^2\.10\.(0|[1-9][0-9]*)$ ]]
 }
 
 check_network_version() {
@@ -356,7 +451,7 @@ check_network_version() {
         ok "release $REL_VERSION peers with the network's $LIVE_VERSION (2.9.x >= 2.9.60 are wire-compatible)"
         # Wire-compatible is not consensus-current: an older pinned release can
         # miss later rule gates. Say so instead of passing silently.
-        if (( ${REL_VERSION##*.} < ${LIVE_VERSION##*.} )); then
+        if [[ "$(printf '%s\n%s\n' "$REL_VERSION" "$LIVE_VERSION" | sort -V | head -1)" == "$REL_VERSION" && "$REL_VERSION" != "$LIVE_VERSION" ]]; then
           warn "release $REL_VERSION is OLDER than the network's $LIVE_VERSION; upgrade soon (later rule gates may need it)"
         fi
       elif [[ "$CHANNEL" == "beta" ]]; then
@@ -441,10 +536,7 @@ ensure_node_config() {
   gen_key "$(kv_get "$NODE_ENV" NODE_ID)"
   install_qc_profile
   install_ring_publics
-  if [[ -n "${SVC_USER:-}" && "$SVC_USER" != "root" ]]; then
-    chown "$SVC_USER:$SVC_USER" "$NODE_ENV" 2>/dev/null || true
-    chmod 640 "$NODE_ENV" 2>/dev/null || true
-  fi
+  ensure_node_env_readable "$NODE_ENV"
   write_runner
 }
 
@@ -820,6 +912,8 @@ cmd_balance() {
 load_installed() {
   [[ -f "$NODE_ENV" ]] || die "no install found in $FALCON_HOME (run the installer first)"
   SERVICE_MODE="$(kv_get "$NODE_ENV" SERVICE_MODE)"; SERVICE_MODE="${SERVICE_MODE:-none}"
+  SAVED_NODE_ID="$(kv_get "$NODE_ENV" NODE_ID)"
+  ensure_node_env_readable "$NODE_ENV"
   REL_VERSION="$(kv_get "$NODE_ENV" VERSION)"
   # Channel: an explicit --channel wins; otherwise keep the one recorded at install (default stable).
   [[ -n "$CHANNEL" ]] || CHANNEL="$(kv_get "$NODE_ENV" CHANNEL 2>/dev/null || true)"
@@ -1208,6 +1302,178 @@ U
 }
 
 # ---------- commands ----------
+AUTOU_UNIT="falcon-pl-autoupgrade"
+
+autoupgrade_unit_dir() {
+  dirname "$(unit_path)"
+}
+
+write_autoupgrade() {
+  cat >"$BIN/falcon-node-autoupgrade" <<'AUTOUP'
+#!/usr/bin/env bash
+# Generated by falcon-node. Runs falcon-node autoupgrade with jitter, health verification, and rollback.
+set -euo pipefail
+H="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
+exec "$H/bin/falcon-node" autoupgrade run --home "$H" "$@"
+AUTOUP
+  chmod 0755 "$BIN/falcon-node-autoupgrade"
+  if [[ $IS_ROOT -eq 1 && "$SERVICE_MODE" == "system" ]]; then
+    chown "$SVC_USER:$SVC_USER" "$BIN/falcon-node-autoupgrade" 2>/dev/null || true
+    if [[ ! -e /usr/local/bin/falcon-node-autoupgrade || -L /usr/local/bin/falcon-node-autoupgrade ]]; then
+      ln -sf "$BIN/falcon-node-autoupgrade" /usr/local/bin/falcon-node-autoupgrade
+    fi
+  else
+    if [[ ! -e "$HOME/.local/bin/falcon-node-autoupgrade" || -L "$HOME/.local/bin/falcon-node-autoupgrade" ]]; then
+      mkdir -p "$HOME/.local/bin" && ln -sf "$BIN/falcon-node-autoupgrade" "$HOME/.local/bin/falcon-node-autoupgrade" || true
+    fi
+  fi
+  [[ "$SERVICE_MODE" == "none" ]] && return 0
+  local d; d="$(autoupgrade_unit_dir)"
+  mkdir -p "$d"
+  cat >"$d/$AUTOU_UNIT.service" <<U
+[Unit]
+Description=Falcon PL node auto-upgrade ($FALCON_HOME)
+After=network-online.target $UNIT.service
+Wants=network-online.target
+[Service]
+Type=oneshot
+WorkingDirectory=$FALCON_HOME
+Environment=FALCON_HOME=$FALCON_HOME
+ExecStart=$BIN/falcon-node-autoupgrade
+StandardOutput=append:$LOGS/autoupgrade.log
+StandardError=append:$LOGS/autoupgrade.log
+U
+  cat >"$d/$AUTOU_UNIT.timer" <<U
+[Unit]
+Description=Periodic Falcon PL node auto-upgrade check (disabled by default)
+[Timer]
+OnBootSec=15min
+OnUnitActiveSec=1h
+Persistent=true
+[Install]
+WantedBy=timers.target
+U
+  chmod 0644 "$d/$AUTOU_UNIT.service" "$d/$AUTOU_UNIT.timer"
+  sctl daemon-reload >/dev/null 2>&1 || true
+}
+
+autoupgrade_health_check() { # prev_tip
+  local prev_tip="${1:-0}"
+  local timeout_secs="${FALCON_AUTOUPGRADE_HEALTH_TIMEOUT:-120}"
+  local poll_secs="${FALCON_AUTOUPGRADE_POLL_SECS:-2}"
+  local t0 now st cur_tip
+  t0="$(date +%s)"
+  st="$(mktemp)"
+  while :; do
+    if svc_active && local_status "$st"; then
+      cur_tip="$(json_num "$st" tip_height)"
+      if [[ -n "$cur_tip" && "$cur_tip" -gt "$prev_tip" ]]; then
+        ok "autoupgrade health check passed: service active and tip advanced ($prev_tip -> $cur_tip)"
+        rm -f "$st"
+        return 0
+      fi
+    fi
+    now="$(date +%s)"
+    if (( now - t0 >= timeout_secs )); then
+      warn "autoupgrade health check failed after ${timeout_secs}s (service active: $(svc_active && echo yes || echo no), prev tip: $prev_tip, current tip: ${cur_tip:-none})"
+      rm -f "$st"
+      return 1
+    fi
+    sleep "$poll_secs"
+  done
+}
+
+rollback_autoupgrade() { # prev_ver
+  local prev_ver="${1:-}" b restored=0
+  warn "rolling back binaries in $BIN to previous version (${prev_ver:-.prev})"
+  for b in falcon-pl-node falcon-pl-ctl; do
+    if [[ -f "$BIN/$b.prev" ]]; then
+      cp -p "$BIN/$b.prev" "$BIN/$b.rollback" && chmod 0755 "$BIN/$b.rollback" && mv -f "$BIN/$b.rollback" "$BIN/$b"
+      restored=1
+    fi
+  done
+  if [[ -n "$prev_ver" ]]; then
+    kv_set "$NODE_ENV" VERSION "$prev_ver"
+  fi
+  ensure_node_env_readable "$NODE_ENV"
+  if [[ $restored -eq 1 ]]; then
+    svc_restart || true
+    ok "rolled back to ${prev_ver:-previous binary} and restarted service"
+  else
+    warn "no .prev binary backup found in $BIN to roll back"
+  fi
+}
+
+cmd_autoupgrade() {
+  load_installed
+  local act="${AUTOUPGRADE_ACTION:-status}"
+  case "$act" in
+    on|enable)
+      write_autoupgrade
+      kv_set "$NODE_ENV" AUTOUPGRADE on
+      if [[ -n "${AUTOUPGRADE_JITTER_SECS:-}" ]]; then
+        kv_set "$NODE_ENV" AUTOUPGRADE_JITTER_SECS "$AUTOUPGRADE_JITTER_SECS"
+      fi
+      if [[ "$SERVICE_MODE" != "none" ]]; then
+        sctl enable --now "$AUTOU_UNIT.timer" >/dev/null 2>&1 || warn "could not enable $AUTOU_UNIT.timer"
+      fi
+      ok "autoupgrade enabled (timer: $AUTOU_UNIT.timer)"
+      ;;
+    off|disable)
+      write_autoupgrade
+      kv_set "$NODE_ENV" AUTOUPGRADE off
+      if [[ "$SERVICE_MODE" != "none" ]]; then
+        sctl disable --now "$AUTOU_UNIT.timer" >/dev/null 2>&1 || true
+      fi
+      ok "autoupgrade disabled"
+      ;;
+    status)
+      local cfg_state timer_state="disabled" jitter
+      cfg_state="$(kv_get "$NODE_ENV" AUTOUPGRADE)"
+      [[ -n "$cfg_state" ]] || cfg_state="off"
+      jitter="${AUTOUPGRADE_JITTER_SECS:-$(kv_get "$NODE_ENV" AUTOUPGRADE_JITTER_SECS)}"
+      [[ -n "$jitter" ]] || jitter="300"
+      if [[ "$SERVICE_MODE" != "none" ]] && sctl is-enabled --quiet "$AUTOU_UNIT.timer" 2>/dev/null; then
+        timer_state="enabled"
+      fi
+      echo "autoupgrade: $cfg_state (timer: $timer_state, jitter: ${jitter}s, rollback backup: $( [[ -f "$BIN/falcon-pl-node.prev" ]] && echo present || echo none ))"
+      ;;
+    run)
+      local jitter delay prev_ver prev_tip=0 st b
+      jitter="${AUTOUPGRADE_JITTER_SECS:-$(kv_get "$NODE_ENV" AUTOUPGRADE_JITTER_SECS)}"
+      [[ -n "$jitter" ]] || jitter="300"
+      if [[ "$jitter" =~ ^[0-9]+$ ]] && (( jitter > 0 )); then
+        delay=$(( RANDOM % jitter + 1 ))
+        say "autoupgrade jitter: sleeping ${delay}s (max ${jitter}s)"
+        sleep "$delay"
+      fi
+      prev_ver="$(kv_get "$NODE_ENV" VERSION)"
+      st="$(mktemp)"
+      if local_status "$st"; then
+        prev_tip="$(json_num "$st" tip_height)"
+        prev_tip="${prev_tip:-0}"
+      fi
+      rm -f "$st"
+      for b in falcon-pl-node falcon-pl-ctl; do
+        [[ -f "$BIN/$b" ]] && cp -p "$BIN/$b" "$BIN/$b.prev"
+      done
+      if ! ( YES=1 cmd_upgrade ); then
+        warn "falcon-node upgrade failed during autoupgrade"
+        rollback_autoupgrade "$prev_ver"
+        return 1
+      fi
+      if ! autoupgrade_health_check "$prev_tip"; then
+        rollback_autoupgrade "$prev_ver"
+        return 1
+      fi
+      ok "autoupgrade completed and verified healthy"
+      ;;
+    *)
+      die "usage: falcon-node autoupgrade [on|off|status|run] [--jitter SECS]"
+      ;;
+  esac
+}
+
 cmd_install() {
   preflight
   download_release
@@ -1219,7 +1485,9 @@ cmd_install() {
   install_files
   ensure_node_config
   kv_set "$NODE_ENV" CHANNEL "$CHANNEL"
+  [[ -n "$(kv_get "$NODE_ENV" AUTOUPGRADE)" ]] || kv_set "$NODE_ENV" AUTOUPGRADE off
   write_unit
+  write_autoupgrade
   [[ $WATCHER -eq 1 ]] && install_watcher
   install_payout
   rm -rf "$DL"
@@ -1252,12 +1520,14 @@ DONE
 cmd_upgrade() {
   load_installed
   preflight; download_release; require_public_seed; check_network_version "$DL/falcon-pl-$REL_VERSION/falcon-pl-ctl"
-  install_files; write_runner; write_unit; rm -rf "$DL"
+  install_files; write_runner; write_unit; write_autoupgrade; rm -rf "$DL"
   install_qc_profile; install_ring_publics
   # 2.9.74: write node.env BEFORE the restart. Rewriting it right after the
   # restart raced the new runner ("no NODE_ID", exit 78, unit not restarted).
+  [[ -n "$(kv_get "$NODE_ENV" NODE_ID)" || -z "${SAVED_NODE_ID:-}" ]] || kv_set "$NODE_ENV" NODE_ID "$SAVED_NODE_ID"
   kv_set "$NODE_ENV" VERSION "$REL_VERSION"
   kv_set "$NODE_ENV" CHANNEL "$CHANNEL"
+  ensure_node_env_readable "$NODE_ENV"
   if [[ "${BIN_CHANGED:-0}" -eq 1 || "${UNIT_CHANGED:-0}" -eq 1 || "${RING_CHANGED:-0}" -eq 1 ]]; then
     svc_restart
     local up=0
@@ -1277,13 +1547,13 @@ cmd_uninstall() {
   svc_stop
   if [[ "$SERVICE_MODE" != "none" ]]; then
     local d; d="$(dirname "$(unit_path)")"
-    sctl disable "$UNIT" "$UNIT-heartbeat.timer" >/dev/null 2>&1 || true
-    sctl stop "$UNIT-heartbeat.timer" >/dev/null 2>&1 || true
-    rm -f "$(unit_path)" "$d/$UNIT-heartbeat.service" "$d/$UNIT-heartbeat.timer"
+    sctl disable "$UNIT" "$UNIT-heartbeat.timer" "$AUTOU_UNIT.timer" >/dev/null 2>&1 || true
+    sctl stop "$UNIT-heartbeat.timer" "$AUTOU_UNIT.timer" >/dev/null 2>&1 || true
+    rm -f "$(unit_path)" "$d/$UNIT-heartbeat.service" "$d/$UNIT-heartbeat.timer" "$d/$AUTOU_UNIT.service" "$d/$AUTOU_UNIT.timer"
     sctl daemon-reload || true
   fi
-  rm -f /usr/local/bin/falcon-node 2>/dev/null || true
-  rm -f "$HOME/.local/bin/falcon-node" 2>/dev/null || true
+  rm -f /usr/local/bin/falcon-node /usr/local/bin/falcon-node-autoupgrade 2>/dev/null || true
+  rm -f "$HOME/.local/bin/falcon-node" "$HOME/.local/bin/falcon-node-autoupgrade" 2>/dev/null || true
   [[ -L /usr/local/bin/fdash ]] && rm -f /usr/local/bin/fdash 2>/dev/null || true
   [[ -L "$HOME/.local/bin/fdash" ]] && rm -f "$HOME/.local/bin/fdash" 2>/dev/null || true
   rm -f "/etc/logrotate.d/$UNIT" 2>/dev/null || true
@@ -1339,6 +1609,7 @@ main() {
     stop) load_installed; svc_stop; ok stopped ;;
     restart) load_installed; svc_restart; ok restarted ;;
     upgrade) cmd_upgrade ;;
+    autoupgrade) cmd_autoupgrade ;;
     validator) cmd_validator ;;
     heartbeat) cmd_heartbeat ;;
     uninstall) cmd_uninstall ;;
