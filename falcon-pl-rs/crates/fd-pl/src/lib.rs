@@ -537,7 +537,13 @@ fn account_tx_json(tx: &Tx, led: &Ledger) -> serde_json::Value {
     let mut v = serde_json::json!({
         "tx_id": tx.tx_id,
         "height": led.height,
-        "kind": match &tx.body { TxBody::Pay => "pay", TxBody::Claim => "claim", TxBody::AssetPay { .. } => "asset_pay", _ => "tx" },
+        "kind": match &tx.body {
+            TxBody::Pay => "pay",
+            TxBody::Claim => "claim",
+            TxBody::AssetPay { .. } => "asset_pay",
+            TxBody::SetExternalAddrs { .. } => "set_external_addrs",
+            _ => "tx",
+        },
         "account": tx.account,
         "destination": tx.destination,
         "amount": tx.amount,
@@ -546,6 +552,10 @@ fn account_tx_json(tx: &Tx, led: &Ledger) -> serde_json::Value {
     });
     if let TxBody::AssetPay { asset, .. } = &tx.body {
         v["asset"] = serde_json::json!(asset);
+    }
+    if let TxBody::SetExternalAddrs { chain, address } = &tx.body {
+        v["chain"] = serde_json::json!(chain);
+        v["address"] = serde_json::json!(address);
     }
     v
 }
@@ -1319,6 +1329,59 @@ pub enum TxBody {
         validator: String,
         to: String,
     },
+    /// v2.10.0: Link or clear an external chain address (e.g. `"btc"`, `"eth"`,
+    /// `"xrp"`, `"bnb"`) on the sender's account (`AccountState::external_addrs`).
+    /// An empty `address` removes the binding for `chain`.
+    #[serde(alias = "set_external_addr")]
+    SetExternalAddrs {
+        chain: String,
+        address: String,
+    },
+}
+
+/// Alias for [`TxBody`] used by callers referring to transaction payloads.
+pub type TxPayload = TxBody;
+
+/// Maximum number of external chain address bindings stored per account.
+pub const MAX_EXTERNAL_ADDRS_PER_ACCOUNT: usize = 8;
+/// Maximum length of a chain key in [`AccountState::external_addrs`].
+pub const MAX_EXTERNAL_CHAIN_LEN: usize = 16;
+/// Maximum length of an external chain address in [`AccountState::external_addrs`].
+pub const MAX_EXTERNAL_ADDR_LEN: usize = 128;
+
+/// Validate and normalize `(chain, address)` for [`TxBody::SetExternalAddrs`].
+///
+/// - `chain` is trimmed and normalized to lowercase ASCII, must be `1..=16` bytes,
+///   start with an ASCII letter (`a..=z`), and contain only lowercase ASCII
+///   alphanumeric characters (`a..=z`, `0..=9`).
+/// - `address` is trimmed; an empty string `""` removes the binding for `chain`.
+///   A non-empty address must be `1..=128` printable ASCII bytes without whitespace
+///   (`0x21..=0x7e`).
+pub fn validate_external_addr(chain: &str, address: &str) -> Result<(String, String), String> {
+    let c = chain.trim().to_ascii_lowercase();
+    if c.is_empty() || c.len() > MAX_EXTERNAL_CHAIN_LEN {
+        return Err(format!(
+            "external_addrs: chain must be 1..={MAX_EXTERNAL_CHAIN_LEN} chars"
+        ));
+    }
+    let mut bytes = c.bytes();
+    if !bytes.next().is_some_and(|b| b.is_ascii_lowercase())
+        || !bytes.all(|b| b.is_ascii_lowercase() || b.is_ascii_digit())
+    {
+        return Err(
+            "external_addrs: chain must be lowercase alphanumeric starting with a letter".into(),
+        );
+    }
+    let a = address.trim();
+    if a.len() > MAX_EXTERNAL_ADDR_LEN {
+        return Err(format!(
+            "external_addrs: address exceeds {MAX_EXTERNAL_ADDR_LEN} chars"
+        ));
+    }
+    if !a.bytes().all(|b| (0x21..=0x7e).contains(&b)) {
+        return Err("external_addrs: address must be printable ASCII without whitespace".into());
+    }
+    Ok((c, a.to_string()))
 }
 
 /// Suffix of the pseudo account that sends seat txs (`SetSeatPayout`,
@@ -1520,6 +1583,7 @@ impl Tx {
                 | TxBody::ApproveValidator { .. }
                 | TxBody::RevokeApproval { .. }
                 | TxBody::RevokeArchive { .. }
+                | TxBody::SetExternalAddrs { .. }
         )
     }
 }
@@ -1530,7 +1594,13 @@ pub struct AccountState {
     pub balance: u64,
     #[serde(default)]
     pub meta: AccountMeta,
+    /// v2.10.0: On-chain linked external chain addresses (e.g. `"btc"`, `"eth"`, `"xrp"`, `"bnb"`).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub external_addrs: BTreeMap<String, String>,
 }
+
+/// Alias for [`AccountState`].
+pub type Account = AccountState;
 
 /// v2.9.58: a correctly signed OK for a height past `tip+1`, kept until that
 /// height opens ([`Node::vote_ok_wire`]). Local only.
@@ -1712,6 +1782,7 @@ impl WorldState {
                     sequence: 1,
                     balance: *bal,
                     meta: AccountMeta::default(),
+                    external_addrs: BTreeMap::new(),
                 },
             );
         }
@@ -5231,6 +5302,7 @@ impl Node {
                     sequence: 1,
                     balance: FAUCET_GENESIS,
                     meta: AccountMeta::default(),
+                    external_addrs: BTreeMap::new(),
                 },
             );
         }
@@ -7300,6 +7372,9 @@ impl Node {
         }
         if matches!(tx.body, TxBody::CreditAsset { .. }) && !self.cfg.allow_admin_wire {
             return Err("admin-only: CreditAsset disabled".into());
+        }
+        if let TxBody::SetExternalAddrs { chain, address } = &tx.body {
+            validate_external_addr(chain, address)?;
         }
         // Fee floor: apply only to *new* txs (dupes may re-advertise at old fee).
         if self.cfg.fee_escalate || self.cfg.min_fee > 0 {
@@ -11188,6 +11263,17 @@ impl Node {
                 sender.sequence, tx.sequence
             ));
         }
+        if let TxBody::SetExternalAddrs { chain, address } = &tx.body {
+            let (chain_key, addr_val) = validate_external_addr(chain, address)?;
+            if !addr_val.is_empty()
+                && !sender.external_addrs.contains_key(&chain_key)
+                && sender.external_addrs.len() >= MAX_EXTERNAL_ADDRS_PER_ACCOUNT
+            {
+                return Err(format!(
+                    "external_addrs: max {MAX_EXTERNAL_ADDRS_PER_ACCOUNT} linked addresses per account"
+                ));
+            }
+        }
         // Stake/reward ops may pay fee from claimable; payments/bonds need hot balance.
         let fee_from_claimable = matches!(
             tx.body,
@@ -11729,6 +11815,23 @@ impl Node {
                 }
                 v.archive = false;
             }
+            TxBody::SetExternalAddrs { chain, address } => {
+                let (chain_key, addr_val) = validate_external_addr(chain, address)?;
+                let mut sender = self.state.get(&tx.account);
+                if addr_val.is_empty() {
+                    sender.external_addrs.remove(&chain_key);
+                } else {
+                    if !sender.external_addrs.contains_key(&chain_key)
+                        && sender.external_addrs.len() >= MAX_EXTERNAL_ADDRS_PER_ACCOUNT
+                    {
+                        return Err(format!(
+                            "external_addrs: max {MAX_EXTERNAL_ADDRS_PER_ACCOUNT} linked addresses per account"
+                        ));
+                    }
+                    sender.external_addrs.insert(chain_key, addr_val);
+                }
+                self.state.accounts.insert(tx.account.clone(), sender);
+            }
         }
         self.rail_finalize_bitvm("BTC").ok();
         self.bridge_finalize_claims();
@@ -11895,6 +11998,7 @@ impl Node {
             || err.contains("allowlist")
             || err.contains("vault:")
             || err.contains("name:")
+            || err.contains("external_addrs:")
             || err.contains("BTC header parent mismatch")
             || err.contains("BTC duplicate header")
             || err.contains("admission:")
@@ -13973,6 +14077,7 @@ impl Node {
                 .iter()
                 .map(|(k, v)| (k.clone(), display_asset(account, k, *v)))
                 .collect::<BTreeMap<_, _>>(),
+            "external_addrs": a.external_addrs,
             "lp": self.defi.pools.values().filter_map(|p| {
                 let lp = p.lp.get(account).copied().unwrap_or(0);
                 if lp == 0 { None } else {
@@ -17269,6 +17374,7 @@ mod tests {
                         sequence: 0,
                         balance: 0,
                         meta: AccountMeta::default(),
+                        external_addrs: BTreeMap::new(),
                     },
                 );
             }
@@ -22900,6 +23006,267 @@ mod account_history_store_tests {
         account_history_from_store(&store, "alice", 31, 10, std::time::Duration::from_secs(5), 8, &mut out);
         assert_eq!(out.len(), 1);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn set_external_addrs_link_update_remove_and_account_query() {
+        let mut net = Network::bootstrap(
+            &["v1", "v2", "v3"],
+            MIN_BOND,
+            &[("alice".into(), 100_000), ("bob".into(), 100_000)],
+            ChainConfig::default(),
+        );
+        net.pong_all();
+        let node = net.nodes.get_mut("v1").unwrap();
+        let start_bal = node.state.get("alice").balance;
+        assert_eq!(node.state.get("alice").sequence, 1);
+        assert!(node.state.get("alice").external_addrs.is_empty());
+
+        // 1. Set BTC, ETH (uppercase chain normalized to lowercase), and XRP addresses.
+        let cases = [
+            (1u64, "btc", "tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx", 2u64),
+            (2u64, "ETH", "0x71C7656EC7ab88b098defB751B7401B5f6d8976F", 2u64),
+            (3u64, "xrp", "rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh", 2u64),
+        ];
+        for (seq, chain, addr, fee) in cases {
+            let tx = Tx::sign_body(
+                &net.user_keys,
+                "alice",
+                seq,
+                "",
+                0,
+                fee,
+                net.cfg.network_id,
+                TxBody::SetExternalAddrs {
+                    chain: chain.into(),
+                    address: addr.into(),
+                },
+            )
+            .unwrap();
+            node.submit_tx(tx.clone()).unwrap();
+            node.apply_protocol_tx(&tx).unwrap();
+        }
+
+        let acct = node.state.get("alice");
+        assert_eq!(acct.sequence, 4);
+        assert_eq!(acct.balance, start_bal - 6);
+        assert_eq!(
+            acct.external_addrs.get("btc").map(String::as_str),
+            Some("tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx")
+        );
+        assert_eq!(
+            acct.external_addrs.get("eth").map(String::as_str),
+            Some("0x71C7656EC7ab88b098defB751B7401B5f6d8976F")
+        );
+        assert_eq!(
+            acct.external_addrs.get("xrp").map(String::as_str),
+            Some("rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh")
+        );
+
+        // Verify account_json exposes external_addrs directly.
+        let aj = node.account_json("alice");
+        assert_eq!(
+            aj["external_addrs"]["btc"],
+            "tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx"
+        );
+        assert_eq!(
+            aj["external_addrs"]["eth"],
+            "0x71C7656EC7ab88b098defB751B7401B5f6d8976F"
+        );
+        assert_eq!(
+            aj["external_addrs"]["xrp"],
+            "rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh"
+        );
+
+        // 2. Update existing BTC address.
+        let tx_update = Tx::sign_body(
+            &net.user_keys,
+            "alice",
+            4,
+            "",
+            0,
+            2,
+            net.cfg.network_id,
+            TxBody::SetExternalAddrs {
+                chain: "btc".into(),
+                address: "tb1qnewbtcaddress0000000000000000000000000".into(),
+            },
+        )
+        .unwrap();
+        node.apply_protocol_tx(&tx_update).unwrap();
+        assert_eq!(
+            node.state.get("alice").external_addrs.get("btc").map(String::as_str),
+            Some("tb1qnewbtcaddress0000000000000000000000000")
+        );
+        assert_eq!(node.state.get("alice").external_addrs.len(), 3);
+
+        // 3. Remove XRP binding with empty string "".
+        let tx_clear = Tx::sign_body(
+            &net.user_keys,
+            "alice",
+            5,
+            "",
+            0,
+            2,
+            net.cfg.network_id,
+            TxBody::SetExternalAddrs {
+                chain: "xrp".into(),
+                address: String::new(),
+            },
+        )
+        .unwrap();
+        node.apply_protocol_tx(&tx_clear).unwrap();
+        let acct = node.state.get("alice");
+        assert_eq!(acct.sequence, 6);
+        assert_eq!(acct.balance, start_bal - 10);
+        assert!(!acct.external_addrs.contains_key("xrp"));
+        assert_eq!(acct.external_addrs.len(), 2);
+        let aj = node.account_json("alice");
+        assert!(aj["external_addrs"].get("xrp").is_none());
+    }
+
+    #[test]
+    fn set_external_addrs_validation_and_max_entries() {
+        let mut net = Network::bootstrap(
+            &["v1", "v2", "v3"],
+            MIN_BOND,
+            &[("alice".into(), 100_000), ("bob".into(), 100_000)],
+            ChainConfig::default(),
+        );
+        net.pong_all();
+        let node = net.nodes.get_mut("v1").unwrap();
+
+        // Reject empty chain, chain starting with digit, chain with punctuation, >16 char chain.
+        for bad_chain in ["", "1btc", "btc-test", "abcdefghijklmnopq", "btc eth"] {
+            let tx = Tx::sign_body(
+                &net.user_keys,
+                "alice",
+                1,
+                "",
+                0,
+                2,
+                net.cfg.network_id,
+                TxBody::SetExternalAddrs {
+                    chain: bad_chain.into(),
+                    address: "0x1234".into(),
+                },
+            )
+            .unwrap();
+            assert!(node.submit_tx(tx.clone()).is_err(), "chain {bad_chain:?} must be rejected at submit_tx");
+            assert!(node.apply_protocol_tx(&tx).is_err(), "chain {bad_chain:?} must be rejected at apply");
+            assert_eq!(node.state.get("alice").sequence, 1, "failed tx must not advance sequence");
+        }
+
+        // Reject too-long address (>128 chars) and address with internal whitespace.
+        let long_addr = "a".repeat(MAX_EXTERNAL_ADDR_LEN + 1);
+        for bad_addr in [long_addr.as_str(), "bc1q has space", "0x123\n456"] {
+            let tx = Tx::sign_body(
+                &net.user_keys,
+                "alice",
+                1,
+                "",
+                0,
+                2,
+                net.cfg.network_id,
+                TxBody::SetExternalAddrs {
+                    chain: "btc".into(),
+                    address: bad_addr.into(),
+                },
+            )
+            .unwrap();
+            assert!(node.submit_tx(tx.clone()).is_err());
+            assert!(node.apply_protocol_tx(&tx).is_err());
+            assert_eq!(node.state.get("alice").sequence, 1);
+        }
+
+        // Fill up to MAX_EXTERNAL_ADDRS_PER_ACCOUNT (8) distinct chains.
+        let chains = ["btc", "eth", "xrp", "bnb", "sol", "doge", "avax", "ada"];
+        for (i, ch) in chains.iter().enumerate() {
+            let seq = (i as u64) + 1;
+            let tx = Tx::sign_body(
+                &net.user_keys,
+                "alice",
+                seq,
+                "",
+                0,
+                2,
+                net.cfg.network_id,
+                TxBody::SetExternalAddrs {
+                    chain: (*ch).into(),
+                    address: format!("addr_{ch}_{seq}"),
+                },
+            )
+            .unwrap();
+            node.apply_protocol_tx(&tx).unwrap();
+        }
+        assert_eq!(node.state.get("alice").external_addrs.len(), MAX_EXTERNAL_ADDRS_PER_ACCOUNT);
+
+        // A 9th distinct chain is rejected without advancing sequence.
+        let tx_ninth = Tx::sign_body(
+            &net.user_keys,
+            "alice",
+            9,
+            "",
+            0,
+            2,
+            net.cfg.network_id,
+            TxBody::SetExternalAddrs {
+                chain: "dot".into(),
+                address: "addr_dot".into(),
+            },
+        )
+        .unwrap();
+        let err = node.apply_protocol_tx(&tx_ninth).unwrap_err();
+        assert!(err.contains("external_addrs: max 8"), "unexpected err: {err}");
+        assert!(Node::is_permanent_tx_failure(&err));
+        assert_eq!(node.state.get("alice").sequence, 9);
+
+        // Updating an existing chain at the cap still succeeds.
+        let tx_update = Tx::sign_body(
+            &net.user_keys,
+            "alice",
+            9,
+            "",
+            0,
+            2,
+            net.cfg.network_id,
+            TxBody::SetExternalAddrs {
+                chain: "btc".into(),
+                address: "addr_btc_updated".into(),
+            },
+        )
+        .unwrap();
+        node.apply_protocol_tx(&tx_update).unwrap();
+        assert_eq!(
+            node.state.get("alice").external_addrs.get("btc").map(String::as_str),
+            Some("addr_btc_updated")
+        );
+    }
+
+    #[test]
+    fn account_state_snapshot_backward_compatibility_and_serde_alias() {
+        // Legacy snapshot JSON without `external_addrs` deserializes with an empty map.
+        let legacy_json = r#"{"sequence":7,"balance":50000,"meta":{"account_type":"hot","allowlist":[],"vault_locked":false,"public_key":""}}"#;
+        let acct: AccountState = serde_json::from_str(legacy_json).unwrap();
+        assert_eq!(acct.sequence, 7);
+        assert_eq!(acct.balance, 50000);
+        assert!(acct.external_addrs.is_empty());
+
+        // Re-serializing an AccountState with empty external_addrs omits the field so state roots stay identical.
+        let reserialized = serde_json::to_string(&acct).unwrap();
+        assert!(!reserialized.contains("external_addrs"));
+
+        // Both `"set_external_addrs"` and `"set_external_addr"` deserialize into TxBody::SetExternalAddrs.
+        let b1: TxBody = serde_json::from_str(r#"{"kind":"set_external_addrs","chain":"btc","address":"tb1qxyz"}"#).unwrap();
+        let b2: TxBody = serde_json::from_str(r#"{"kind":"set_external_addr","chain":"btc","address":"tb1qxyz"}"#).unwrap();
+        assert_eq!(
+            b1,
+            TxBody::SetExternalAddrs {
+                chain: "btc".into(),
+                address: "tb1qxyz".into(),
+            }
+        );
+        assert_eq!(b1, b2);
     }
 }
 

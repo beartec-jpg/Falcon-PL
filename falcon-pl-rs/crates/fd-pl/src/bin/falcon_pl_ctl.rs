@@ -223,6 +223,33 @@ enum Cmd {
         #[arg(long, default_value_t = NETWORK_ID_PRIVATE_V22)]
         network_id: u32,
     },
+    /// v2.10.0: Link or clear an external chain address (e.g. btc, eth, xrp, bnb) on an account.
+    /// Pass `--address ""` (or `--clear`) to remove the linked address for `--chain`.
+    #[command(alias = "set-external-addrs")]
+    SetExternalAddr {
+        #[arg(long)]
+        account: String,
+        /// Chain identifier (e.g. btc, eth, xrp, bnb).
+        #[arg(long)]
+        chain: String,
+        /// External address on that chain (empty string removes the binding).
+        #[arg(long, default_value = "")]
+        address: String,
+        /// Clear the linked address for `--chain`.
+        #[arg(long, default_value_t = false)]
+        clear: bool,
+        #[arg(long, default_value_t = 2)]
+        fee: u64,
+        /// 0 = fetch next sequence from node.
+        #[arg(long, default_value_t = 0)]
+        sequence: u64,
+        #[arg(long, default_value = "hmac")]
+        scheme: String,
+        #[arg(long, default_value = "")]
+        keys_dir: String,
+        #[arg(long, default_value_t = NETWORK_ID_PRIVATE_V22)]
+        network_id: u32,
+    },
     CreatePool {
         #[arg(long)]
         pool_id: String,
@@ -4115,6 +4142,40 @@ async fn run() -> Result<()> {
                 &keys_dir,
                 network_id,
                 TxBody::Claim,
+            )
+            .await?;
+            println!("tx_id={} {}", tx.tx_id, serde_json::to_string_pretty(&r)?);
+        }
+        Cmd::SetExternalAddr {
+            account,
+            chain,
+            address,
+            clear,
+            fee,
+            sequence,
+            scheme,
+            keys_dir,
+            network_id,
+        } => {
+            let addr_val = if clear {
+                String::new()
+            } else {
+                address.trim().to_string()
+            };
+            let (tx, r) = submit_body(
+                &args.addr,
+                &account,
+                "",
+                0,
+                fee,
+                sequence,
+                &scheme,
+                &keys_dir,
+                network_id,
+                TxBody::SetExternalAddrs {
+                    chain: chain.trim().to_ascii_lowercase(),
+                    address: addr_val,
+                },
             )
             .await?;
             println!("tx_id={} {}", tx.tx_id, serde_json::to_string_pretty(&r)?);
