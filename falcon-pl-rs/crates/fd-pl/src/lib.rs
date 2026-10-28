@@ -16103,7 +16103,11 @@ mod tests {
         assert!(hello_version_compatible("2.9.59"));
         assert!(hello_version_compatible("2.9.0"));
         assert!(hello_version_compatible("2.9.61"));
-        assert!(!hello_version_compatible("2.10.0"));
+        // 2.10.0 accepts its own line and the legacy 2.9.x line.
+        assert!(hello_version_compatible("2.10.0"));
+        assert!(hello_version_compatible("2.10.7"));
+        assert!(!hello_version_compatible("2.10.07"));
+        assert!(!hello_version_compatible("2.11.0"));
         assert!(!hello_version_compatible("3.9.60"));
         assert!(!hello_version_compatible("2.8.99"));
         assert!(!hello_version_compatible("2.90.1"));
