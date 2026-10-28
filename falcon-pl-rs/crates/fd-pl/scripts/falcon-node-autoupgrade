@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# Falcon PL node auto-upgrade helper (Item #13).
+# Delegates to falcon-node autoupgrade [on|off|status|run] with configurable jitter,
+# post-upgrade health check (service active + height advancing), and automatic rollback.
+set -euo pipefail
+
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -x "$SELF_DIR/falcon-node" ]]; then
+  FALCON_NODE="$SELF_DIR/falcon-node"
+elif [[ -x "$SELF_DIR/install-falcon-node.sh" ]]; then
+  FALCON_NODE="$SELF_DIR/install-falcon-node.sh"
+elif command -v falcon-node >/dev/null 2>&1; then
+  FALCON_NODE="$(command -v falcon-node)"
+else
+  echo "error: falcon-node not found" >&2
+  exit 1
+fi
+
+ACTION="run"
+if [[ $# -gt 0 && "$1" != -* ]]; then
+  case "$1" in
+    on|off|status|run|enable|disable) ACTION="$1"; shift ;;
+  esac
+fi
+
+exec "$FALCON_NODE" autoupgrade "$ACTION" "$@"

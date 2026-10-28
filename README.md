@@ -8,7 +8,7 @@
 | **Ticker** | FPL |
 | **Consensus** | Falcon Consensus (deterministic committee lottery + 4-of-6 Falcon-512 QC) |
 | **Signatures** | Falcon-512 (NIST PQC lattice signature; `hmac-dev` restricted to local test harnesses) |
-| **Version** | **2.9.81** live on public testnet **2300** (height **692,000+**) |
+| **Version** | **2.10.0** live on public testnet **2300** (height **692,000+**) |
 | **Repository** | https://github.com/beartec-jpg/Falcon-PL |
 
 > This repository is the **Falcon PL product**.  
@@ -33,7 +33,7 @@ docs/
   bridge/                ← BTC4 BitVM2 bridge architecture, operator guide & rewards specification
 ```
 
-## Key Features in 2.9.81 (Testnet 2300 @ Height 692,000+)
+## Key Features in 2.10.0 (Testnet 2300 @ Height 692,000+)
 
 - **Falcon-512 Post-Quantum Consensus:** Deterministic 6-seat committee lottery per height with 4-of-6 Falcon-512 Quorum Certificates (QC), ranked standby fallback on timeout, and equivocation slashing.
 - **On-Chain Key Registry & Seat Payout Isolation (`692,000+`):** Wallet keys are committed and enforced on-chain (`PayToKey` / Fix B), while validator rewards accrue to isolated per-seat buckets (`ValidatorInfo.seat_claimable` or configured `--payout-address` via `SetSeatPayout` / `ClaimSeat`).
@@ -59,7 +59,7 @@ Key binaries: `falcon-pl-node`, `falcon-pl-ctl`, `falcon-pl-snark`, `falcon-pl-b
 
 ## Documentation
 
-- **[docs/PUBLIC_NODE.md](docs/PUBLIC_NODE.md)** — Install and operate an observer, watcher, or validator node on Testnet 2300 (`2.9.81`, `fdash`, `--payout-account`, open validator onboarding)
+- **[docs/PUBLIC_NODE.md](docs/PUBLIC_NODE.md)** — Install and operate an observer, watcher, or validator node on Testnet 2300 (`2.10.0`, `fdash`, `--payout-account`, open validator onboarding)
 - **[docs/SEAT_PAYOUT.md](docs/SEAT_PAYOUT.md)** — Validator seat reward buckets, `SetSeatPayout`, and `ClaimSeat` (`692,000+`)
 - **[docs/bridge/BRIDGE_INTEGRATION.md](docs/bridge/BRIDGE_INTEGRATION.md)** — `BTC4` BitVM2 bridge + operator registry ledger integration (`692,000+`)
 - **[docs/bridge/OPERATOR_GUIDE.md](docs/bridge/OPERATOR_GUIDE.md)** — Running a `BTC4` BitVM2 operator (`fpl-operatord`)

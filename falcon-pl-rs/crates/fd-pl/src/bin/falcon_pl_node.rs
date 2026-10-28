@@ -3599,7 +3599,10 @@ async fn main() -> Result<()> {
                             if n.pending_proposal.is_some() {
                                 // Locked / already-known body. Re-fan it; do not
                                 // mint another hash for this height.
-                            } else if n.should_pre_pack_need_txs() {
+                            } else if !n.can_seal_empty()
+                                && !(n.mempool.len() > 0 && !n.has_applicable_tx())
+                                && n.should_pre_pack_need_txs()
+                            {
                                 n.mark_pre_pack_need_txs();
                                 drop(n);
                                 shared_c.fan_need_txs(
@@ -3608,9 +3611,12 @@ async fn main() -> Result<()> {
                                         max_count: fd_pl::Node::NEED_TXS_BATCH as u64,
                                     },
                                 );
-                            } else if n.waiting_need_txs_grace() {
+                            } else if !n.can_seal_empty()
+                                && !(n.mempool.len() > 0 && !n.has_applicable_tx())
+                                && n.waiting_need_txs_grace()
+                            {
                                 // Wait for TxsBatch to land before packing empty.
-                            } else if n.pace_wait() {
+                            } else if !n.can_seal_empty() && n.pace_wait() {
                                 // v2.9.59: pacing — let a few more txs arrive
                                 // instead of sealing a tiny block every ~1.4 s.
                             } else if !only_pack.is_empty() && !designated && !force_full {
@@ -3954,7 +3960,7 @@ async fn peer_session(
             tip_hash: n.tip_hash.clone(),
             is_hub: n.is_hub,
             mempool_len: n.mempool.len() as u64,
-            product_version: PRODUCT_VERSION.to_string(),
+            product_version: fd_pl::HELLO_WIRE_VERSION.to_string(),
             hello_network_id: n.cfg.network_id,
             archive: shared.is_archive,
             snap_height: shared
@@ -4312,6 +4318,44 @@ fn is_catchup_reply(m: &WireMsg) -> bool {
     )
 }
 
+/// Ok/Err acks a mesh peer never reads (its process_msg returns None for them).
+fn is_peer_ack(m: &WireMsg) -> bool {
+    matches!(m, WireMsg::Ok { .. } | WireMsg::Err { .. })
+}
+
+/// Whether an inbound reply should be suppressed because the session has
+/// completed `Hello` as a mesh peer and the reply is an unread `Ok`/`Err` ack.
+fn should_drop_inbound_reply(inbound_registered: bool, was_hello: bool, reply: &WireMsg) -> bool {
+    inbound_registered && !was_hello && is_peer_ack(reply)
+}
+
+/// Minimum interval (10s) between `inbound reply dropped` warnings across seats.
+const REPLY_DROP_LOG_INTERVAL_MS: u64 = 10_000;
+static REPLY_DROP_LAST_MS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static REPLY_DROP_SUPPRESSED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Rate-limit `inbound reply dropped` warnings to at most once every
+/// `REPLY_DROP_LOG_INTERVAL_MS`. Returns `Some(suppressed_count)` when a log
+/// line should be emitted and `None` when suppressed.
+fn should_log_reply_dropped(
+    now_ms: u64,
+    last_ms: &std::sync::atomic::AtomicU64,
+    suppressed: &std::sync::atomic::AtomicU64,
+) -> Option<u64> {
+    use std::sync::atomic::Ordering::Relaxed;
+    let prev = last_ms.load(Relaxed);
+    if prev == 0 || now_ms.saturating_sub(prev) >= REPLY_DROP_LOG_INTERVAL_MS {
+        if last_ms
+            .compare_exchange(prev, now_ms.max(1), Relaxed, Relaxed)
+            .is_ok()
+        {
+            return Some(suppressed.swap(0, Relaxed));
+        }
+    }
+    suppressed.fetch_add(1, Relaxed);
+    None
+}
+
 fn we_dial(my_id: &str, peer_id: &str) -> bool {
     my_id < peer_id
 }
@@ -4377,7 +4421,7 @@ async fn handle_inbound(
             tip_hash: n.tip_hash.clone(),
             is_hub: n.is_hub,
             mempool_len: n.mempool.len() as u64,
-            product_version: PRODUCT_VERSION.to_string(),
+            product_version: fd_pl::HELLO_WIRE_VERSION.to_string(),
             hello_network_id: n.cfg.network_id,
             archive: shared.is_archive,
             snap_height: shared
@@ -4518,7 +4562,15 @@ async fn handle_inbound(
 
     let enqueue = |reply_tx: &mpsc::Sender<String>, line: String| {
         if reply_tx.try_send(line).is_err() {
-            warn!("inbound reply dropped");
+            if let Some(suppressed) =
+                should_log_reply_dropped(unix_ms(), &REPLY_DROP_LAST_MS, &REPLY_DROP_SUPPRESSED)
+            {
+                if suppressed == 0 {
+                    warn!("inbound reply dropped");
+                } else {
+                    warn!("inbound reply dropped (suppressed={suppressed})");
+                }
+            }
         }
     };
 
@@ -4576,6 +4628,7 @@ async fn handle_inbound(
                 inbound_registered = true;
             }
         }
+        let was_hello = matches!(msg, WireMsg::Hello { .. });
         let replies = dispatch_wire(&shared, msg, Some(&fanout), true, false);
         for r in replies {
             let out = serde_json::to_string(&r)? + "\n";
@@ -4583,6 +4636,14 @@ async fn handle_inbound(
                 if catch_reply_tx.try_send(out).is_err() {
                     warn!("inbound catch-up reply dropped (catch-up lane full)");
                 }
+            } else if should_drop_inbound_reply(inbound_registered, was_hello, &r) {
+                // Hello'd mesh peer: it discards Ok/Err (process_msg -> None),
+                // so acks to gossip (header-known, voted, buffered/dup, tx
+                // duplicate ...) only filled the 64-slot queue (~2.5k
+                // "inbound reply dropped"/min on v3) and crowded out data
+                // replies (NeedLedgerBody, TxsBatch, NeedMempoolTxs).
+                // Clients (no Hello) still get every ack.
+                continue;
             } else {
                 enqueue(&reply_tx, out);
             }
@@ -6713,6 +6774,16 @@ fn process_msg(
                 Err(e) => Some(WireMsg::Err { msg: e }),
             }
         }
+        WireMsg::MempoolDrop { target } => {
+            let mut n = shared.node.lock();
+            let dropped = n.drop_mempool_target(&target);
+            Some(WireMsg::Ok {
+                msg: format!(
+                    "mempool-drop target={target} evicted={} ids={dropped:?}",
+                    dropped.len()
+                ),
+            })
+        }
         WireMsg::SnapshotSave { path } => {
             let n = shared.node.lock();
             match n.save_snapshot(&path) {
@@ -6865,4 +6936,366 @@ fn crate_lc_vote_rounds_pause(keys_dir: &str) -> (u64, u64) {
 /// `vote_rounds_from_height` from `<keys_dir>/lc/bridge.json` (0 if absent).
 fn crate_lc_vote_rounds(keys_dir: &str) -> u64 {
     fd_pl::lc::load_bridge_cfg(std::path::Path::new(keys_dir)).vote_rounds_from_height
+}
+
+#[cfg(test)]
+mod inbound_ack_tests {
+    use super::*;
+    use std::sync::atomic::AtomicU64;
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+    use tokio::net::TcpListener;
+
+    fn test_shared(id: &str) -> Arc<Shared> {
+        let mut cfg = ChainConfig::default();
+        cfg.network_id = 1;
+        let mut keys = crate::KeyRing::default();
+        let _ = keys.generate_id(id);
+        let _ = keys.generate_id("v9");
+        let mut node = Node::new(id, cfg, keys, &[]);
+        node.register_validator("v9", 10_000_000_000);
+        if let Some(pk) = node.keys.public_hex("v9") {
+            if let Some(v) = node.validators.get_mut("v9") {
+                v.public_key = pk;
+            }
+        }
+        Arc::new(Shared {
+            node: parking_lot::Mutex::new(node),
+            inbound: parking_lot::Mutex::new(Vec::new()),
+            hub_peer_idxs: Vec::new(),
+            is_hub: true,
+            is_archive: false,
+            snapshot_out: PathBuf::from("/tmp/falcon-test-snap.bin"),
+            snap_meta: parking_lot::Mutex::new(None),
+            snap_publish: parking_lot::Mutex::new(()),
+            hub_snap: parking_lot::Mutex::new(None),
+            data_dir: PathBuf::from("/tmp"),
+            disk_guard: fd_pl::disk::DiskGuard::default(),
+            disk_skips: std::sync::atomic::AtomicU64::new(0),
+            disk_last_skip: parking_lot::Mutex::new(String::new()),
+            snap_pull: parking_lot::Mutex::new(None),
+            snap_stash: parking_lot::Mutex::new(fd_pl::SnapStash::default()),
+            snap_slow_judge: parking_lot::Mutex::new(fd_pl::SnapSlowJudge::default()),
+            last_snap_chunk_ms: std::sync::atomic::AtomicU64::new(0),
+            snap_pin_ms: std::sync::atomic::AtomicU64::new(0),
+            served_shas: parking_lot::Mutex::new(std::collections::HashMap::new()),
+            slow_snap_src: parking_lot::Mutex::new(std::collections::HashMap::new()),
+            snap_pushed: parking_lot::Mutex::new(std::collections::HashMap::new()),
+            ledger_slow: parking_lot::Mutex::new(fd_pl::catchup_slow::LedgerSlowList::default()),
+            joiner: false,
+            wire_from: Arc::new(parking_lot::Mutex::new(String::new())),
+            blackhole: parking_lot::Mutex::new(std::collections::HashMap::new()),
+            live_socks: parking_lot::Mutex::new(std::collections::HashMap::new()),
+            tx_relay_wait: parking_lot::Mutex::new(std::collections::VecDeque::new()),
+            tx_announced: parking_lot::Mutex::new(std::collections::HashSet::new()),
+            dish_guard: parking_lot::Mutex::new(std::collections::HashSet::new()),
+            gap_hard: parking_lot::Mutex::new(0),
+            gap_named: parking_lot::Mutex::new(0),
+            gap_dish: parking_lot::Mutex::new(0),
+            gap_walk: parking_lot::Mutex::new((0, String::new())),
+        })
+    }
+
+    #[test]
+    fn peer_ack_suppression_rules() {
+        let ok = WireMsg::Ok { msg: "tx duplicate".into() };
+        let err = WireMsg::Err { msg: "header-known".into() };
+        let need_body = WireMsg::NeedLedgerBody { ledger_hash: "h1".into() };
+
+        // (a) After Hello (`inbound_registered == true, was_hello == false`), Ok/Err acks are suppressed,
+        // while data replies still flow.
+        assert!(should_drop_inbound_reply(true, false, &ok));
+        assert!(should_drop_inbound_reply(true, false, &err));
+        assert!(!should_drop_inbound_reply(true, false, &need_body));
+
+        // (b) Without Hello (`inbound_registered == false`, e.g. falcon-pl-ctl RPC), Ok/Err acks still flow.
+        assert!(!should_drop_inbound_reply(false, false, &ok));
+        assert!(!should_drop_inbound_reply(false, false, &err));
+
+        // (c) On the Hello message itself (`was_hello == true`), a Hello-reject Err is never suppressed.
+        assert!(!should_drop_inbound_reply(false, true, &err));
+        assert!(!should_drop_inbound_reply(true, true, &err));
+    }
+
+    #[test]
+    fn reply_dropped_warning_is_rate_limited() {
+        let last = AtomicU64::new(0);
+        let sup = AtomicU64::new(0);
+
+        // First drop logs immediately with 0 suppressed.
+        assert_eq!(should_log_reply_dropped(1_000, &last, &sup), Some(0));
+        // Drops within the 10s window are suppressed and counted.
+        for t in [1_100, 2_500, 5_000, 10_999] {
+            assert_eq!(should_log_reply_dropped(t, &last, &sup), None);
+        }
+        // Once 10s have elapsed, logs again and reports 4 suppressed warnings.
+        assert_eq!(should_log_reply_dropped(11_000, &last, &sup), Some(4));
+        assert_eq!(should_log_reply_dropped(11_001, &last, &sup), None);
+        assert_eq!(should_log_reply_dropped(21_000, &last, &sup), Some(1));
+    }
+
+    #[tokio::test]
+    async fn inbound_session_hello_suppresses_acks_while_rpc_and_hello_reject_receive_replies() {
+        let shared = test_shared("v99");
+        let fanout = Arc::new(Vec::new());
+
+        // Case (a): Session sends valid Hello as mesh peer "v9" (`we_dial("v99", "v9")` is false),
+        // followed by a SkipPacker with bad signature (normally returns WireMsg::Err)
+        // and then StatusReq (returns WireMsg::Status). The Err ack is suppressed so Status arrives immediately.
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let sh1 = shared.clone();
+        let f1 = fanout.clone();
+        let srv1 = tokio::spawn(async move {
+            let (sock, _) = listener.accept().await.unwrap();
+            let _ = handle_inbound(sock, sh1, f1, "v99").await;
+        });
+
+        let client = TcpStream::connect(addr).await.unwrap();
+        let (cr, mut cw) = client.into_split();
+        let mut lines = BufReader::new(cr).lines();
+        let srv_hello: WireMsg = serde_json::from_str(&lines.next_line().await.unwrap().unwrap()).unwrap();
+        assert!(matches!(srv_hello, WireMsg::Hello { .. }));
+
+        let hello = WireMsg::Hello {
+            id: "v9".into(),
+            public_key: String::new(),
+            validators: BTreeMap::new(),
+            publics: BTreeMap::new(),
+            tip_height: 0,
+            tip_hash: String::new(),
+            is_hub: false,
+            mempool_len: 0,
+            product_version: PRODUCT_VERSION.into(),
+            hello_network_id: 1,
+            archive: false,
+            snap_height: 0,
+        };
+        cw.write_all((serde_json::to_string(&hello).unwrap() + "\n").as_bytes()).await.unwrap();
+
+        let bad_skip = WireMsg::SubmitTx {
+            tx: fd_pl::Tx {
+                tx_id: "tx-invalid-sig".into(),
+                account: "alice".into(),
+                destination: "bob".into(),
+                amount: 100,
+                fee: 1000,
+                sequence: 0,
+                signature: "deadbeef".into(),
+                public_key: String::new(),
+                body: fd_pl::TxBody::default(),
+                network_id: 1,
+            },
+        };
+        cw.write_all((serde_json::to_string(&bad_skip).unwrap() + "\n").as_bytes()).await.unwrap();
+        let status_req = WireMsg::StatusReq {
+            include_accounts: false,
+            brief: true,
+        };
+        cw.write_all((serde_json::to_string(&status_req).unwrap() + "\n").as_bytes()).await.unwrap();
+
+        let next_reply: WireMsg = serde_json::from_str(&lines.next_line().await.unwrap().unwrap()).unwrap();
+        assert!(
+            matches!(next_reply, WireMsg::Status { .. }),
+            "expected Status right away with SkipPacker's Err ack suppressed, got {next_reply:?}"
+        );
+        drop(cw);
+        let _ = srv1.await;
+
+        // Case (b): Session WITHOUT Hello (like falcon-pl-ctl RPC) sends bad SkipPacker and STILL receives WireMsg::Err
+        let listener2 = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr2 = listener2.local_addr().unwrap();
+        let sh2 = shared.clone();
+        let f2 = fanout.clone();
+        let srv2 = tokio::spawn(async move {
+            let (sock, _) = listener2.accept().await.unwrap();
+            let _ = handle_inbound(sock, sh2, f2, "v99").await;
+        });
+        let client2 = TcpStream::connect(addr2).await.unwrap();
+        let (cr2, mut cw2) = client2.into_split();
+        let mut lines2 = BufReader::new(cr2).lines();
+        let _ = lines2.next_line().await.unwrap().unwrap();
+        cw2.write_all((serde_json::to_string(&bad_skip).unwrap() + "\n").as_bytes()).await.unwrap();
+        let rpc_reply: WireMsg = serde_json::from_str(&lines2.next_line().await.unwrap().unwrap()).unwrap();
+        assert!(
+            matches!(rpc_reply, WireMsg::Err { .. }),
+            "expected non-Hello RPC session to receive WireMsg::Err, got {rpc_reply:?}"
+        );
+        drop(cw2);
+        let _ = srv2.await;
+
+        // Case (c): Hello-reject error (wrong network_id) still goes out before session closes
+        let bad_hello = WireMsg::Hello {
+            id: "v9".into(),
+            public_key: String::new(),
+            validators: BTreeMap::new(),
+            publics: BTreeMap::new(),
+            tip_height: 0,
+            tip_hash: String::new(),
+            is_hub: false,
+            mempool_len: 0,
+            product_version: PRODUCT_VERSION.into(),
+            hello_network_id: 999,
+            archive: false,
+            snap_height: 0,
+        };
+        let mut gate = HelloSession::default();
+        let verdict = gate.check(&shared.node.lock(), &bad_hello);
+        assert!(
+            matches!(verdict, HelloGate::Close(_)),
+            "expected HelloGate::Close on wrong network_id"
+        );
+        let replies = dispatch_wire(&shared, bad_hello, None, true, false);
+        assert_eq!(replies.len(), 1);
+        assert!(matches!(replies[0], WireMsg::Err { .. }));
+        assert!(!should_drop_inbound_reply(false, true, &replies[0]));
+    }
+
+    #[test]
+    fn item16_admin_mempool_drop_and_leader_empty_block_fallback() {
+        let shared = test_shared("v1");
+        let nid = shared.node.lock().cfg.network_id;
+        let mut uk = crate::KeyRing::default();
+        for acct in ["alice", "bob", "carol", "dave"] {
+            let _ = uk.generate_id(acct);
+        }
+
+        {
+            let mut n = shared.node.lock();
+            n.cfg.pack_budget_ms = 0;
+            n.cfg.min_fee = 0;
+            n.cfg.fee_escalate = false;
+            n.bitvm2_m1_from_height = 0;
+            n.empty_block_from_height = 0;
+            n.register_validator("v1", 10_000_000_000);
+            for v in ["v1", "v9"] {
+                n.pong(v);
+            }
+            for acct in ["alice", "bob", "carol", "dave"] {
+                let _ = n.keys.insert_public(acct, &uk.public_hex(acct).unwrap());
+                let mut a = n.state.get(acct);
+                a.balance = 50_000;
+                if acct == "bob" {
+                    a.meta.public_key = uk.public_hex("bob").unwrap();
+                }
+                n.state.accounts.insert(acct.into(), a);
+            }
+
+            // Insert a valid tx for bob and test admin RPC MempoolDrop
+            let tx_bob = fd_pl::Tx::sign_with(&uk, "bob", 1, "alice", 10, 2, nid).unwrap();
+            assert!(n.submit_tx(tx_bob.clone()).unwrap());
+            drop(n);
+
+            let replies = dispatch_wire(
+                &shared,
+                WireMsg::MempoolDrop {
+                    target: tx_bob.tx_id.clone(),
+                },
+                None,
+                false,
+                true,
+            );
+            assert_eq!(replies.len(), 1);
+            match &replies[0] {
+                WireMsg::Ok { msg } => assert!(msg.contains("evicted=1"), "unexpected msg: {msg}"),
+                other => panic!("expected WireMsg::Ok, got {other:?}"),
+            }
+
+            let mut n = shared.node.lock();
+            assert!(n.mempool.is_empty());
+
+            // Now insert all 4 invalid error classes into the leader's mempool and verify leader seals an empty block:
+            let op_xonly = "11".repeat(32);
+            let dep_txid = "aa".repeat(32);
+            let k2_txid = "bb".repeat(32);
+            let af_txid = "cc".repeat(32);
+            let op_params = n.operator_params();
+            n.bridge
+                .operators
+                .register(&op_params, "alice", &op_xonly, op_params.min_bond, 0)
+                .unwrap();
+            n.bridge
+                .operators
+                .bind_graph("alice", &dep_txid, &k2_txid, &af_txid, 0)
+                .unwrap();
+            n.create_market("m-usdc", "USDC").unwrap();
+            n.defi.credit_asset("bob", "USDC", 50_000);
+            n.lend_supply("m-usdc", "bob", 10_000).unwrap();
+            n.open_vault("dave", "alice").unwrap();
+
+            let tx1 = fd_pl::Tx::sign_body(
+                &uk,
+                "alice",
+                n.state.get("alice").sequence,
+                "",
+                0,
+                2,
+                nid,
+                fd_pl::TxBody::OperatorGraphBind {
+                    deposit_txid: dep_txid,
+                    kick_off_2_txid: k2_txid,
+                    assert_final_txid: af_txid,
+                    depositor_account: String::new(),
+                    cosign: false,
+                },
+            )
+            .unwrap();
+            let tx2 = fd_pl::Tx::sign_body(
+                &uk,
+                "bob",
+                n.state.get("bob").sequence,
+                "",
+                0,
+                2,
+                nid,
+                fd_pl::TxBody::LendBorrow {
+                    market_id: "m-usdc".into(),
+                    amount: 5_000,
+                    collateral_fpl: 100,
+                },
+            )
+            .unwrap();
+            let tx3 = fd_pl::Tx::sign_body(
+                &uk,
+                "carol",
+                n.state.get("carol").sequence,
+                "bob",
+                10,
+                2,
+                nid,
+                fd_pl::TxBody::PayToKey {
+                    key_hash: "33".repeat(32),
+                },
+            )
+            .unwrap();
+            let tx4 = fd_pl::Tx::sign_body(
+                &uk,
+                "dave",
+                n.state.get("dave").sequence,
+                "",
+                0,
+                2,
+                nid,
+                fd_pl::TxBody::VaultOpen {
+                    destination: "alice".into(),
+                },
+            )
+            .unwrap();
+
+            let max_mp = n.cfg.max_mempool_txs;
+            for tx in [tx1, tx2, tx3, tx4] {
+                assert!(!n.is_tx_applicable(&tx));
+                let _ = n.mempool.insert(tx, max_mp);
+            }
+            assert!(n.mempool.len() > 0 && !n.has_applicable_tx());
+
+            let winner = n.lottery_packer().unwrap();
+            let sealed = n
+                .pack_or_skip(&winner)
+                .expect("pack_or_skip must succeed")
+                .expect("leader must seal an empty fallback block after evicting invalid txs");
+            assert_eq!(sealed.height, 1);
+            assert!(sealed.txs.is_empty());
+            assert!(n.mempool.is_empty());
+        }
+    }
 }

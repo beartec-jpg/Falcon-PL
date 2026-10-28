@@ -1,6 +1,6 @@
-# Falcon PL Rust Workspace (`2.9.81`)
+# Falcon PL Rust Workspace (`2.10.0`)
 
-Active workspace members for live public testnet **2300** (`v2.9.81`, height `692,000+`):
+Active workspace members for live public testnet **2300** (`v2.10.0`, height `692,000+`):
 
 - **`crates/fd-pl`** — Falcon PL core node (`falcon-pl-node`), CLI (`falcon-pl-ctl`), Falcon-512 consensus, disk-backed body store, Rewards v2, ETH Gloas light client, and BTC/BTC4 SPV & BitVM2 state machine.
 - **`crates/fd-pl-snark`** — Groth16 over BN254 circuits and CLI (`falcon-pl-snark`) for 4-of-6 Falcon-512 QC verification (`FalconQcBridgeV3`).

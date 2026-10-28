@@ -1,16 +1,16 @@
 # Falcon PL Documentation Index
 
-**For reviewers, node operators, and bridge operators.** Last updated **2026-10-24** (`v2.9.81`, Testnet 2300 height `692,000+`).
+**For reviewers, node operators, and bridge operators.** Last updated **2026-10-24** (`v2.10.0`, Testnet 2300 height `692,000+`).
 
 Read **current** files first. Files under "Historical" describe earlier milestones (private soak 2200, v2.2 expansion plan, or pre-BitVM2 vault designs) and are kept in git so engineering history remains auditable.
 
 ---
 
-## Read First (Current — `v2.9.81` / Testnet 2300)
+## Read First (Current — `v2.10.0` / Testnet 2300)
 
 | Doc | What it covers |
 |-----|----------------|
-| **[../../../../docs/PUBLIC_NODE.md](../../../../docs/PUBLIC_NODE.md)** | **Public Node & Validator Guide (`2.9.81`)** — observer/watcher/validator install, open validator onboarding (`50,000 FPL` bond), `fdash`, `--payout-account`, Rewards v2 |
+| **[../../../../docs/PUBLIC_NODE.md](../../../../docs/PUBLIC_NODE.md)** | **Public Node & Validator Guide (`2.10.0`)** — observer/watcher/validator install, open validator onboarding (`50,000 FPL` bond), `fdash`, `--payout-account`, Rewards v2 |
 | **[../../../../docs/SEAT_PAYOUT.md](../../../../docs/SEAT_PAYOUT.md)** | **Seat Payout Isolation (`692,000+`)** — per-seat validator reward buckets, `SetSeatPayout`, `ClaimSeat` |
 | **[BRIDGES_2300_STATUS.md](BRIDGES_2300_STATUS.md)** | **Live Bridges Source of Truth** — Sepolia ETH/USDC V3 (`FalconQcBridgeV3`), Bitcoin Testnet4 `BTC4` BitVM2 bridge (`692,000+`), and frozen legacy Testnet3 `BTC` pool |
 | **[../../../../docs/bridge/BRIDGE_INTEGRATION.md](../../../../docs/bridge/BRIDGE_INTEGRATION.md)** | **BTC4 BitVM2 Ledger Integration (`692,000+`)** — `Bitvm2AttestV2`, operator registry, graph bindings, SPV disprove slashing |
@@ -20,7 +20,7 @@ Read **current** files first. Files under "Historical" describe earlier mileston
 | **[ETH_USDC_2300.md](ETH_USDC_2300.md)** | Sepolia ETH/USDC bridge architecture (`FalconQcBridgeV3` + Gloas sync-committee light client) |
 | **[SNARK_LC_2300.md](SNARK_LC_2300.md)** | Groth16 4-of-6 Falcon-512 QC circuit (`fd-pl-snark`) and Sepolia verifiers |
 | **[BITVM2_ENGINE.md](BITVM2_ENGINE.md)** | BitVM2 `FplWithdrawValid` circuit (`fd-pl-bitvm2`), M1 checkpoints, and Bitcoin Testnet4 `BTC4` execution |
-| **[PUBLIC_PARAMS_2300.md](PUBLIC_PARAMS_2300.md)** | Public Testnet 2300 consensus, storage, bridge, and tokenomics parameters (`2.9.81`) |
+| **[PUBLIC_PARAMS_2300.md](PUBLIC_PARAMS_2300.md)** | Public Testnet 2300 consensus, storage, bridge, and tokenomics parameters (`2.10.0`) |
 | **[EMISSION_MATRIX.md](EMISSION_MATRIX.md)** | Epoch emission & Rewards v2 split (proposer 30% fees, 5% `BTC4` operators + 55/5/20/20 split, 50/40/10 validator pot) |
 | [BTC_POOL_FREEZE_2026-10-16.md](BTC_POOL_FREEZE_2026-10-16.md) | Legacy Bitcoin Testnet3 (`BTC`) custodial pool freeze record |
 | [IDENTITY.md](IDENTITY.md) | Naming: Falcon-512 vs. Falcon Consensus vs. Falcon PL |

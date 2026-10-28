@@ -378,7 +378,22 @@ use thiserror::Error;
 
 pub const NETWORK_NAME: &str = "falcon-pl-private-v22";
 /// Product release line. One number on crate, status, Hello, and binaries.
-pub const PRODUCT_VERSION: &str = "2.9.81";
+pub const PRODUCT_VERSION: &str = "2.10.0";
+
+/// Version string a node puts in its Hello (`WireMsg::Hello::product_version`).
+///
+/// 2.9.x binaries accept a Hello only if it is `2.9.<digits>` (same
+/// major.minor), and close the session otherwise, so a Hello that said
+/// `2.10.0` would be refused by every 2.9.81 seat and a rolling upgrade would
+/// isolate each upgraded seat. Until the whole mesh runs 2.10.x, 2.10.0
+/// therefore advertises this legacy-line string (patch >= 60, so it also
+/// passes the post-Gloas `x >= 60` rule). Status, logs and binaries still
+/// report [`PRODUCT_VERSION`]. Local only: not consensus.
+pub const HELLO_WIRE_VERSION: &str = "2.9.100";
+
+/// Minor of the legacy line whose Hello versions this release still accepts
+/// (`2.9.x`), in addition to its own major.minor.
+const HELLO_LEGACY_MINOR: &str = "9";
 
 /// v2.9.66: when true, certified catch-up of non-batch ledgers skips per-tx
 /// Falcon verify (legacy). Default false. Env: `FPL_CATCHUP_SKIP_TX_SIG=1`.
@@ -398,7 +413,7 @@ pub fn catchup_skip_tx_sig() -> bool {
 /// Empty is the legacy pre-A10 hello. Otherwise the peer must be
 /// `major.minor.<digits>` with the same major.minor as [`PRODUCT_VERSION`]
 /// (any `2.9.x` while this crate is 2.9.61). `2.9` with no patch is rejected,
-/// as is a different minor (`2.10.0`, `2.90.1`), a different major, or any
+/// as is a different minor (`2.8.99`, `2.90.1`), a different major, or any
 /// component that is not a plain integer. A patch with a leading zero
 /// (`2.9.060`, `2.9.00`) is rejected; `2.9.0` is not.
 pub fn hello_version_compatible(peer: &str) -> bool {
@@ -423,7 +438,7 @@ pub fn hello_version_compatible(peer: &str) -> bool {
     let patch_ok = !patch.is_empty()
         && patch.bytes().all(|b| b.is_ascii_digit())
         && (patch.len() == 1 || !patch.starts_with('0'));
-    maj == our_maj && min == our_min && patch_ok
+    maj == our_maj && patch_ok && (min == our_min || min == HELLO_LEGACY_MINOR)
 }
 
 /// Lowest `2.9.x` patch a peer may advertise in Hello once the local tip is at
@@ -446,6 +461,11 @@ pub fn hello_version_compatible_at(peer: &str, gloas_active: bool) -> bool {
     }
     if peer.is_empty() {
         return false;
+    }
+    // The `x >= 60` floor is a rule for the legacy `2.9.x` line only; a peer on
+    // this release's own line (`2.10.x`) is always new enough.
+    if !peer.starts_with("2.9.") {
+        return true;
     }
     peer.rsplit('.')
         .next()
@@ -537,7 +557,13 @@ fn account_tx_json(tx: &Tx, led: &Ledger) -> serde_json::Value {
     let mut v = serde_json::json!({
         "tx_id": tx.tx_id,
         "height": led.height,
-        "kind": match &tx.body { TxBody::Pay => "pay", TxBody::Claim => "claim", TxBody::AssetPay { .. } => "asset_pay", _ => "tx" },
+        "kind": match &tx.body {
+            TxBody::Pay => "pay",
+            TxBody::Claim => "claim",
+            TxBody::AssetPay { .. } => "asset_pay",
+            TxBody::SetExternalAddrs { .. } => "set_external_addrs",
+            _ => "tx",
+        },
         "account": tx.account,
         "destination": tx.destination,
         "amount": tx.amount,
@@ -546,6 +572,10 @@ fn account_tx_json(tx: &Tx, led: &Ledger) -> serde_json::Value {
     });
     if let TxBody::AssetPay { asset, .. } = &tx.body {
         v["asset"] = serde_json::json!(asset);
+    }
+    if let TxBody::SetExternalAddrs { chain, address } = &tx.body {
+        v["chain"] = serde_json::json!(chain);
+        v["address"] = serde_json::json!(address);
     }
     v
 }
@@ -1319,6 +1349,59 @@ pub enum TxBody {
         validator: String,
         to: String,
     },
+    /// v2.10.0: Link or clear an external chain address (e.g. `"btc"`, `"eth"`,
+    /// `"xrp"`, `"bnb"`) on the sender's account (`AccountState::external_addrs`).
+    /// An empty `address` removes the binding for `chain`.
+    #[serde(alias = "set_external_addr")]
+    SetExternalAddrs {
+        chain: String,
+        address: String,
+    },
+}
+
+/// Alias for [`TxBody`] used by callers referring to transaction payloads.
+pub type TxPayload = TxBody;
+
+/// Maximum number of external chain address bindings stored per account.
+pub const MAX_EXTERNAL_ADDRS_PER_ACCOUNT: usize = 8;
+/// Maximum length of a chain key in [`AccountState::external_addrs`].
+pub const MAX_EXTERNAL_CHAIN_LEN: usize = 16;
+/// Maximum length of an external chain address in [`AccountState::external_addrs`].
+pub const MAX_EXTERNAL_ADDR_LEN: usize = 128;
+
+/// Validate and normalize `(chain, address)` for [`TxBody::SetExternalAddrs`].
+///
+/// - `chain` is trimmed and normalized to lowercase ASCII, must be `1..=16` bytes,
+///   start with an ASCII letter (`a..=z`), and contain only lowercase ASCII
+///   alphanumeric characters (`a..=z`, `0..=9`).
+/// - `address` is trimmed; an empty string `""` removes the binding for `chain`.
+///   A non-empty address must be `1..=128` printable ASCII bytes without whitespace
+///   (`0x21..=0x7e`).
+pub fn validate_external_addr(chain: &str, address: &str) -> Result<(String, String), String> {
+    let c = chain.trim().to_ascii_lowercase();
+    if c.is_empty() || c.len() > MAX_EXTERNAL_CHAIN_LEN {
+        return Err(format!(
+            "external_addrs: chain must be 1..={MAX_EXTERNAL_CHAIN_LEN} chars"
+        ));
+    }
+    let mut bytes = c.bytes();
+    if !bytes.next().is_some_and(|b| b.is_ascii_lowercase())
+        || !bytes.all(|b| b.is_ascii_lowercase() || b.is_ascii_digit())
+    {
+        return Err(
+            "external_addrs: chain must be lowercase alphanumeric starting with a letter".into(),
+        );
+    }
+    let a = address.trim();
+    if a.len() > MAX_EXTERNAL_ADDR_LEN {
+        return Err(format!(
+            "external_addrs: address exceeds {MAX_EXTERNAL_ADDR_LEN} chars"
+        ));
+    }
+    if !a.bytes().all(|b| (0x21..=0x7e).contains(&b)) {
+        return Err("external_addrs: address must be printable ASCII without whitespace".into());
+    }
+    Ok((c, a.to_string()))
 }
 
 /// Suffix of the pseudo account that sends seat txs (`SetSeatPayout`,
@@ -1520,6 +1603,7 @@ impl Tx {
                 | TxBody::ApproveValidator { .. }
                 | TxBody::RevokeApproval { .. }
                 | TxBody::RevokeArchive { .. }
+                | TxBody::SetExternalAddrs { .. }
         )
     }
 }
@@ -1530,7 +1614,13 @@ pub struct AccountState {
     pub balance: u64,
     #[serde(default)]
     pub meta: AccountMeta,
+    /// v2.10.0: On-chain linked external chain addresses (e.g. `"btc"`, `"eth"`, `"xrp"`, `"bnb"`).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub external_addrs: BTreeMap<String, String>,
 }
+
+/// Alias for [`AccountState`].
+pub type Account = AccountState;
 
 /// v2.9.58: a correctly signed OK for a height past `tip+1`, kept until that
 /// height opens ([`Node::vote_ok_wire`]). Local only.
@@ -1712,6 +1802,7 @@ impl WorldState {
                     sequence: 1,
                     balance: *bal,
                     meta: AccountMeta::default(),
+                    external_addrs: BTreeMap::new(),
                 },
             );
         }
@@ -2819,6 +2910,9 @@ pub fn seed_v2_hex(parent_hash: &str, height: u64, msg_v4: &str) -> String {
 pub const RV2_NOT_ACTIVE: &str = "rewards v2 not active yet (H_act)";
 /// Seat payout txs before `seat_payout_from_height` (not kept or relayed).
 pub const SEAT_PAYOUT_NOT_ACTIVE: &str = "seat payout not active yet";
+/// v2.10.0: `SetExternalAddrs` before `external_addrs_from_height` (not kept or
+/// relayed; deliberately not matched by `is_permanent_tx_failure`).
+pub const EXTERNAL_ADDRS_NOT_ACTIVE: &str = "set external addrs not active yet";
 
 fn is_zero_u32(v: &u32) -> bool {
     *v == 0
@@ -3253,6 +3347,10 @@ pub struct Node {
     /// v2.9.76: tx id whose apply failed in the last [`Self::stage_drafts`]
     /// (local diagnostic; lets a proposer evict a tx that fails self-accept).
     pub last_apply_fail_tx: Option<String>,
+    /// v2.10.0 (Item #16): true when invalid/permanent-failing mempool heads
+    /// were evicted on the current open height so the leader can still seal a
+    /// valid empty/heartbeat block instead of stalling the view-change round.
+    pub evicted_since_last_seal: bool,
     /// v2.9.57: last (height, logical ms) this cert-holding seat joined a
     /// peer's recert round for our tip (see [`Self::recert_assist`]). Local.
     pub recert_assist_h: u64,
@@ -3442,6 +3540,10 @@ pub struct Node {
     pub claim_enroll_from_height: u64,
     /// [`crate::params_v2::seat_payout_from_height`]; runtime only.
     pub seat_payout_from_height: u64,
+    /// v2.10.0: [`crate::params_v2::external_addrs_from_height`]; runtime only.
+    pub external_addrs_from_height: u64,
+    /// v2.10.0: [`crate::params_v2::empty_block_from_height`]; runtime only.
+    pub empty_block_from_height: u64,
     /// v2.9.62: rewards-v2 activation height `H_act` (`u64::MAX` = unarmed).
     /// From [`params_v2::network_rewards_v2_from_height`]; runtime only.
     pub rewards_v2_from_height: u64,
@@ -3560,6 +3662,8 @@ impl Node {
         let ring_restore_from_height = crate::params_v2::ring_restore_from_height(cfg.network_id);
         let claim_enroll_from_height = crate::params_v2::claim_enroll_from_height(cfg.network_id);
         let seat_payout_from_height = crate::params_v2::seat_payout_from_height(cfg.network_id);
+        let external_addrs_from_height = crate::params_v2::external_addrs_from_height(cfg.network_id);
+        let empty_block_from_height = crate::params_v2::empty_block_from_height(cfg.network_id);
         let rewards_v2_from_height = params_v2::network_rewards_v2_from_height(cfg.network_id);
         let rewards_v2_epoch = params_v2::network_rewards_v2_epoch(cfg.network_id);
         let presence_from_height = params_v2::network_presence_from_height(cfg.network_id);
@@ -3608,6 +3712,7 @@ impl Node {
             perm_head_dry_runs: 0,
             perm_dropped: PermDropSet::default(),
             last_apply_fail_tx: None,
+            evicted_since_last_seal: false,
             recert_assist_h: 0,
             recert_assist_ms: 0,
             tip_cert_votes: BTreeMap::new(),
@@ -3690,6 +3795,8 @@ impl Node {
             ring_restore_from_height,
             claim_enroll_from_height,
             seat_payout_from_height,
+            external_addrs_from_height,
+            empty_block_from_height,
             rewards_v2_from_height,
             rewards_v2_epoch,
             presence_from_height,
@@ -4006,6 +4113,33 @@ impl Node {
     /// refused at admission, never relayed/exported, rejected at apply.
     pub fn seat_tx_pre_activation(&self, tx: &Tx) -> bool {
         tx.body.is_seat_tx() && !self.seat_payout_at(self.tip_height.saturating_add(1))
+    }
+
+    /// v2.10.0: `SetExternalAddrs` / `Account.external_addrs` rules apply to the
+    /// ledger at `height`.
+    pub fn external_addrs_at(&self, height: u64) -> bool {
+        height >= self.external_addrs_from_height
+    }
+
+    /// v2.10.0: a `SetExternalAddrs` tx before activation: refused at
+    /// admission, never relayed/exported (2.9.81 seats cannot decode the
+    /// variant), rejected at apply.
+    pub fn external_addrs_tx_pre_activation(&self, tx: &Tx) -> bool {
+        matches!(tx.body, TxBody::SetExternalAddrs { .. })
+            && !self.external_addrs_at(self.tip_height.saturating_add(1))
+    }
+
+    /// v2.10.0: empty (zero-tx) ledgers are valid at `height` (and carry the
+    /// empty-block time-effects / no-proposer-credit rules).
+    pub fn empty_block_at(&self, height: u64) -> bool {
+        height >= self.empty_block_from_height
+    }
+
+    /// v2.10.0 (Item #16): this node may seal an empty fallback block at the
+    /// open height: it evicted permanent-failure txs on this height AND empty
+    /// blocks are active. Before activation behaves exactly like 2.9.81.
+    pub fn can_seal_empty(&self) -> bool {
+        self.evicted_since_last_seal && self.empty_block_at(self.tip_height.saturating_add(1))
     }
 
     /// Seat id when `account` is a `<id>#seat` sender and the seat rules are
@@ -4446,6 +4580,7 @@ impl Node {
             && !self.eth_v3_at(self.tip_height.saturating_add(1)))
             || self.rv2_tx_pre_activation(tx)
             || self.seat_tx_pre_activation(tx)
+            || self.external_addrs_tx_pre_activation(tx)
     }
 
     /// v2.9.62: same treatment for the new v2 tx kinds before `H_act` (not
@@ -5231,6 +5366,7 @@ impl Node {
                     sequence: 1,
                     balance: FAUCET_GENESIS,
                     meta: AccountMeta::default(),
+                    external_addrs: BTreeMap::new(),
                 },
             );
         }
@@ -7256,6 +7392,9 @@ impl Node {
         if self.seat_tx_pre_activation(&tx) {
             return Err(SEAT_PAYOUT_NOT_ACTIVE.into());
         }
+        if self.external_addrs_tx_pre_activation(&tx) {
+            return Err(EXTERNAL_ADDRS_NOT_ACTIVE.into());
+        }
         if self.v3_deposit_pre_activation(&tx) {
             return Err(crate::bridge::V3_DEPOSITS_NOT_ACTIVE.into());
         }
@@ -7300,6 +7439,9 @@ impl Node {
         }
         if matches!(tx.body, TxBody::CreditAsset { .. }) && !self.cfg.allow_admin_wire {
             return Err("admin-only: CreditAsset disabled".into());
+        }
+        if let TxBody::SetExternalAddrs { chain, address } = &tx.body {
+            validate_external_addr(chain, address)?;
         }
         // Fee floor: apply only to *new* txs (dupes may re-advertise at old fee).
         if self.cfg.fee_escalate || self.cfg.min_fee > 0 {
@@ -7468,7 +7610,7 @@ impl Node {
                         parent_hash,
                         merkle_root,
                         raw,
-                    } if asset == crate::bridge::RAIL_BTC => {
+                    } if asset == &rail.asset => {
                         if probe
                             .submit_header_ex(crate::bridge::RailHeader {
                                 height: *height,
@@ -7552,7 +7694,44 @@ impl Node {
             .map(|t| t.tx_id.clone())
             .collect();
         self.mempool.remove_many(&ids);
+        self.evicted_since_last_seal = true;
         Some(id)
+    }
+
+    /// Operator / admin manual eviction of stuck mempool transactions by
+    /// `tx_id`, `account:sequence`, or `account`. Also records evicted tx IDs
+    /// in `perm_dropped` at the current tip so gossip does not re-insert them.
+    pub fn drop_mempool_target(&mut self, target: &str) -> Vec<String> {
+        let t = target.trim();
+        if t.is_empty() {
+            return Vec::new();
+        }
+        let acct_seq: Option<(&str, u64)> = t
+            .rsplit_once(':')
+            .and_then(|(a, s)| s.parse::<u64>().ok().map(|seq| (a, seq)));
+        let ids: Vec<String> = self
+            .mempool
+            .iter_candidates()
+            .filter(|tx| {
+                if tx.tx_id == t {
+                    return true;
+                }
+                if let Some((acct, seq)) = acct_seq {
+                    return tx.account == acct && tx.sequence == seq;
+                }
+                tx.account == t
+            })
+            .map(|tx| tx.tx_id.clone())
+            .collect();
+        if !ids.is_empty() {
+            let tip = self.tip_hash.clone();
+            let now = self.now_ms;
+            for id in &ids {
+                self.perm_dropped.insert(id, now, &tip);
+            }
+            self.mempool.remove_many(&ids);
+        }
+        ids
     }
 
     pub fn skip_set_for(&self, height: u64) -> BTreeSet<String> {
@@ -9770,24 +9949,134 @@ impl Node {
         })
     }
 
-    /// True if at least one pending tx has `sequence == account.need` (can pack now).
+    /// Pre-check whether `tx` can be packed at the current committed state.
+    /// Checks sequence match, key-bind gate, and the 4 permanent/non-packable
+    /// error classes from Alert #16 (`OperatorGraphBind` already bound,
+    /// `LendBorrow` LTV exceeded, `PayToKey` destination already has a key,
+    /// and `VaultOpen` on a non-Hot account).
+    pub fn is_tx_packable(&self, tx: &Tx) -> Result<(), String> {
+        let need = self.state.get(&tx.account).sequence;
+        if tx.sequence != need {
+            return Err(format!("bad sequence want {need} got {}", tx.sequence));
+        }
+        Self::pack_key_bind_check(self.key_bind_gate_open(), &self.state, tx)?;
+        match &tx.body {
+            TxBody::OperatorGraphBind {
+                deposit_txid,
+                kick_off_2_txid,
+                assert_final_txid,
+                depositor_account,
+                cosign,
+            } => {
+                if !depositor_account.is_empty()
+                    && !self.state.accounts.contains_key(depositor_account.trim())
+                {
+                    return Err("operator: depositor_account is not a Falcon account".into());
+                }
+                let r = self
+                    .bridge
+                    .operators
+                    .by_account(&tx.account)
+                    .ok_or_else(|| "operator: unknown operator".to_string())?;
+                let gkey = format!(
+                    "{}:{}",
+                    deposit_txid.trim().to_ascii_lowercase(),
+                    r.btc_xonly_hex
+                );
+                if self.bridge.operators.graphs.contains_key(&gkey) {
+                    return Err("operator: graph already bound for this deposit".into());
+                }
+                if !*cosign {
+                    let k2 = kick_off_2_txid.trim().to_ascii_lowercase();
+                    let af = assert_final_txid.trim().to_ascii_lowercase();
+                    if self
+                        .bridge
+                        .operators
+                        .graphs
+                        .values()
+                        .any(|g| g.kick_off_2_txid == k2 || g.assert_final_txid == af)
+                    {
+                        return Err("graph txid already bound elsewhere".into());
+                    }
+                }
+            }
+            TxBody::LendBorrow {
+                market_id,
+                amount,
+                collateral_fpl,
+            } => {
+                let m = self
+                    .defi
+                    .markets
+                    .get(market_id)
+                    .ok_or_else(|| "unknown market".to_string())?;
+                let mut m_probe = m.clone();
+                if let Some(px) = self.pool_price_fpl(&m_probe.asset) {
+                    m_probe.set_price(px);
+                }
+                m_probe.borrow(&tx.account, *amount, *collateral_fpl)?;
+            }
+            TxBody::PayToKey { key_hash } => {
+                if !is_key_commit_hex(key_hash) {
+                    return Err("pay_to_key: key_hash must be 64 lowercase hex".into());
+                }
+                if tx.destination.is_empty() || tx.destination == tx.account {
+                    return Err("pay_to_key: bad destination".into());
+                }
+                if self.account_key_bound(&tx.destination) {
+                    return Err("pay_to_key: destination already has a key".into());
+                }
+                if !self.key_bind_gate_open() {
+                    return Err(PAY_TO_KEY_NOT_ACTIVE.into());
+                }
+                let dest = self.state.get(&tx.destination);
+                if !dest.meta.key_commit.is_empty() && dest.meta.key_commit != *key_hash {
+                    return Err("pay_to_key: destination committed to another key".into());
+                }
+            }
+            TxBody::VaultOpen { destination } => {
+                let dest = destination.trim();
+                if dest.is_empty() {
+                    return Err("vault: nominate a destination to activate".into());
+                }
+                if dest == tx.account {
+                    return Err("vault: destination must differ from the vault account".into());
+                }
+                let sender = self.state.get(&tx.account);
+                if sender.meta.account_type != AccountType::Hot {
+                    return Err("only Hot can convert account type once".into());
+                }
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    /// True when `tx` passes [`Self::is_tx_packable`] at the current state.
+    pub fn is_tx_applicable(&self, tx: &Tx) -> bool {
+        self.is_tx_packable(tx).is_ok()
+    }
+
+    /// True if at least one pending tx has `sequence == account.need` and passes
+    /// [`Self::is_tx_applicable`] (can pack now).
     ///
     /// Distinguishes **work the network can seal** from **seq-poison mempool**
-    /// (future sequences only). Non-empty mempool alone is not proof a winner is stuck.
+    /// (future sequences only) or non-packable permanent failures.
     pub fn has_applicable_tx(&self) -> bool {
         if self.mempool.is_empty() {
             return false;
         }
         for tx in self.mempool.iter_candidates() {
             let need = self.state.get(&tx.account).sequence;
-            if tx.sequence == need {
+            if tx.sequence == need && self.is_tx_applicable(tx) {
                 return true;
             }
         }
         false
     }
 
-    /// Transactions whose sequence is the account's next required sequence.
+    /// Transactions whose sequence is the account's next required sequence
+    /// and pass [`Self::is_tx_applicable`].
     /// One head per account can pack on this height; later sequences in the
     /// same pool are not applicable yet.
     pub fn applicable_head_count(&self) -> usize {
@@ -9797,7 +10086,7 @@ impl Node {
         let mut n = 0usize;
         for tx in self.mempool.iter_candidates() {
             let need = self.state.get(&tx.account).sequence;
-            if tx.sequence == need {
+            if tx.sequence == need && self.is_tx_applicable(tx) {
                 n += 1;
             }
         }
@@ -9912,6 +10201,7 @@ impl Node {
         let n = drop_ids.len();
         if n > 0 {
             self.mempool.remove_many(&drop_ids);
+            self.evicted_since_last_seal = true;
         }
         n
     }
@@ -11172,6 +11462,11 @@ impl Node {
         if tx.body.is_seat_tx() || self.seat_sender_active(&tx.account).is_some() {
             return self.apply_seat_tx(tx, check_sig);
         }
+        // v2.10.0: before activation behave exactly like 2.9.81 (which cannot
+        // decode the variant): refuse before any key enroll / fee / sequence.
+        if self.external_addrs_tx_pre_activation(tx) {
+            return Err(EXTERNAL_ADDRS_NOT_ACTIVE.into());
+        }
         self.note_sender_key(tx)?;
         if self.tx_name_enroll(tx) && !tx.public_key.is_empty() {
             self.enroll_name_key(tx)?;
@@ -11187,6 +11482,17 @@ impl Node {
                 "bad sequence want {} got {}",
                 sender.sequence, tx.sequence
             ));
+        }
+        if let TxBody::SetExternalAddrs { chain, address } = &tx.body {
+            let (chain_key, addr_val) = validate_external_addr(chain, address)?;
+            if !addr_val.is_empty()
+                && !sender.external_addrs.contains_key(&chain_key)
+                && sender.external_addrs.len() >= MAX_EXTERNAL_ADDRS_PER_ACCOUNT
+            {
+                return Err(format!(
+                    "external_addrs: max {MAX_EXTERNAL_ADDRS_PER_ACCOUNT} linked addresses per account"
+                ));
+            }
         }
         // Stake/reward ops may pay fee from claimable; payments/bonds need hot balance.
         let fee_from_claimable = matches!(
@@ -11729,6 +12035,23 @@ impl Node {
                 }
                 v.archive = false;
             }
+            TxBody::SetExternalAddrs { chain, address } => {
+                let (chain_key, addr_val) = validate_external_addr(chain, address)?;
+                let mut sender = self.state.get(&tx.account);
+                if addr_val.is_empty() {
+                    sender.external_addrs.remove(&chain_key);
+                } else {
+                    if !sender.external_addrs.contains_key(&chain_key)
+                        && sender.external_addrs.len() >= MAX_EXTERNAL_ADDRS_PER_ACCOUNT
+                    {
+                        return Err(format!(
+                            "external_addrs: max {MAX_EXTERNAL_ADDRS_PER_ACCOUNT} linked addresses per account"
+                        ));
+                    }
+                    sender.external_addrs.insert(chain_key, addr_val);
+                }
+                self.state.accounts.insert(tx.account.clone(), sender);
+            }
         }
         self.rail_finalize_bitvm("BTC").ok();
         self.bridge_finalize_claims();
@@ -11894,7 +12217,13 @@ impl Node {
             || err.contains("admin-only")
             || err.contains("allowlist")
             || err.contains("vault:")
+            || err.contains("only Hot can convert account type once")
+            || err.contains("pay_to_key:")
+            || err.contains("operator: graph already bound for this deposit")
+            || err.contains("graph txid already bound elsewhere")
+            || err.contains("borrow: LTV exceeded")
             || err.contains("name:")
+            || err.contains("external_addrs:")
             || err.contains("BTC header parent mismatch")
             || err.contains("BTC duplicate header")
             || err.contains("admission:")
@@ -12011,7 +12340,7 @@ impl Node {
             ));
         }
         let _pruned = self.mempool.prune_stale(&self.state);
-        if self.mempool.is_empty() {
+        if self.mempool.is_empty() && !self.can_seal_empty() {
             return Err("empty mempool — refuse empty ledger".into());
         }
         // One apply path with ingest (2.7.2 / 2.9.6): fold + select + root at
@@ -12216,17 +12545,10 @@ impl Node {
                         list.remove(0);
                         progressed = true; // continue scanning remaining
                     }
-                    Err(e) => {
-                        eprintln!(
-                            "falcon-pl pack skip {} seq {} {}: {e}",
-                            tx.tx_id, tx.sequence, tx.account
-                        );
-                        // Same-seq sibling: rotate head so a fresh resubmit can pack.
-                        if list.len() > 1 && list[1].sequence == need {
-                            let failed = list.remove(0);
-                            list.push(failed);
-                            progressed = true;
-                        }
+                    Err(_e) => {
+                        // Transient / activation-gated failure (e.g. EthLcUpdate waiting
+                        // for activation height). Permanent failures are matched above and
+                        // evicted into `drop_ids` + `perm_dropped`.
                     }
                 }
             }
@@ -12234,8 +12556,9 @@ impl Node {
         self.now_ms = saved_now;
         if !drop_ids.is_empty() {
             self.mempool.remove_many(&drop_ids);
+            self.evicted_since_last_seal = true;
         }
-        if chosen.is_empty() {
+        if chosen.is_empty() && !self.can_seal_empty() {
             if self.mempool.is_empty() {
                 return Err("empty mempool — refuse empty ledger".into());
             }
@@ -13054,7 +13377,9 @@ impl Node {
         if !self.packer_sig_ok(ledger) {
             return Err("bad packer sig".into());
         }
-        if ledger.txs.is_empty() {
+        // v2.10.0 (Item #16): an empty ledger is valid only from
+        // `empty_block_from_height`; before it, reject exactly like 2.9.81.
+        if ledger.txs.is_empty() && !self.empty_block_at(ledger.height) {
             return Err("empty ledger rejected".into());
         }
         self.verify_parent_cert(ledger)?;
@@ -13250,7 +13575,7 @@ impl Node {
         let ckpt = TimeFold::take(self);
         let _seized = self.apply_time_effects_with_slashes(
             ledger.sealed_at_ms,
-            ledger.fee_total > 0,
+            ledger.fee_total > 0 || (ledger.txs.is_empty() && self.empty_block_at(ledger.height)),
             &ledger.slashes,
         );
         let mut draft_state = self.state.clone();
@@ -13356,7 +13681,7 @@ impl Node {
         if ledger.height != self.tip_height.saturating_add(1)
             || ledger.parent_hash != self.tip_hash
             || ledger.network_id != self.cfg.network_id
-            || ledger.txs.is_empty()
+            || (ledger.txs.is_empty() && !self.empty_block_at(ledger.height))
         {
             return Prestage::Skip;
         }
@@ -13572,7 +13897,7 @@ impl Node {
         let ckpt = TimeFold::take(self);
         let _seized = self.apply_time_effects_with_slashes(
             ledger.sealed_at_ms,
-            ledger.fee_total > 0,
+            ledger.fee_total > 0 || (ledger.txs.is_empty() && self.empty_block_at(ledger.height)),
             &ledger.slashes,
         );
         let saved = self.now_ms;
@@ -13686,7 +14011,7 @@ impl Node {
                 pot = pot.saturating_add(prop);
             }
             draft_work.fee_reward_pool = draft_work.fee_reward_pool.saturating_add(pot);
-            if !locked(&ledger.packer) {
+            if !(ledger.txs.is_empty() && self.empty_block_at(ledger.height)) && !locked(&ledger.packer) {
                 *draft_work.proposer_credit.entry(ledger.packer.clone()).or_insert(0) +=
                     crate::economy::proposer_block_credit(paying);
             }
@@ -13805,6 +14130,7 @@ impl Node {
         self.skip_votes.remove(&ledger.height);
         self.height_open_ms = self.now_ms;
         self.pending_proposal = None;
+        self.evicted_since_last_seal = false;
         // v2.10.0: liveness clock + round state belong to the open height.
         self.tip_advanced_ms = self.now_ms;
         self.round_open_ms = self.now_ms;
@@ -13973,6 +14299,7 @@ impl Node {
                 .iter()
                 .map(|(k, v)| (k.clone(), display_asset(account, k, *v)))
                 .collect::<BTreeMap<_, _>>(),
+            "external_addrs": a.external_addrs,
             "lp": self.defi.pools.values().filter_map(|p| {
                 let lp = p.lp.get(account).copied().unwrap_or(0);
                 if lp == 0 { None } else {
@@ -15274,6 +15601,10 @@ pub enum WireMsg {
         #[serde(default)]
         reason: String,
     },
+    /// Operator-only: evict a stuck tx hash or `account[:seq]` from the local mempool.
+    MempoolDrop {
+        target: String,
+    },
     /// Wallet: query one account (seq, balance, claimable, assets).
     AccountQuery {
         account: String,
@@ -15319,6 +15650,7 @@ impl WireMsg {
                 | WireMsg::SnapshotSave { .. }
                 | WireMsg::SnapshotLoad { .. }
                 | WireMsg::OperatorHardReset { .. }
+                | WireMsg::MempoolDrop { .. }
         )
     }
 }
@@ -15771,7 +16103,11 @@ mod tests {
         assert!(hello_version_compatible("2.9.59"));
         assert!(hello_version_compatible("2.9.0"));
         assert!(hello_version_compatible("2.9.61"));
-        assert!(!hello_version_compatible("2.10.0"));
+        // 2.10.0 accepts its own line and the legacy 2.9.x line.
+        assert!(hello_version_compatible("2.10.0"));
+        assert!(hello_version_compatible("2.10.7"));
+        assert!(!hello_version_compatible("2.10.07"));
+        assert!(!hello_version_compatible("2.11.0"));
         assert!(!hello_version_compatible("3.9.60"));
         assert!(!hello_version_compatible("2.8.99"));
         assert!(!hello_version_compatible("2.90.1"));
@@ -15786,8 +16122,8 @@ mod tests {
 
     #[test]
     fn product_version_is_locked_to_crate() {
-        assert_eq!(PRODUCT_VERSION, "2.9.81");
-        assert_eq!(env!("CARGO_PKG_VERSION"), "2.9.81");
+        assert_eq!(PRODUCT_VERSION, "2.10.0");
+        assert_eq!(env!("CARGO_PKG_VERSION"), "2.10.0");
         assert_eq!(NodeRole::from_exe_name("/opt/bin/falcon-pl-val"), Some(NodeRole::Val));
         assert_eq!(NodeRole::from_exe_name("falcon-pl-archive"), Some(NodeRole::Archive));
         assert_eq!(NodeRole::VAL_MAX_CHAIN, 128);
@@ -17269,6 +17605,7 @@ mod tests {
                         sequence: 0,
                         balance: 0,
                         meta: AccountMeta::default(),
+                        external_addrs: BTreeMap::new(),
                     },
                 );
             }
@@ -22767,6 +23104,108 @@ mod tests {
     }
 
 
+    #[test]
+    fn btc4_three_consecutive_header_batches_admitted_and_packed_cleanly() {
+        let mut net = Network::bootstrap(
+            &["v1", "v2", "v3", "v4", "v5"],
+            1000,
+            &users(),
+            ChainConfig {
+                fee_escalate: false,
+                min_fee: 1,
+                pack_budget_ms: 0,
+                max_txs_per_ledger: 0,
+                ..Default::default()
+            },
+        );
+        net.pong_all();
+
+        let anchor_hdr = crate::btc_spv::mine_header(&"00".repeat(32), &"aa".repeat(32), 0x207f_ffff, 1_700_000_000).unwrap();
+        let h0 = 155_232u64;
+        for n in net.nodes.values_mut() {
+            n.bitvm2_m1_from_height = 0;
+            let mut rail = crate::bridge::RailState::new_btc4();
+            rail.btc_checkpoint = Some((h0, anchor_hdr.hash_display.clone()));
+            n.bridge.rails.insert(crate::bridge::RAIL_BTC4.into(), rail);
+        }
+
+        // First commit the BTC4 checkpoint anchor at h0 so tip_height == h0.
+        let anchor_tx = Tx::sign_body(
+            &net.user_keys,
+            "alice",
+            1,
+            "",
+            0,
+            1,
+            net.cfg.network_id,
+            TxBody::RailHeader {
+                asset: crate::bridge::RAIL_BTC4.into(),
+                height: h0,
+                hash: String::new(),
+                parent_hash: String::new(),
+                merkle_root: String::new(),
+                raw: anchor_hdr.raw_hex.clone(),
+            },
+        )
+        .unwrap();
+        for n in net.nodes.values_mut() {
+            assert_eq!(n.submit_tx(anchor_tx.clone()), Ok(true));
+        }
+        let r0 = net.seal_next_height().unwrap();
+        assert_eq!(r0.n_txs, 1);
+
+        // Mine 3 consecutive BTC4 headers chaining onto h0.
+        let mut prev_hash = anchor_hdr.hash_display.clone();
+        let mut batches = Vec::new();
+        for i in 1..=3u64 {
+            let merkle = format!("{:02x}", i as u8).repeat(32);
+            let h = crate::btc_spv::mine_header(&prev_hash, &merkle, 0x207f_ffff, 1_700_000_000 + i as u32 * 600).unwrap();
+            prev_hash = h.hash_display.clone();
+            let tx = Tx::sign_body(
+                &net.user_keys,
+                "alice",
+                1 + i,
+                "",
+                0,
+                1,
+                net.cfg.network_id,
+                TxBody::RailHeader {
+                    asset: crate::bridge::RAIL_BTC4.into(),
+                    height: h0 + i,
+                    hash: String::new(),
+                    parent_hash: String::new(),
+                    merkle_root: String::new(),
+                    raw: h.raw_hex.clone(),
+                },
+            )
+            .unwrap();
+            batches.push((i, h, tx));
+        }
+
+        // Submit all 3 consecutive BTC4 header txs to the mempool BEFORE packing a block.
+        for (i, _h, tx) in &batches {
+            for n in net.nodes.values_mut() {
+                assert_eq!(
+                    n.submit_tx(tx.clone()),
+                    Ok(true),
+                    "BTC4 header batch #{i} must be admitted into mempool"
+                );
+            }
+        }
+        for n in net.nodes.values() {
+            assert_eq!(n.mempool.len(), 3);
+        }
+
+        // Pack and seal the next block: all 3 BTC4 headers pack cleanly in one block.
+        let r = net.seal_next_height().unwrap();
+        assert_eq!(r.n_txs, 3, "all 3 consecutive BTC4 headers must pack in one block");
+        for n in net.nodes.values() {
+            let rail = n.bridge.rail(crate::bridge::RAIL_BTC4).unwrap();
+            assert_eq!(rail.tip_height, h0 + 3);
+            assert_eq!(rail.tip_hash, batches[2].1.hash_display);
+            assert!(n.mempool.is_empty());
+        }
+    }
 }
 
 #[cfg(test)]
@@ -22798,6 +23237,479 @@ mod account_history_store_tests {
         account_history_from_store(&store, "alice", 31, 10, std::time::Duration::from_secs(5), 8, &mut out);
         assert_eq!(out.len(), 1);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn set_external_addrs_link_update_remove_and_account_query() {
+        let mut net = Network::bootstrap(
+            &["v1", "v2", "v3"],
+            MIN_BOND,
+            &[("alice".into(), 100_000), ("bob".into(), 100_000)],
+            ChainConfig::default(),
+        );
+        net.pong_all();
+        let node = net.nodes.get_mut("v1").unwrap();
+        node.external_addrs_from_height = 0;
+        let start_bal = node.state.get("alice").balance;
+        assert_eq!(node.state.get("alice").sequence, 1);
+        assert!(node.state.get("alice").external_addrs.is_empty());
+
+        // 1. Set BTC, ETH (uppercase chain normalized to lowercase), and XRP addresses.
+        let cases = [
+            (1u64, "btc", "tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx", 2u64),
+            (2u64, "ETH", "0x71C7656EC7ab88b098defB751B7401B5f6d8976F", 2u64),
+            (3u64, "xrp", "rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh", 2u64),
+        ];
+        for (seq, chain, addr, fee) in cases {
+            let tx = Tx::sign_body(
+                &net.user_keys,
+                "alice",
+                seq,
+                "",
+                0,
+                fee,
+                net.cfg.network_id,
+                TxBody::SetExternalAddrs {
+                    chain: chain.into(),
+                    address: addr.into(),
+                },
+            )
+            .unwrap();
+            node.submit_tx(tx.clone()).unwrap();
+            node.apply_protocol_tx(&tx).unwrap();
+        }
+
+        let acct = node.state.get("alice");
+        assert_eq!(acct.sequence, 4);
+        assert_eq!(acct.balance, start_bal - 6);
+        assert_eq!(
+            acct.external_addrs.get("btc").map(String::as_str),
+            Some("tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx")
+        );
+        assert_eq!(
+            acct.external_addrs.get("eth").map(String::as_str),
+            Some("0x71C7656EC7ab88b098defB751B7401B5f6d8976F")
+        );
+        assert_eq!(
+            acct.external_addrs.get("xrp").map(String::as_str),
+            Some("rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh")
+        );
+
+        // Verify account_json exposes external_addrs directly.
+        let aj = node.account_json("alice");
+        assert_eq!(
+            aj["external_addrs"]["btc"],
+            "tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx"
+        );
+        assert_eq!(
+            aj["external_addrs"]["eth"],
+            "0x71C7656EC7ab88b098defB751B7401B5f6d8976F"
+        );
+        assert_eq!(
+            aj["external_addrs"]["xrp"],
+            "rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh"
+        );
+
+        // 2. Update existing BTC address.
+        let tx_update = Tx::sign_body(
+            &net.user_keys,
+            "alice",
+            4,
+            "",
+            0,
+            2,
+            net.cfg.network_id,
+            TxBody::SetExternalAddrs {
+                chain: "btc".into(),
+                address: "tb1qnewbtcaddress0000000000000000000000000".into(),
+            },
+        )
+        .unwrap();
+        node.apply_protocol_tx(&tx_update).unwrap();
+        assert_eq!(
+            node.state.get("alice").external_addrs.get("btc").map(String::as_str),
+            Some("tb1qnewbtcaddress0000000000000000000000000")
+        );
+        assert_eq!(node.state.get("alice").external_addrs.len(), 3);
+
+        // 3. Remove XRP binding with empty string "".
+        let tx_clear = Tx::sign_body(
+            &net.user_keys,
+            "alice",
+            5,
+            "",
+            0,
+            2,
+            net.cfg.network_id,
+            TxBody::SetExternalAddrs {
+                chain: "xrp".into(),
+                address: String::new(),
+            },
+        )
+        .unwrap();
+        node.apply_protocol_tx(&tx_clear).unwrap();
+        let acct = node.state.get("alice");
+        assert_eq!(acct.sequence, 6);
+        assert_eq!(acct.balance, start_bal - 10);
+        assert!(!acct.external_addrs.contains_key("xrp"));
+        assert_eq!(acct.external_addrs.len(), 2);
+        let aj = node.account_json("alice");
+        assert!(aj["external_addrs"].get("xrp").is_none());
+    }
+
+    #[test]
+    fn set_external_addrs_validation_and_max_entries() {
+        let mut net = Network::bootstrap(
+            &["v1", "v2", "v3"],
+            MIN_BOND,
+            &[("alice".into(), 100_000), ("bob".into(), 100_000)],
+            ChainConfig::default(),
+        );
+        net.pong_all();
+        let node = net.nodes.get_mut("v1").unwrap();
+        node.external_addrs_from_height = 0;
+
+        // Reject empty chain, chain starting with digit, chain with punctuation, >16 char chain.
+        for bad_chain in ["", "1btc", "btc-test", "abcdefghijklmnopq", "btc eth"] {
+            let tx = Tx::sign_body(
+                &net.user_keys,
+                "alice",
+                1,
+                "",
+                0,
+                2,
+                net.cfg.network_id,
+                TxBody::SetExternalAddrs {
+                    chain: bad_chain.into(),
+                    address: "0x1234".into(),
+                },
+            )
+            .unwrap();
+            assert!(node.submit_tx(tx.clone()).is_err(), "chain {bad_chain:?} must be rejected at submit_tx");
+            assert!(node.apply_protocol_tx(&tx).is_err(), "chain {bad_chain:?} must be rejected at apply");
+            assert_eq!(node.state.get("alice").sequence, 1, "failed tx must not advance sequence");
+        }
+
+        // Reject too-long address (>128 chars) and address with internal whitespace.
+        let long_addr = "a".repeat(MAX_EXTERNAL_ADDR_LEN + 1);
+        for bad_addr in [long_addr.as_str(), "bc1q has space", "0x123\n456"] {
+            let tx = Tx::sign_body(
+                &net.user_keys,
+                "alice",
+                1,
+                "",
+                0,
+                2,
+                net.cfg.network_id,
+                TxBody::SetExternalAddrs {
+                    chain: "btc".into(),
+                    address: bad_addr.into(),
+                },
+            )
+            .unwrap();
+            assert!(node.submit_tx(tx.clone()).is_err());
+            assert!(node.apply_protocol_tx(&tx).is_err());
+            assert_eq!(node.state.get("alice").sequence, 1);
+        }
+
+        // Fill up to MAX_EXTERNAL_ADDRS_PER_ACCOUNT (8) distinct chains.
+        let chains = ["btc", "eth", "xrp", "bnb", "sol", "doge", "avax", "ada"];
+        for (i, ch) in chains.iter().enumerate() {
+            let seq = (i as u64) + 1;
+            let tx = Tx::sign_body(
+                &net.user_keys,
+                "alice",
+                seq,
+                "",
+                0,
+                2,
+                net.cfg.network_id,
+                TxBody::SetExternalAddrs {
+                    chain: (*ch).into(),
+                    address: format!("addr_{ch}_{seq}"),
+                },
+            )
+            .unwrap();
+            node.apply_protocol_tx(&tx).unwrap();
+        }
+        assert_eq!(node.state.get("alice").external_addrs.len(), MAX_EXTERNAL_ADDRS_PER_ACCOUNT);
+
+        // A 9th distinct chain is rejected without advancing sequence.
+        let tx_ninth = Tx::sign_body(
+            &net.user_keys,
+            "alice",
+            9,
+            "",
+            0,
+            2,
+            net.cfg.network_id,
+            TxBody::SetExternalAddrs {
+                chain: "dot".into(),
+                address: "addr_dot".into(),
+            },
+        )
+        .unwrap();
+        let err = node.apply_protocol_tx(&tx_ninth).unwrap_err();
+        assert!(err.contains("external_addrs: max 8"), "unexpected err: {err}");
+        assert!(Node::is_permanent_tx_failure(&err));
+        assert_eq!(node.state.get("alice").sequence, 9);
+
+        // Updating an existing chain at the cap still succeeds.
+        let tx_update = Tx::sign_body(
+            &net.user_keys,
+            "alice",
+            9,
+            "",
+            0,
+            2,
+            net.cfg.network_id,
+            TxBody::SetExternalAddrs {
+                chain: "btc".into(),
+                address: "addr_btc_updated".into(),
+            },
+        )
+        .unwrap();
+        node.apply_protocol_tx(&tx_update).unwrap();
+        assert_eq!(
+            node.state.get("alice").external_addrs.get("btc").map(String::as_str),
+            Some("addr_btc_updated")
+        );
+    }
+
+    #[test]
+    fn account_state_snapshot_backward_compatibility_and_serde_alias() {
+        // Legacy snapshot JSON without `external_addrs` deserializes with an empty map.
+        let legacy_json = r#"{"sequence":7,"balance":50000,"meta":{"account_type":"hot","allowlist":[],"vault_locked":false,"public_key":""}}"#;
+        let acct: AccountState = serde_json::from_str(legacy_json).unwrap();
+        assert_eq!(acct.sequence, 7);
+        assert_eq!(acct.balance, 50000);
+        assert!(acct.external_addrs.is_empty());
+
+        // Re-serializing an AccountState with empty external_addrs omits the field so state roots stay identical.
+        let reserialized = serde_json::to_string(&acct).unwrap();
+        assert!(!reserialized.contains("external_addrs"));
+
+        // Both `"set_external_addrs"` and `"set_external_addr"` deserialize into TxBody::SetExternalAddrs.
+        let b1: TxBody = serde_json::from_str(r#"{"kind":"set_external_addrs","chain":"btc","address":"tb1qxyz"}"#).unwrap();
+        let b2: TxBody = serde_json::from_str(r#"{"kind":"set_external_addr","chain":"btc","address":"tb1qxyz"}"#).unwrap();
+        assert_eq!(
+            b1,
+            TxBody::SetExternalAddrs {
+                chain: "btc".into(),
+                address: "tb1qxyz".into(),
+            }
+        );
+        assert_eq!(b1, b2);
+    }
+
+    #[test]
+    fn item16_four_permanent_error_classes_evicted_and_leader_proposes_empty_block() {
+        let cfg = ChainConfig {
+            pack_budget_ms: 0,
+            max_txs_per_ledger: 16,
+            soft_ok_votes: 1,
+            min_fee: 0,
+            fee_escalate: false,
+            ..Default::default()
+        };
+        let mut net = Network::bootstrap(
+            &["v1", "v2", "v3"],
+            1_000,
+            &[
+                ("alice".into(), 100_000),
+                ("bob".into(), 100_000),
+                ("carol".into(), 100_000),
+                ("dave".into(), 100_000),
+            ],
+            cfg,
+        );
+        net.pong_all();
+        let winner = net.nodes.values().next().unwrap().lottery_packer().unwrap();
+        let nid = net.cfg.network_id;
+        let user_keys = net.user_keys.clone();
+        let n = net.nodes.get_mut(&winner).unwrap();
+
+        // Empty fallback blocks are gated (`empty_block_from_height`); open them for this test.
+        n.empty_block_from_height = 0;
+        // Set up state so all 4 error classes from Alert #16 trigger:
+        // (1) OperatorGraphBind: alice is a registered operator whose graph for deposit "aa"*32 is already bound.
+        n.bitvm2_m1_from_height = 0;
+        let op_xonly = "11".repeat(32);
+        let dep_txid = "aa".repeat(32);
+        let k2_txid = "bb".repeat(32);
+        let af_txid = "cc".repeat(32);
+        let op_params = n.operator_params();
+        n.bridge
+            .operators
+            .register(&op_params, "alice", &op_xonly, op_params.min_bond, 0)
+            .unwrap();
+        n.bridge
+            .operators
+            .bind_graph("alice", &dep_txid, &k2_txid, &af_txid, 0)
+            .unwrap();
+
+        // (2) LendBorrow: market "m-usdc" with liquidity 10_000, price 1, LTV 7000 bps -> max borrow on collateral 100 is 70.
+        n.create_market("m-usdc", "USDC").unwrap();
+        n.defi.credit_asset("bob", "USDC", 50_000);
+        n.lend_supply("m-usdc", "bob", 10_000).unwrap();
+
+        // (3) PayToKey: destination "bob" already has a key in n.keys / on-chain.
+        let mut bob_acct = n.state.get("bob");
+        bob_acct.meta.public_key = user_keys.public_hex("bob").unwrap();
+        n.state.accounts.insert("bob".into(), bob_acct);
+
+        // (4) VaultOpen: "dave" already opened a vault (AccountType::Vault), so a second VaultOpen fails with "only Hot can convert account type once".
+        n.open_vault("dave", "bob").unwrap();
+
+        let tx1 = Tx::sign_body(
+            &user_keys,
+            "alice",
+            n.state.get("alice").sequence,
+            "",
+            0,
+            1,
+            nid,
+            TxBody::OperatorGraphBind {
+                deposit_txid: dep_txid.clone(),
+                kick_off_2_txid: k2_txid.clone(),
+                assert_final_txid: af_txid.clone(),
+                depositor_account: String::new(),
+                cosign: false,
+            },
+        )
+        .unwrap();
+        let tx2 = Tx::sign_body(
+            &user_keys,
+            "bob",
+            n.state.get("bob").sequence,
+            "",
+            0,
+            1,
+            nid,
+            TxBody::LendBorrow {
+                market_id: "m-usdc".into(),
+                amount: 5_000,
+                collateral_fpl: 100,
+            },
+        )
+        .unwrap();
+        let tx3 = Tx::sign_body(
+            &user_keys,
+            "carol",
+            n.state.get("carol").sequence,
+            "bob",
+            10,
+            1,
+            nid,
+            TxBody::PayToKey {
+                key_hash: "33".repeat(32),
+            },
+        )
+        .unwrap();
+        let tx4 = Tx::sign_body(
+            &user_keys,
+            "dave",
+            n.state.get("dave").sequence,
+            "",
+            0,
+            1,
+            nid,
+            TxBody::VaultOpen {
+                destination: "bob".into(),
+            },
+        )
+        .unwrap();
+
+        // Verify pre-check (`is_tx_packable` / `is_tx_applicable`) and `is_permanent_tx_failure` on all 4:
+        for (label, tx, expected_substr) in [
+            ("OperatorGraphBind", &tx1, "operator: graph already bound for this deposit"),
+            ("LendBorrow", &tx2, "borrow: LTV exceeded"),
+            ("PayToKey", &tx3, "pay_to_key: destination already has a key"),
+            ("VaultOpen", &tx4, "only Hot can convert account type once"),
+        ] {
+            let err = n.is_tx_packable(tx).unwrap_err();
+            assert!(
+                err.contains(expected_substr),
+                "{label}: expected {expected_substr:?} in {err:?}"
+            );
+            assert!(!n.is_tx_applicable(tx), "{label} must not be applicable");
+            assert!(
+                Node::is_permanent_tx_failure(&err),
+                "{label} error {err:?} must be classified as permanent"
+            );
+            let _ = n.mempool.insert(tx.clone(), n.cfg.max_mempool_txs);
+        }
+
+        assert_eq!(n.mempool.len(), 4);
+        assert!(!n.has_applicable_tx(), "none of the 4 invalid txs is applicable");
+        assert_eq!(n.applicable_head_count(), 0);
+
+        // When the leader runs `pack_or_skip`, all 4 invalid txs are evicted and the leader
+        // still seals a valid empty fallback block at height 1 instead of stalling!
+        let ledger = n
+            .pack_or_skip(&winner)
+            .expect("pack_or_skip should not error")
+            .expect("leader should propose an empty fallback block after evicting invalid txs");
+        assert_eq!(ledger.height, 1);
+        assert!(ledger.txs.is_empty(), "fallback block must be empty");
+        assert!(n.mempool.is_empty(), "all 4 invalid txs must be evicted from mempool");
+        for tx in [&tx1, &tx2, &tx3, &tx4] {
+            assert!(
+                n.perm_dropped.contains(&tx.tx_id, n.now_ms, &n.tip_hash),
+                "evicted tx {} must be recorded in perm_dropped",
+                tx.tx_id
+            );
+        }
+
+        // Accepting and voting on the empty fallback block advances tip_height to 1 and resets `evicted_since_last_seal`.
+        let res = n.accept_ledger(&ledger).expect("empty fallback block must be accepted");
+        assert_eq!(res.height, 1);
+        assert_eq!(res.n_txs, 0);
+        for v in ["v1", "v2", "v3"] {
+            n.vote_ok(&ledger.ledger_hash, v);
+        }
+        assert_eq!(n.tip_height, 1);
+        assert!(!n.evicted_since_last_seal, "commit must reset evicted_since_last_seal");
+
+        // On the next height with a genuinely idle/empty mempool and no evictions, `pack_or_skip` returns Ok(None).
+        let w2 = n.lottery_packer().unwrap();
+        assert!(n.pack_or_skip(&w2).unwrap().is_none());
+    }
+
+    #[test]
+    fn item16_drop_mempool_target_by_hash_account_seq_and_account() {
+        let mut net = Network::bootstrap(
+            &["v1", "v2", "v3"],
+            1_000,
+            &[("alice".into(), 10_000), ("bob".into(), 10_000)],
+            ChainConfig::default(),
+        );
+        let nid = net.cfg.network_id;
+        let uk = net.user_keys.clone();
+        let n = net.nodes.get_mut("v1").unwrap();
+        let tx_a1 = Tx::sign_with(&uk, "alice", 1, "bob", 10, 2, nid).unwrap();
+        let tx_a2 = Tx::sign_with(&uk, "alice", 2, "bob", 10, 2, nid).unwrap();
+        let tx_b1 = Tx::sign_with(&uk, "bob", 1, "alice", 10, 2, nid).unwrap();
+        assert!(n.submit_tx(tx_a1.clone()).unwrap());
+        assert!(n.submit_tx(tx_a2.clone()).unwrap());
+        assert!(n.submit_tx(tx_b1.clone()).unwrap());
+        assert_eq!(n.mempool.len(), 3);
+
+        // Drop by tx_id
+        let d1 = n.drop_mempool_target(&tx_b1.tx_id);
+        assert_eq!(d1, vec![tx_b1.tx_id.clone()]);
+        assert_eq!(n.mempool.len(), 2);
+        assert_eq!(n.submit_tx(tx_b1).unwrap_err(), TX_PREVIOUSLY_DROPPED);
+
+        // Drop by account:seq
+        let d2 = n.drop_mempool_target("alice:2");
+        assert_eq!(d2, vec![tx_a2.tx_id.clone()]);
+        assert_eq!(n.mempool.len(), 1);
+
+        // Drop by account
+        let d3 = n.drop_mempool_target("alice");
+        assert_eq!(d3, vec![tx_a1.tx_id.clone()]);
+        assert!(n.mempool.is_empty());
     }
 }
 
@@ -22860,3 +23772,6 @@ pub const TX_PREVIOUSLY_DROPPED: &str = "tx previously dropped as permanently in
 
 #[cfg(test)]
 mod seat_payout_tests;
+
+#[cfg(test)]
+mod v2_10_activation_tests;

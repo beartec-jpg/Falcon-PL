@@ -255,7 +255,7 @@ fn pack_undo_fits_200_plus_txs_in_budget() {
         for i in 0..150_000u32 {
             n.state.accounts.insert(
                 format!("pad{i:06}"),
-                AccountState { sequence: 1, balance: 1, meta: Default::default() },
+                AccountState { sequence: 1, balance: 1, meta: Default::default(), external_addrs: Default::default() },
             );
         }
     }

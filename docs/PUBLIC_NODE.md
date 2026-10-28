@@ -1,6 +1,6 @@
-# Run a Falcon PL Node (Public Testnet 2300 — `v2.9.81`)
+# Run a Falcon PL Node (Public Testnet 2300 — `v2.10.0`)
 
-Status: **Observer, Watcher & Validator onboarding are OPEN** on public testnet **2300** (`v2.9.81`, height `692,000+`, `VALIDATOR_ONBOARDING=open`).
+Status: **Observer, Watcher & Validator onboarding are OPEN** on public testnet **2300** (`v2.10.0`, height `692,000+`, `VALIDATOR_ONBOARDING=open`).
 - **Validator bond:** `50,000 FPL` minimum (`bond-v2` with proof-of-possession + admission key approval)
 - **Watcher bond / stake:** `1,000 FPL` minimum
 - **`BTC4` BitVM2 Operator bond:** `5,000 FPL` minimum (see [`docs/bridge/OPERATOR_GUIDE.md`](bridge/OPERATOR_GUIDE.md))
@@ -22,7 +22,7 @@ curl -fsSL https://falcon-fpl.com/install.sh | bash -s -- --payout-account <your
 What the installer does:
 
 1. Checks Linux x86_64, `glibc >= 2.34` (Ubuntu 22.04+, Debian 12+, RHEL 9+), 4 GB+ free disk, 2 GB+ RAM.
-2. Downloads `falcon-pl-node` + `falcon-pl-ctl` (`v2.9.81`) from the public releases repository (`github.com/beartec-jpg/falcon-pl-releases`), verifies `SHA256SUMS`, and checks `SHA256SUMS.minisig` against the pinned release public key (`minisign`).
+2. Downloads `falcon-pl-node` + `falcon-pl-ctl` (`v2.10.0`) from the public releases repository (`github.com/beartec-jpg/falcon-pl-releases`), verifies `SHA256SUMS`, and checks `SHA256SUMS.minisig` against the pinned release public key (`minisign`).
 3. Generates the node key **on your machine** (`keys/`, mode `0700`). Secret keys are never printed or transmitted.
 4. Installs and starts the `falcon-pl-node` systemd service (with `MALLOC_ARENA_MAX=2`, disk-backed `--body-store-dir`, and automatic `logrotate` configuration) plus the `fdash` terminal dashboard alias.
 5. Peers through the public seed endpoints in `config/network-2300.env` (`SEEDS=5.78.142.246:19301,...`), pulls a certified state snapshot, and follows the live chain until within 10 blocks of the network tip.
@@ -39,7 +39,7 @@ Re-running the installer is idempotent: unchanged binaries and units are left al
 | `falcon-node web` | Local browser dashboard on `127.0.0.1:19480` (prints SSH tunnel command for remote servers) |
 | `falcon-node logs` | Follow `logs/node.log` (managed via `logrotate`) |
 | `falcon-node start` / `stop` / `restart` | Control the systemd service |
-| `falcon-node upgrade` | Fetch the latest signed release (`2.9.81+`), verify, swap, and restart |
+| `falcon-node upgrade` | Fetch the latest signed release (`2.10.0+`), verify, swap, and restart |
 | `falcon-node uninstall` | Remove service, binaries, and chain data; **keys are kept** |
 | `falcon-node uninstall --purge` | Remove everything including keys (irreversible) |
 
@@ -115,7 +115,7 @@ Lottery election odds are equal for every eligible validator seat (`50,000 FPL` 
 ## Verify a Release Manually
 
 ```bash
-V=2.9.81
+V=2.10.0
 B=https://github.com/beartec-jpg/falcon-pl-releases/releases/download/v$V
 curl -fsSLO $B/SHA256SUMS -O $B/SHA256SUMS.minisig -O $B/falcon-pl-$V-linux-x86_64.tar.gz
 sha256sum -c --ignore-missing SHA256SUMS

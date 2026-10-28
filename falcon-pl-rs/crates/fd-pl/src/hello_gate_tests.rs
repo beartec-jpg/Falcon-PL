@@ -79,21 +79,22 @@ fn live(n: &Node, id: &str) -> bool {
 
 #[test]
 fn predicate_before_gloas_accepts_any_2_9_x() {
-    for v in ["", "2.9.0", "2.9.59", "2.9.60", "2.9.61"] {
+    // 2.10.0 still accepts the whole legacy 2.9.x line plus its own 2.10.x.
+    for v in ["", "2.9.0", "2.9.59", "2.9.60", "2.9.61", "2.10.0", "2.10.7"] {
         assert!(hello_version_compatible_at(v, false), "{v:?} pre-H");
     }
-    for v in ["3.0.0", "2.8.99", "2.8.0", "2.10.0", "2.9", "2.9.060", "junk"] {
+    for v in ["3.0.0", "2.8.99", "2.8.0", "2.11.0", "2.90.1", "2.9", "2.10", "2.10.07", "2.9.060", "junk"] {
         assert!(!hello_version_compatible_at(v, false), "{v:?} pre-H");
     }
 }
 
 #[test]
 fn predicate_after_gloas_requires_2_9_60_or_newer() {
-    for v in ["2.9.60", "2.9.61", "2.9.100"] {
+    for v in ["2.9.60", "2.9.61", "2.9.100", "2.10.0", "2.10.60"] {
         assert!(hello_version_compatible_at(v, true), "{v:?} post-H");
     }
     for v in [
-        "", "2.9.59", "2.9.0", "2.9.060", "3.0.0", "3.9.60", "2.8.99", "2.10.60", "2.9", "junk",
+        "", "2.9.59", "2.9.0", "2.9.060", "3.0.0", "3.9.60", "2.8.99", "2.11.60", "2.9", "junk",
     ] {
         assert!(!hello_version_compatible_at(v, true), "{v:?} post-H");
     }
@@ -346,5 +347,36 @@ fn rolling_2975_accepts_2966_to_2975_peers() {
     for v in ["2.9.66", "2.9.72", "2.9.73", "2.9.74", "2.9.75", "2.9.76", "2.9.77", "2.9.78", "2.9.79", "2.9.80", "2.9.81"] {
         assert!(crate::hello_version_compatible_at(v, false), "{v} pre-H");
         assert!(crate::hello_version_compatible_at(v, true), "{v} post-H");
+    }
+}
+
+/// v2.10.0 rolls onto a 2.9.81 mesh. A 2.9.x binary accepts a Hello only if it
+/// is `2.9.<digits>` (and, after Gloas, patch >= 60), so a 2.10.0 node must put
+/// a legacy-line string in its Hello or every 2.9.81 seat closes its session.
+#[test]
+fn v2_10_0_hello_wire_version_is_accepted_by_2_9_81_and_by_itself() {
+    // The rule a 2.9.81 seat applies (same major.minor 2.9, plain integer
+    // patch, no leading zero, patch >= 60 once Gloas is active).
+    fn legacy_2_9_81_accepts(peer: &str) -> bool {
+        let p: Vec<&str> = peer.split('.').collect();
+        p.len() == 3
+            && p[0] == "2"
+            && p[1] == "9"
+            && !p[2].is_empty()
+            && p[2].bytes().all(|b| b.is_ascii_digit())
+            && (p[2].len() == 1 || !p[2].starts_with('0'))
+            && p[2].parse::<u64>().is_ok_and(|x| x >= 60)
+    }
+    assert!(legacy_2_9_81_accepts(crate::HELLO_WIRE_VERSION), "2.9.81 seat must accept our Hello");
+    assert!(
+        !legacy_2_9_81_accepts(crate::PRODUCT_VERSION),
+        "the real 2.10.0 string is what a 2.9.81 seat refuses (why the wire string differs)"
+    );
+    for gloas in [false, true] {
+        assert!(hello_version_compatible_at(crate::HELLO_WIRE_VERSION, gloas));
+        assert!(hello_version_compatible_at(crate::PRODUCT_VERSION, gloas));
+    }
+    for v in ["2.9.60", "2.9.80", "2.9.81"] {
+        assert!(hello_version_compatible_at(v, true), "{v} legacy peer post-H");
     }
 }
