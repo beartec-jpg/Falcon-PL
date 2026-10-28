@@ -3599,7 +3599,7 @@ async fn main() -> Result<()> {
                             if n.pending_proposal.is_some() {
                                 // Locked / already-known body. Re-fan it; do not
                                 // mint another hash for this height.
-                            } else if !n.evicted_since_last_seal
+                            } else if !n.can_seal_empty()
                                 && !(n.mempool.len() > 0 && !n.has_applicable_tx())
                                 && n.should_pre_pack_need_txs()
                             {
@@ -3611,12 +3611,12 @@ async fn main() -> Result<()> {
                                         max_count: fd_pl::Node::NEED_TXS_BATCH as u64,
                                     },
                                 );
-                            } else if !n.evicted_since_last_seal
+                            } else if !n.can_seal_empty()
                                 && !(n.mempool.len() > 0 && !n.has_applicable_tx())
                                 && n.waiting_need_txs_grace()
                             {
                                 // Wait for TxsBatch to land before packing empty.
-                            } else if !n.evicted_since_last_seal && n.pace_wait() {
+                            } else if !n.can_seal_empty() && n.pace_wait() {
                                 // v2.9.59: pacing — let a few more txs arrive
                                 // instead of sealing a tiny block every ~1.4 s.
                             } else if !only_pack.is_empty() && !designated && !force_full {
@@ -3960,7 +3960,7 @@ async fn peer_session(
             tip_hash: n.tip_hash.clone(),
             is_hub: n.is_hub,
             mempool_len: n.mempool.len() as u64,
-            product_version: PRODUCT_VERSION.to_string(),
+            product_version: fd_pl::HELLO_WIRE_VERSION.to_string(),
             hello_network_id: n.cfg.network_id,
             archive: shared.is_archive,
             snap_height: shared
@@ -4421,7 +4421,7 @@ async fn handle_inbound(
             tip_hash: n.tip_hash.clone(),
             is_hub: n.is_hub,
             mempool_len: n.mempool.len() as u64,
-            product_version: PRODUCT_VERSION.to_string(),
+            product_version: fd_pl::HELLO_WIRE_VERSION.to_string(),
             hello_network_id: n.cfg.network_id,
             archive: shared.is_archive,
             snap_height: shared
@@ -7165,6 +7165,7 @@ mod inbound_ack_tests {
             n.cfg.min_fee = 0;
             n.cfg.fee_escalate = false;
             n.bitvm2_m1_from_height = 0;
+            n.empty_block_from_height = 0;
             n.register_validator("v1", 10_000_000_000);
             for v in ["v1", "v9"] {
                 n.pong(v);

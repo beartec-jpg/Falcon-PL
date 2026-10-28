@@ -1,17 +1,17 @@
-# Falcon PL — Public Testnet 2300 Parameter Sheet (`v2.9.81`, Height `692,000+`)
+# Falcon PL — Public Testnet 2300 Parameter Sheet (`v2.10.0`, Height `692,000+`)
 
 | | |
 |--|--|
 | **Product** | Falcon PL (FPL) |
 | **Consensus** | Falcon Consensus (6-seat deterministic lottery + 4-of-6 Falcon-512 QC) |
 | **Cryptography** | Falcon-512 (`hmac-dev` refused without `--allow-dev-crypto`) |
-| **Version (`PRODUCT_VERSION`)** | **`2.9.81`** (workspace & live Testnet 2300 mesh) |
+| **Version (`PRODUCT_VERSION`)** | **`2.10.0`** (workspace & live Testnet 2300 mesh) |
 | **Public Testnet** | `network_id` **`2300`** (`VALIDATOR_ONBOARDING=open`) |
 | **Public Seed Relay** | `5.78.142.246:19301` (plus per-seat ports `19302..19312` in `scripts/network-2300.env`) |
 
 ## Consensus & Runtime Parameters
 
-| Parameter | Public Testnet 2300 (`2.9.81`) | Notes |
+| Parameter | Public Testnet 2300 (`2.10.0`) | Notes |
 |-----------|-------------|----------------------------|
 | Soft QC | **4-of-6** committee | Deterministic 6-seat committee per height |
 | Hard QC | `ceil(n × 0.6)` bonded | Active bonded validator set |
@@ -27,7 +27,7 @@
 
 ## Staking, Fees & Emissions (Rewards v2 + Operator Bucket)
 
-| Parameter | Public Testnet 2300 (`2.9.81`) | Notes |
+| Parameter | Public Testnet 2300 (`2.10.0`) | Notes |
 |-----------|-------------|-----------|
 | Epoch length | **7 days** (`604,800,000 ms` / `10,000` blocks) | |
 | First claimable epoch | **1** on Testnet 2300 | Mainnet bootstrap: epoch 8 |

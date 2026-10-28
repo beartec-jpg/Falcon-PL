@@ -4,7 +4,7 @@
 
 Falcon PL is open for public technical and security review. The primary components in scope for review are:
 
-- **Consensus, execution & node runtime:** `falcon-pl-rs/crates/fd-pl` (`2.9.81`, Falcon-512 post-quantum signatures, deterministic committee lottery + 4-of-6 QC, Rewards v2, on-chain key registry, ETH Gloas beacon light client, Bitcoin SPV & BitVM2 state machine)
+- **Consensus, execution & node runtime:** `falcon-pl-rs/crates/fd-pl` (`2.10.0`, Falcon-512 post-quantum signatures, deterministic committee lottery + 4-of-6 QC, Rewards v2, on-chain key registry, ETH Gloas beacon light client, Bitcoin SPV & BitVM2 state machine)
 - **Groth16 Falcon-512 QC prover & verifier circuits:** `falcon-pl-rs/crates/fd-pl-snark`
 - **BitVM2 operator & graph crates:** `falcon-pl-rs/crates/fd-pl-bitvm2`, `falcon-pl-rs/crates/fd-pl-graph`, and `falcon-pl-rs/tools/fpl-operator`
 - **Sepolia ETH/USDC V3 bridge contract:** `falcon-pl-rs/crates/fd-pl/scripts/FalconQcBridgeV3.sol` and `FalconQcBridgeV3Checks.sol`

@@ -378,7 +378,22 @@ use thiserror::Error;
 
 pub const NETWORK_NAME: &str = "falcon-pl-private-v22";
 /// Product release line. One number on crate, status, Hello, and binaries.
-pub const PRODUCT_VERSION: &str = "2.9.81";
+pub const PRODUCT_VERSION: &str = "2.10.0";
+
+/// Version string a node puts in its Hello (`WireMsg::Hello::product_version`).
+///
+/// 2.9.x binaries accept a Hello only if it is `2.9.<digits>` (same
+/// major.minor), and close the session otherwise, so a Hello that said
+/// `2.10.0` would be refused by every 2.9.81 seat and a rolling upgrade would
+/// isolate each upgraded seat. Until the whole mesh runs 2.10.x, 2.10.0
+/// therefore advertises this legacy-line string (patch >= 60, so it also
+/// passes the post-Gloas `x >= 60` rule). Status, logs and binaries still
+/// report [`PRODUCT_VERSION`]. Local only: not consensus.
+pub const HELLO_WIRE_VERSION: &str = "2.9.100";
+
+/// Minor of the legacy line whose Hello versions this release still accepts
+/// (`2.9.x`), in addition to its own major.minor.
+const HELLO_LEGACY_MINOR: &str = "9";
 
 /// v2.9.66: when true, certified catch-up of non-batch ledgers skips per-tx
 /// Falcon verify (legacy). Default false. Env: `FPL_CATCHUP_SKIP_TX_SIG=1`.
@@ -398,7 +413,7 @@ pub fn catchup_skip_tx_sig() -> bool {
 /// Empty is the legacy pre-A10 hello. Otherwise the peer must be
 /// `major.minor.<digits>` with the same major.minor as [`PRODUCT_VERSION`]
 /// (any `2.9.x` while this crate is 2.9.61). `2.9` with no patch is rejected,
-/// as is a different minor (`2.10.0`, `2.90.1`), a different major, or any
+/// as is a different minor (`2.8.99`, `2.90.1`), a different major, or any
 /// component that is not a plain integer. A patch with a leading zero
 /// (`2.9.060`, `2.9.00`) is rejected; `2.9.0` is not.
 pub fn hello_version_compatible(peer: &str) -> bool {
@@ -423,7 +438,7 @@ pub fn hello_version_compatible(peer: &str) -> bool {
     let patch_ok = !patch.is_empty()
         && patch.bytes().all(|b| b.is_ascii_digit())
         && (patch.len() == 1 || !patch.starts_with('0'));
-    maj == our_maj && min == our_min && patch_ok
+    maj == our_maj && patch_ok && (min == our_min || min == HELLO_LEGACY_MINOR)
 }
 
 /// Lowest `2.9.x` patch a peer may advertise in Hello once the local tip is at
@@ -446,6 +461,11 @@ pub fn hello_version_compatible_at(peer: &str, gloas_active: bool) -> bool {
     }
     if peer.is_empty() {
         return false;
+    }
+    // The `x >= 60` floor is a rule for the legacy `2.9.x` line only; a peer on
+    // this release's own line (`2.10.x`) is always new enough.
+    if !peer.starts_with("2.9.") {
+        return true;
     }
     peer.rsplit('.')
         .next()
@@ -2890,6 +2910,9 @@ pub fn seed_v2_hex(parent_hash: &str, height: u64, msg_v4: &str) -> String {
 pub const RV2_NOT_ACTIVE: &str = "rewards v2 not active yet (H_act)";
 /// Seat payout txs before `seat_payout_from_height` (not kept or relayed).
 pub const SEAT_PAYOUT_NOT_ACTIVE: &str = "seat payout not active yet";
+/// v2.10.0: `SetExternalAddrs` before `external_addrs_from_height` (not kept or
+/// relayed; deliberately not matched by `is_permanent_tx_failure`).
+pub const EXTERNAL_ADDRS_NOT_ACTIVE: &str = "set external addrs not active yet";
 
 fn is_zero_u32(v: &u32) -> bool {
     *v == 0
@@ -3517,6 +3540,10 @@ pub struct Node {
     pub claim_enroll_from_height: u64,
     /// [`crate::params_v2::seat_payout_from_height`]; runtime only.
     pub seat_payout_from_height: u64,
+    /// v2.10.0: [`crate::params_v2::external_addrs_from_height`]; runtime only.
+    pub external_addrs_from_height: u64,
+    /// v2.10.0: [`crate::params_v2::empty_block_from_height`]; runtime only.
+    pub empty_block_from_height: u64,
     /// v2.9.62: rewards-v2 activation height `H_act` (`u64::MAX` = unarmed).
     /// From [`params_v2::network_rewards_v2_from_height`]; runtime only.
     pub rewards_v2_from_height: u64,
@@ -3635,6 +3662,8 @@ impl Node {
         let ring_restore_from_height = crate::params_v2::ring_restore_from_height(cfg.network_id);
         let claim_enroll_from_height = crate::params_v2::claim_enroll_from_height(cfg.network_id);
         let seat_payout_from_height = crate::params_v2::seat_payout_from_height(cfg.network_id);
+        let external_addrs_from_height = crate::params_v2::external_addrs_from_height(cfg.network_id);
+        let empty_block_from_height = crate::params_v2::empty_block_from_height(cfg.network_id);
         let rewards_v2_from_height = params_v2::network_rewards_v2_from_height(cfg.network_id);
         let rewards_v2_epoch = params_v2::network_rewards_v2_epoch(cfg.network_id);
         let presence_from_height = params_v2::network_presence_from_height(cfg.network_id);
@@ -3766,6 +3795,8 @@ impl Node {
             ring_restore_from_height,
             claim_enroll_from_height,
             seat_payout_from_height,
+            external_addrs_from_height,
+            empty_block_from_height,
             rewards_v2_from_height,
             rewards_v2_epoch,
             presence_from_height,
@@ -4082,6 +4113,33 @@ impl Node {
     /// refused at admission, never relayed/exported, rejected at apply.
     pub fn seat_tx_pre_activation(&self, tx: &Tx) -> bool {
         tx.body.is_seat_tx() && !self.seat_payout_at(self.tip_height.saturating_add(1))
+    }
+
+    /// v2.10.0: `SetExternalAddrs` / `Account.external_addrs` rules apply to the
+    /// ledger at `height`.
+    pub fn external_addrs_at(&self, height: u64) -> bool {
+        height >= self.external_addrs_from_height
+    }
+
+    /// v2.10.0: a `SetExternalAddrs` tx before activation: refused at
+    /// admission, never relayed/exported (2.9.81 seats cannot decode the
+    /// variant), rejected at apply.
+    pub fn external_addrs_tx_pre_activation(&self, tx: &Tx) -> bool {
+        matches!(tx.body, TxBody::SetExternalAddrs { .. })
+            && !self.external_addrs_at(self.tip_height.saturating_add(1))
+    }
+
+    /// v2.10.0: empty (zero-tx) ledgers are valid at `height` (and carry the
+    /// empty-block time-effects / no-proposer-credit rules).
+    pub fn empty_block_at(&self, height: u64) -> bool {
+        height >= self.empty_block_from_height
+    }
+
+    /// v2.10.0 (Item #16): this node may seal an empty fallback block at the
+    /// open height: it evicted permanent-failure txs on this height AND empty
+    /// blocks are active. Before activation behaves exactly like 2.9.81.
+    pub fn can_seal_empty(&self) -> bool {
+        self.evicted_since_last_seal && self.empty_block_at(self.tip_height.saturating_add(1))
     }
 
     /// Seat id when `account` is a `<id>#seat` sender and the seat rules are
@@ -4522,6 +4580,7 @@ impl Node {
             && !self.eth_v3_at(self.tip_height.saturating_add(1)))
             || self.rv2_tx_pre_activation(tx)
             || self.seat_tx_pre_activation(tx)
+            || self.external_addrs_tx_pre_activation(tx)
     }
 
     /// v2.9.62: same treatment for the new v2 tx kinds before `H_act` (not
@@ -7332,6 +7391,9 @@ impl Node {
         }
         if self.seat_tx_pre_activation(&tx) {
             return Err(SEAT_PAYOUT_NOT_ACTIVE.into());
+        }
+        if self.external_addrs_tx_pre_activation(&tx) {
+            return Err(EXTERNAL_ADDRS_NOT_ACTIVE.into());
         }
         if self.v3_deposit_pre_activation(&tx) {
             return Err(crate::bridge::V3_DEPOSITS_NOT_ACTIVE.into());
@@ -11400,6 +11462,11 @@ impl Node {
         if tx.body.is_seat_tx() || self.seat_sender_active(&tx.account).is_some() {
             return self.apply_seat_tx(tx, check_sig);
         }
+        // v2.10.0: before activation behave exactly like 2.9.81 (which cannot
+        // decode the variant): refuse before any key enroll / fee / sequence.
+        if self.external_addrs_tx_pre_activation(tx) {
+            return Err(EXTERNAL_ADDRS_NOT_ACTIVE.into());
+        }
         self.note_sender_key(tx)?;
         if self.tx_name_enroll(tx) && !tx.public_key.is_empty() {
             self.enroll_name_key(tx)?;
@@ -12273,7 +12340,7 @@ impl Node {
             ));
         }
         let _pruned = self.mempool.prune_stale(&self.state);
-        if self.mempool.is_empty() && !self.evicted_since_last_seal {
+        if self.mempool.is_empty() && !self.can_seal_empty() {
             return Err("empty mempool — refuse empty ledger".into());
         }
         // One apply path with ingest (2.7.2 / 2.9.6): fold + select + root at
@@ -12491,7 +12558,7 @@ impl Node {
             self.mempool.remove_many(&drop_ids);
             self.evicted_since_last_seal = true;
         }
-        if chosen.is_empty() && !self.evicted_since_last_seal {
+        if chosen.is_empty() && !self.can_seal_empty() {
             if self.mempool.is_empty() {
                 return Err("empty mempool — refuse empty ledger".into());
             }
@@ -13310,6 +13377,11 @@ impl Node {
         if !self.packer_sig_ok(ledger) {
             return Err("bad packer sig".into());
         }
+        // v2.10.0 (Item #16): an empty ledger is valid only from
+        // `empty_block_from_height`; before it, reject exactly like 2.9.81.
+        if ledger.txs.is_empty() && !self.empty_block_at(ledger.height) {
+            return Err("empty ledger rejected".into());
+        }
         self.verify_parent_cert(ledger)?;
         if let Some(c) = &ledger.parent_cert {
             self.certs.entry(c.height).or_insert_with(|| c.clone());
@@ -13503,7 +13575,7 @@ impl Node {
         let ckpt = TimeFold::take(self);
         let _seized = self.apply_time_effects_with_slashes(
             ledger.sealed_at_ms,
-            ledger.fee_total > 0 || ledger.txs.is_empty(),
+            ledger.fee_total > 0 || (ledger.txs.is_empty() && self.empty_block_at(ledger.height)),
             &ledger.slashes,
         );
         let mut draft_state = self.state.clone();
@@ -13609,6 +13681,7 @@ impl Node {
         if ledger.height != self.tip_height.saturating_add(1)
             || ledger.parent_hash != self.tip_hash
             || ledger.network_id != self.cfg.network_id
+            || (ledger.txs.is_empty() && !self.empty_block_at(ledger.height))
         {
             return Prestage::Skip;
         }
@@ -13824,7 +13897,7 @@ impl Node {
         let ckpt = TimeFold::take(self);
         let _seized = self.apply_time_effects_with_slashes(
             ledger.sealed_at_ms,
-            ledger.fee_total > 0 || ledger.txs.is_empty(),
+            ledger.fee_total > 0 || (ledger.txs.is_empty() && self.empty_block_at(ledger.height)),
             &ledger.slashes,
         );
         let saved = self.now_ms;
@@ -13938,7 +14011,7 @@ impl Node {
                 pot = pot.saturating_add(prop);
             }
             draft_work.fee_reward_pool = draft_work.fee_reward_pool.saturating_add(pot);
-            if !ledger.txs.is_empty() && !locked(&ledger.packer) {
+            if !(ledger.txs.is_empty() && self.empty_block_at(ledger.height)) && !locked(&ledger.packer) {
                 *draft_work.proposer_credit.entry(ledger.packer.clone()).or_insert(0) +=
                     crate::economy::proposer_block_credit(paying);
             }
@@ -16045,8 +16118,8 @@ mod tests {
 
     #[test]
     fn product_version_is_locked_to_crate() {
-        assert_eq!(PRODUCT_VERSION, "2.9.81");
-        assert_eq!(env!("CARGO_PKG_VERSION"), "2.9.81");
+        assert_eq!(PRODUCT_VERSION, "2.10.0");
+        assert_eq!(env!("CARGO_PKG_VERSION"), "2.10.0");
         assert_eq!(NodeRole::from_exe_name("/opt/bin/falcon-pl-val"), Some(NodeRole::Val));
         assert_eq!(NodeRole::from_exe_name("falcon-pl-archive"), Some(NodeRole::Archive));
         assert_eq!(NodeRole::VAL_MAX_CHAIN, 128);
@@ -23172,6 +23245,7 @@ mod account_history_store_tests {
         );
         net.pong_all();
         let node = net.nodes.get_mut("v1").unwrap();
+        node.external_addrs_from_height = 0;
         let start_bal = node.state.get("alice").balance;
         assert_eq!(node.state.get("alice").sequence, 1);
         assert!(node.state.get("alice").external_addrs.is_empty());
@@ -23289,6 +23363,7 @@ mod account_history_store_tests {
         );
         net.pong_all();
         let node = net.nodes.get_mut("v1").unwrap();
+        node.external_addrs_from_height = 0;
 
         // Reject empty chain, chain starting with digit, chain with punctuation, >16 char chain.
         for bad_chain in ["", "1btc", "btc-test", "abcdefghijklmnopq", "btc eth"] {
@@ -23450,6 +23525,8 @@ mod account_history_store_tests {
         let user_keys = net.user_keys.clone();
         let n = net.nodes.get_mut(&winner).unwrap();
 
+        // Empty fallback blocks are gated (`empty_block_from_height`); open them for this test.
+        n.empty_block_from_height = 0;
         // Set up state so all 4 error classes from Alert #16 trigger:
         // (1) OperatorGraphBind: alice is a registered operator whose graph for deposit "aa"*32 is already bound.
         n.bitvm2_m1_from_height = 0;
@@ -23691,3 +23768,6 @@ pub const TX_PREVIOUSLY_DROPPED: &str = "tx previously dropped as permanently in
 
 #[cfg(test)]
 mod seat_payout_tests;
+
+#[cfg(test)]
+mod v2_10_activation_tests;

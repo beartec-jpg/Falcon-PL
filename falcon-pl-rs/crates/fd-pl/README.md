@@ -1,4 +1,4 @@
-# Falcon PL (`fd-pl` — v2.9.81)
+# Falcon PL (`fd-pl` — v2.10.0)
 
 **Product:** Falcon PL · **Ticker:** FPL · **Consensus:** [Falcon Consensus](docs/IDENTITY.md) · **Signatures:** Falcon-512
 
@@ -6,7 +6,7 @@ Greenfield post-quantum **ordered ledger** — **not** an XRP Ledger fork, **not
 
 Bonded validators join the deterministic **committee lottery**. Each height selects a 6-seat committee and ranked proposer order; blocks commit on a **4-of-6 Falcon-512 Quorum Certificate (QC)**; silent proposers time out so the next ranked standby seat seals without stalling the tip.
 
-| Component | Behavior in `2.9.81` |
+| Component | Behavior in `2.10.0` |
 |-----------|----------------------|
 | Truth | Hash-linked ledgers of Falcon-512 signed transactions |
 | Cryptography | **`falcon-512`** on network 2300 (`hmac-sha256-dev` restricted to local dev harnesses) |
@@ -20,7 +20,7 @@ Bonded validators join the deterministic **committee lottery**. Each height sele
 | Doc | Contents |
 |-----|----------|
 | **[docs/README.md](docs/README.md)** | **Documentation index** — current vs. historical |
-| **[../../docs/PUBLIC_NODE.md](../../../../docs/PUBLIC_NODE.md)** | Public observer, watcher, and validator node guide (`2.9.81`) |
+| **[../../docs/PUBLIC_NODE.md](../../../../docs/PUBLIC_NODE.md)** | Public observer, watcher, and validator node guide (`2.10.0`) |
 | **[../../docs/SEAT_PAYOUT.md](../../../../docs/SEAT_PAYOUT.md)** | Per-seat validator rewards (`SetSeatPayout` / `ClaimSeat` at `692,000+`) |
 | **[docs/BRIDGES_2300_STATUS.md](docs/BRIDGES_2300_STATUS.md)** | Live Sepolia ETH/USDC V3 and Bitcoin `BTC4` / legacy `BTC` status |
 | **[docs/ETH_V3_DEPOSITS.md](docs/ETH_V3_DEPOSITS.md)** | Sepolia `FalconQcBridgeV3` deposit mint-or-refund mechanics |

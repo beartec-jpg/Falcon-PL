@@ -478,6 +478,8 @@ impl Node {
         let ring_restore_from_height = crate::params_v2::ring_restore_from_height(cfg.network_id);
         let claim_enroll_from_height = crate::params_v2::claim_enroll_from_height(cfg.network_id);
         let seat_payout_from_height = crate::params_v2::seat_payout_from_height(cfg.network_id);
+        let external_addrs_from_height = crate::params_v2::external_addrs_from_height(cfg.network_id);
+        let empty_block_from_height = crate::params_v2::empty_block_from_height(cfg.network_id);
         let rewards_v2_from_height = crate::params_v2::network_rewards_v2_from_height(cfg.network_id);
         let rewards_v2_epoch = crate::params_v2::network_rewards_v2_epoch(cfg.network_id);
         let presence_from_height = crate::params_v2::network_presence_from_height(cfg.network_id);
@@ -618,6 +620,8 @@ impl Node {
             ring_restore_from_height,
             claim_enroll_from_height,
             seat_payout_from_height,
+            external_addrs_from_height,
+            empty_block_from_height,
             rewards_v2_from_height,
             rewards_v2_epoch,
             presence_from_height,

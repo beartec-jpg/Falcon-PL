@@ -343,3 +343,49 @@ pub fn seat_payout_from_height(network_id: u32) -> u64 {
     }
     env_u64("FPL_SEAT_PAYOUT_FROM_HEIGHT").unwrap_or(u64::MAX)
 }
+
+/// Falcon PL 2.10.0 activation height on 2300 (Scott, 2026-10-28).
+///
+/// Chosen ~4 days out: tip was 733,611 at 2026-10-28 16:27 UTC and the chain
+/// was making ~210-250 blocks/h (last 4 h avg ~223/h, slowing from ~314/h four
+/// days earlier), so 755,000 is ~21,400 blocks away: about Sun 2026-11-01
+/// 15:30 UTC at 225/h, Sun 19:56 at 215/h, Mon 2 Nov 03:24 at 200/h. Fastest
+/// plausible rate (314/h) is still Sat 31 Oct 12:34 UTC.
+///
+/// Two consensus changes switch on at this height and nothing before it:
+/// 1. `SetExternalAddrs` txs (`Account.external_addrs`). 2.9.81 seats cannot
+///    decode the variant, so before this height it is refused at admission,
+///    never kept/relayed/exported, and rejected at apply.
+/// 2. Empty fallback blocks (a leader with no executable txs seals a block
+///    with zero txs). 2.9.81 seats reject any empty ledger, so before this
+///    height a 2.10.0 node refuses to seal one and refuses to accept one, and
+///    the empty-block time-effects / proposer-credit rules are not applied.
+///
+/// Every seat and outside operator must run 2.10.0 before this height; a
+/// 2.9.81 seat disagrees with 2.10.0 from the first empty block or the first
+/// `SetExternalAddrs` after it.
+pub const TESTNET_2300_V2_10_FROM_HEIGHT: u64 = 755_000;
+
+/// `SetExternalAddrs` / `Account.external_addrs` activation (2300).
+pub const TESTNET_2300_EXTERNAL_ADDRS_FROM_HEIGHT: u64 = TESTNET_2300_V2_10_FROM_HEIGHT;
+
+/// Empty-fallback-block activation (2300).
+pub const TESTNET_2300_EMPTY_BLOCK_FROM_HEIGHT: u64 = TESTNET_2300_V2_10_FROM_HEIGHT;
+
+/// External-address activation height (`u64::MAX` = never). Non-2300 networks
+/// may set `FPL_EXTERNAL_ADDRS_FROM_HEIGHT` (devnets / tests).
+pub fn external_addrs_from_height(network_id: u32) -> u64 {
+    if network_id == NETWORK_ID_PUBLIC_TESTNET_2300 {
+        return TESTNET_2300_EXTERNAL_ADDRS_FROM_HEIGHT;
+    }
+    env_u64("FPL_EXTERNAL_ADDRS_FROM_HEIGHT").unwrap_or(u64::MAX)
+}
+
+/// Empty-fallback-block activation height (`u64::MAX` = never). Non-2300
+/// networks may set `FPL_EMPTY_BLOCK_FROM_HEIGHT` (devnets / tests).
+pub fn empty_block_from_height(network_id: u32) -> u64 {
+    if network_id == NETWORK_ID_PUBLIC_TESTNET_2300 {
+        return TESTNET_2300_EMPTY_BLOCK_FROM_HEIGHT;
+    }
+    env_u64("FPL_EMPTY_BLOCK_FROM_HEIGHT").unwrap_or(u64::MAX)
+}
