@@ -10,5 +10,5 @@ fn catchup_skip_tx_sig_defaults_off() {
 
 #[test]
 fn product_version_is_2975() {
-    assert_eq!(crate::PRODUCT_VERSION, "2.10.0");
+    assert_eq!(crate::PRODUCT_VERSION, "2.10.1");
 }
