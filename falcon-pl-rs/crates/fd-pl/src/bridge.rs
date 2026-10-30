@@ -249,6 +249,8 @@ pub fn merkle_root_protocol(leaf: &str, path: &[String], index: u32) -> String {
 
 /// Max headers held on a pending competing BTC branch (v2 strict mode).
 pub const BTC_FORK_MAX: usize = 144;
+/// v2.10.1: a pending fork this many headers behind a heavier main tip is dropped.
+pub const BTC_FORK_STALE_N: u64 = 6;
 
 fn header_work(h: &RailHeader) -> u128 {
     btc_spv::parse_header_hex(&h.raw)
@@ -337,6 +339,13 @@ pub struct RailState {
     /// Empty (and not serialized) before activation, so the commitment is unchanged.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub btc_fork: Vec<RailHeader>,
+    /// v2.10.1 (`btc4_fork_fix_from_height`): a second competing BTC branch
+    /// that accumulates from its common ancestor while a pending fork exists.
+    /// It replaces `btc_fork` once its cumulative work is strictly greater.
+    /// Always empty (and not serialized) before activation, so the commitment
+    /// is byte-identical to 2.10.0 until then.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub btc_fork_alt: Vec<RailHeader>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -404,6 +413,7 @@ impl RailState {
             take_seed: None,
             bitvm2_instance_spk: None,
             btc_fork: Vec::new(),
+            btc_fork_alt: Vec::new(),
         }
     }
 
@@ -462,13 +472,23 @@ impl RailState {
     /// advanced or a winning reorg landed (watcher work is credited), and
     /// `Ok(false)` when a header was only queued on a pending fork (no credit).
     pub fn submit_header_ex(&mut self, h: RailHeader, strict: bool) -> Result<bool, String> {
+        self.submit_header_ex2(h, strict, false)
+    }
+
+    /// v2.10.1: as [`Self::submit_header_ex`]; `fork_fix` (BTC4 rail at or after
+    /// `btc4_fork_fix_from_height`) lets a competing branch accumulate next to
+    /// a pending fork and replace it once heavier, and drops a pending fork
+    /// left more than [`BTC_FORK_STALE_N`] headers behind a heavier main chain.
+    /// `fork_fix == false` is exactly the 2.10.0 behaviour.
+    pub fn submit_header_ex2(&mut self, h: RailHeader, strict: bool, fork_fix: bool) -> Result<bool, String> {
         if !strict || !self.is_btc() {
             return self.submit_header(h).map(|_| true);
         }
-        self.submit_btc_header_strict(h)
+        let fork_fix = fork_fix && self.asset == RAIL_BTC4;
+        self.submit_btc_header_strict(h, fork_fix)
     }
 
-    fn submit_btc_header_strict(&mut self, mut h: RailHeader) -> Result<bool, String> {
+    fn submit_btc_header_strict(&mut self, mut h: RailHeader, fork_fix: bool) -> Result<bool, String> {
         if h.raw.is_empty() {
             return Err("BTC rail requires 80-byte Bitcoin header".into());
         }
@@ -504,10 +524,39 @@ impl RailState {
         {
             return Err(format!("BTC duplicate header at {} (pending fork)", h.height));
         }
+        if fork_fix
+            && self
+                .btc_fork_alt
+                .iter()
+                .any(|f| f.height == h.height && btc_spv::hex_eq(&f.hash, &h.hash))
+        {
+            return Err(format!("BTC duplicate header at {} (competing branch)", h.height));
+        }
         // Plain extension of the main tip.
         if h.height == self.tip_height + 1 && btc_spv::hex_eq(&h.parent_hash, &self.tip_hash) {
             self.submit_btc_header(h)?;
+            if fork_fix {
+                self.btc_drop_stale_fork();
+            }
             return Ok(true);
+        }
+        // v2.10.1: extension of the competing branch.
+        if fork_fix {
+            if let Some(last) = self.btc_fork_alt.last().cloned() {
+                if h.height == last.height + 1 && btc_spv::hex_eq(&h.parent_hash, &last.hash) {
+                    if self.btc_fork_alt.len() >= BTC_FORK_MAX {
+                        return Err("BTC fork too long".into());
+                    }
+                    let last_p = btc_spv::parse_header_hex(&last.raw)?;
+                    let lrb = Self::last_real_bits_in(&self.btc_fork_alt)
+                        .unwrap_or_else(|| self.btc_fork_last_real_bits_for(&self.btc_fork_alt));
+                    if !btc_spv::bits_ok_testnet(&last_p, &parsed, lrb, h.height) {
+                        return Err("BTC bits do not follow parent / testnet min-diff".into());
+                    }
+                    self.btc_fork_alt.push(h);
+                    return self.btc_try_promote_alt();
+                }
+            }
         }
         // Extension of the pending fork.
         if let Some(last) = self.btc_fork.last().cloned() {
@@ -544,7 +593,19 @@ impl RailState {
             if !self.btc_fork.is_empty() {
                 let cur: u128 = self.btc_fork.iter().map(header_work).fold(0, u128::saturating_add);
                 if btc_spv::header_work_bits(parsed.bits) <= cur {
-                    return Err("BTC fork has less work than the pending fork".into());
+                    if !fork_fix {
+                        return Err("BTC fork has less work than the pending fork".into());
+                    }
+                    // v2.10.1: start (or restart) the competing branch here; it
+                    // accumulates and replaces the pending fork once heavier.
+                    if !self.btc_fork_alt.is_empty() {
+                        let alt: u128 = self.btc_fork_alt.iter().map(header_work).fold(0, u128::saturating_add);
+                        if btc_spv::header_work_bits(parsed.bits) <= alt {
+                            return Err("BTC fork has less work than the competing branch".into());
+                        }
+                    }
+                    self.btc_fork_alt = vec![h];
+                    return Ok(false);
                 }
             }
             self.btc_fork = vec![h];
@@ -554,6 +615,73 @@ impl RailState {
             return Err("BTC header parent mismatch".into());
         }
         Err(format!("header height want {} got {}", self.tip_height + 1, h.height))
+    }
+
+    fn last_real_bits_in(v: &[RailHeader]) -> Option<u32> {
+        v.iter().rev().find_map(|f| {
+            btc_spv::parse_header_hex(&f.raw)
+                .ok()
+                .map(|p| p.bits)
+                .filter(|b| *b != btc_spv::POW_LIMIT_BITS)
+        })
+    }
+
+    fn btc_fork_last_real_bits_for(&self, v: &[RailHeader]) -> u32 {
+        let start = v.first().map(|f| f.height).unwrap_or(1);
+        let fallback = self
+            .headers
+            .get(&start.saturating_sub(1))
+            .and_then(|a| btc_spv::parse_header_hex(&a.raw).ok())
+            .map(|p| p.bits)
+            .unwrap_or(btc_spv::POW_LIMIT_BITS);
+        self.btc_last_real_bits(start.saturating_sub(1), fallback)
+    }
+
+    /// v2.10.1: the competing branch replaces the pending fork once its
+    /// cumulative work is strictly greater; then the usual main-chain switch
+    /// rule (strictly more work than the replaced main suffix) applies.
+    fn btc_try_promote_alt(&mut self) -> Result<bool, String> {
+        let alt_work: u128 = self.btc_fork_alt.iter().map(header_work).fold(0, u128::saturating_add);
+        let fork_work: u128 = self.btc_fork.iter().map(header_work).fold(0, u128::saturating_add);
+        if alt_work <= fork_work {
+            return Ok(false);
+        }
+        self.btc_fork = std::mem::take(&mut self.btc_fork_alt);
+        self.btc_try_switch_fork()
+    }
+
+    /// v2.10.1: drop a pending fork (and competing branch) that has not been
+    /// extended while the main chain moved more than `BTC_FORK_STALE_N` headers
+    /// past its tip with strictly more work over the same range.
+    fn btc_drop_stale_fork(&mut self) {
+        for alt in [false, true] {
+            let v = if alt { &self.btc_fork_alt } else { &self.btc_fork };
+            let (Some(first), Some(last)) = (v.first(), v.last()) else { continue };
+            if self.tip_height <= last.height.saturating_add(BTC_FORK_STALE_N) {
+                continue;
+            }
+            let w: u128 = v.iter().map(header_work).fold(0, u128::saturating_add);
+            if self.btc_main_work_from(first.height) > w {
+                if alt {
+                    self.btc_fork_alt.clear();
+                } else {
+                    self.btc_fork.clear();
+                }
+            }
+        }
+    }
+
+    /// Status only (non-consensus): summary of a pending branch.
+    pub fn btc_branch_summary(v: &[RailHeader]) -> Option<serde_json::Value> {
+        let (first, last) = (v.first()?, v.last()?);
+        let w: u128 = v.iter().map(header_work).fold(0, u128::saturating_add);
+        Some(serde_json::json!({
+            "len": v.len(),
+            "start_height": first.height,
+            "tip_height": last.height,
+            "tip_hash": last.hash,
+            "work": w.to_string(),
+        }))
     }
 
     fn btc_fork_last_real_bits(&self) -> u32 {
@@ -620,6 +748,7 @@ impl RailState {
                 return Err(format!("BTC fork switch failed: {e}"));
             }
         }
+        self.btc_fork_alt.clear();
         Ok(true)
     }
 

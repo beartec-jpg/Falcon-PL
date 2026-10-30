@@ -378,7 +378,7 @@ use thiserror::Error;
 
 pub const NETWORK_NAME: &str = "falcon-pl-private-v22";
 /// Product release line. One number on crate, status, Hello, and binaries.
-pub const PRODUCT_VERSION: &str = "2.10.0";
+pub const PRODUCT_VERSION: &str = "2.10.1";
 
 /// Version string a node puts in its Hello (`WireMsg::Hello::product_version`).
 ///
@@ -3544,6 +3544,8 @@ pub struct Node {
     pub external_addrs_from_height: u64,
     /// v2.10.0: [`crate::params_v2::empty_block_from_height`]; runtime only.
     pub empty_block_from_height: u64,
+    /// v2.10.1: [`crate::params_v2::btc4_fork_fix_from_height`]; runtime only.
+    pub btc4_fork_fix_from_height: u64,
     /// v2.9.62: rewards-v2 activation height `H_act` (`u64::MAX` = unarmed).
     /// From [`params_v2::network_rewards_v2_from_height`]; runtime only.
     pub rewards_v2_from_height: u64,
@@ -3664,6 +3666,7 @@ impl Node {
         let seat_payout_from_height = crate::params_v2::seat_payout_from_height(cfg.network_id);
         let external_addrs_from_height = crate::params_v2::external_addrs_from_height(cfg.network_id);
         let empty_block_from_height = crate::params_v2::empty_block_from_height(cfg.network_id);
+        let btc4_fork_fix_from_height = crate::params_v2::btc4_fork_fix_from_height(cfg.network_id);
         let rewards_v2_from_height = params_v2::network_rewards_v2_from_height(cfg.network_id);
         let rewards_v2_epoch = params_v2::network_rewards_v2_epoch(cfg.network_id);
         let presence_from_height = params_v2::network_presence_from_height(cfg.network_id);
@@ -3797,6 +3800,7 @@ impl Node {
             seat_payout_from_height,
             external_addrs_from_height,
             empty_block_from_height,
+            btc4_fork_fix_from_height,
             rewards_v2_from_height,
             rewards_v2_epoch,
             presence_from_height,
@@ -4117,6 +4121,11 @@ impl Node {
 
     /// v2.10.0: `SetExternalAddrs` / `Account.external_addrs` rules apply to the
     /// ledger at `height`.
+    /// v2.10.1: BTC4 fork-fix rules for the ledger being applied now (`tip + 1`).
+    pub fn btc4_fork_fix_open(&self) -> bool {
+        self.tip_height.saturating_add(1) >= self.btc4_fork_fix_from_height
+    }
+
     pub fn external_addrs_at(&self, height: u64) -> bool {
         height >= self.external_addrs_from_height
     }
@@ -6550,7 +6559,8 @@ impl Node {
         // v2.9.62 A2: from H_act, identical re-submits are rejected and work is
         // credited only for real progress (tip advance or winning reorg).
         let strict = self.rv2_open();
-        let progressed = self.bridge.rail_mut(asset)?.submit_header_ex(header, strict)?;
+        let fork_fix = self.btc4_fork_fix_open();
+        let progressed = self.bridge.rail_mut(asset)?.submit_header_ex2(header, strict, fork_fix)?;
         if let Some(w) = watcher {
             if progressed {
                 self.watcher_credit(w, 1, true);
@@ -7479,13 +7489,14 @@ impl Node {
                     // Mempool only — block apply/verify are unchanged.
                     let mut probe = self.btc_admission_probe(rail, &tx.account, tx.sequence);
                     let strict = self.rv2_open();
-                    if let Err(e) = probe.submit_header_ex(crate::bridge::RailHeader {
+                    let fork_fix = self.btc4_fork_fix_open();
+                    if let Err(e) = probe.submit_header_ex2(crate::bridge::RailHeader {
                         height: *height,
                         hash: hash.clone(),
                         parent_hash: parent_hash.clone(),
                         merkle_root: merkle_root.clone(),
                         raw: raw.clone(),
-                    }, strict) {
+                    }, strict, fork_fix) {
                         if Self::is_permanent_tx_failure(&e) {
                             return Err(e);
                         }
@@ -7599,6 +7610,7 @@ impl Node {
         }
         let mut probe = rail.clone();
         let strict = self.rv2_open();
+        let fork_fix = self.btc4_fork_fix_open();
         for sibs in by_seq.values() {
             let mut ok = false;
             for t in sibs {
@@ -7612,13 +7624,13 @@ impl Node {
                         raw,
                     } if asset == &rail.asset => {
                         if probe
-                            .submit_header_ex(crate::bridge::RailHeader {
+                            .submit_header_ex2(crate::bridge::RailHeader {
                                 height: *height,
                                 hash: hash.clone(),
                                 parent_hash: parent_hash.clone(),
                                 merkle_root: merkle_root.clone(),
                                 raw: raw.clone(),
-                            }, strict)
+                            }, strict, fork_fix)
                             .is_ok()
                         {
                             ok = true;
@@ -14577,6 +14589,9 @@ impl Node {
                 "tip_hash": r.tip_hash,
                 "header_count": r.headers.len(),
                 "header_floor": r.btc_header_floor(),
+                // v2.10.1: status only (non-consensus) view of pending BTC branches.
+                "btc_fork": crate::bridge::RailState::btc_branch_summary(&r.btc_fork),
+                "btc_fork_alt": crate::bridge::RailState::btc_branch_summary(&r.btc_fork_alt),
                 "header_tail": r.headers.iter().rev().take(64).map(|(hgt, hdr)| serde_json::json!({
                     "height": hgt,
                     "hash": hdr.hash,
@@ -16122,8 +16137,8 @@ mod tests {
 
     #[test]
     fn product_version_is_locked_to_crate() {
-        assert_eq!(PRODUCT_VERSION, "2.10.0");
-        assert_eq!(env!("CARGO_PKG_VERSION"), "2.10.0");
+        assert_eq!(PRODUCT_VERSION, "2.10.1");
+        assert_eq!(env!("CARGO_PKG_VERSION"), "2.10.1");
         assert_eq!(NodeRole::from_exe_name("/opt/bin/falcon-pl-val"), Some(NodeRole::Val));
         assert_eq!(NodeRole::from_exe_name("falcon-pl-archive"), Some(NodeRole::Archive));
         assert_eq!(NodeRole::VAL_MAX_CHAIN, 128);
@@ -23775,3 +23790,6 @@ mod seat_payout_tests;
 
 #[cfg(test)]
 mod v2_10_activation_tests;
+
+#[cfg(test)]
+mod btc4_fork_fix_tests;

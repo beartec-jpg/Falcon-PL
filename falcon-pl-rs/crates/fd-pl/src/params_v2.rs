@@ -372,6 +372,19 @@ pub const TESTNET_2300_EXTERNAL_ADDRS_FROM_HEIGHT: u64 = TESTNET_2300_V2_10_FROM
 /// Empty-fallback-block activation (2300).
 pub const TESTNET_2300_EMPTY_BLOCK_FROM_HEIGHT: u64 = TESTNET_2300_V2_10_FROM_HEIGHT;
 
+/// v2.10.1: BTC4 header fork fix activation (2300). Before it, 2.10.1 applies
+/// BTC4 `RailHeader` txs exactly like 2.10.0.
+pub const TESTNET_2300_BTC4_FORK_FIX_HEIGHT: u64 = 797_000;
+
+/// BTC4 fork-fix activation height (`u64::MAX` = never). Non-2300 networks may
+/// set `FPL_BTC4_FORK_FIX_FROM_HEIGHT` (devnets / tests).
+pub fn btc4_fork_fix_from_height(network_id: u32) -> u64 {
+    if network_id == NETWORK_ID_PUBLIC_TESTNET_2300 {
+        return TESTNET_2300_BTC4_FORK_FIX_HEIGHT;
+    }
+    env_u64("FPL_BTC4_FORK_FIX_FROM_HEIGHT").unwrap_or(u64::MAX)
+}
+
 /// External-address activation height (`u64::MAX` = never). Non-2300 networks
 /// may set `FPL_EXTERNAL_ADDRS_FROM_HEIGHT` (devnets / tests).
 pub fn external_addrs_from_height(network_id: u32) -> u64 {
