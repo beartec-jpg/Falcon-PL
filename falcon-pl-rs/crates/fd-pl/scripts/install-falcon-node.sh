@@ -157,7 +157,7 @@ resolve_home() {
   if [[ -z "$FALCON_HOME" ]]; then
     # Re-use an existing install if we are running as its manager copy.
     local src="${BASH_SOURCE[0]:-}" self_dir
-    [[ -n "$src" && -e "$src" ]] && src="$(readlink -f "$src" 2>/dev/null || echo "$src")"
+    if [[ -n "$src" && -e "$src" ]]; then src="$(readlink -f "$src" 2>/dev/null || echo "$src")"; fi
     self_dir="$(cd "$(dirname "${src:-.}")" 2>/dev/null && pwd || true)"
     if [[ -n "$self_dir" && -f "$self_dir/../config/node.env" ]]; then
       FALCON_HOME="$(cd "$self_dir/.." && pwd)"
@@ -174,9 +174,11 @@ resolve_home() {
   if [[ -f "$NODE_ENV" ]]; then
     local u; u="$(kv_get "$NODE_ENV" UNIT)"
     if [[ -n "$u" ]]; then UNIT="$u"; AUTOU_UNIT="$u-autoupgrade"; fi
-    [[ "$(kv_get "$NODE_ENV" ADOPTED)" == "1" ]] && ADOPTED=1
-    u="$(kv_get "$NODE_ENV" SVC_USER)"; [[ -n "$u" ]] && SVC_USER="$u"
+    if [[ "$(kv_get "$NODE_ENV" ADOPTED)" == "1" ]]; then ADOPTED=1; fi
+    u="$(kv_get "$NODE_ENV" SVC_USER)"
+    if [[ -n "$u" ]]; then SVC_USER="$u"; fi
   fi
+  return 0
 }
 
 have() { command -v "$1" >/dev/null 2>&1; }

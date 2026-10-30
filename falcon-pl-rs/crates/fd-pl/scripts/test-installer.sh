@@ -118,4 +118,10 @@ OUT="$("$BIN/run-node.sh")"
 ADOPTED=1; ( cmd_uninstall ) >/dev/null 2>&1 && { echo "FAIL: uninstall must refuse an adopted seat" >&2; exit 1; }
 ADOPTED=0
 
+# --- Test 6 (2.10.1 regression): resolve_home on a pre-2.10.1 node.env (no UNIT/ADOPTED/SVC_USER) under set -e ---
+OLDH="$TMP/oldhome"; mkdir -p "$OLDH/config"
+printf 'NODE_ID=old1\nVERSION=2.10.0\nAUTOUPGRADE=off\n' >"$OLDH/config/node.env"
+OUT6="$(bash -c 'set -euo pipefail; source "$1"; FALCON_HOME="$2"; resolve_home; echo ok' _ "$FUNCS_FILE" "$OLDH" 2>&1 || true)"; [[ "$OUT6" == *ok ]] || { echo "FAIL: resolve_home aborts on a pre-2.10.1 node.env" >&2; exit 1; }
+printf 'ADOPTED=1\nUNIT=falcon-pl-v99\nSVC_USER=falcon\n' >>"$OLDH/config/node.env"; OUT6="$(bash -c 'set -euo pipefail; source "$1"; FALCON_HOME="$2"; resolve_home; echo "$ADOPTED $UNIT $AUTOU_UNIT $SVC_USER"' _ "$FUNCS_FILE" "$OLDH" 2>&1 || true)"; [[ "$OUT6" == *"1 falcon-pl-v99 falcon-pl-v99-autoupgrade falcon" ]] || { echo "FAIL: resolve_home adopted fields" >&2; exit 1; }
+
 echo "PASS: all installer tests (Items #1, #8, #13, 2.10.1 autoupgrade default + adopt) succeeded"
