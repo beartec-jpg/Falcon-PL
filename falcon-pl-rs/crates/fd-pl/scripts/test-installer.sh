@@ -89,4 +89,33 @@ rollback_autoupgrade "2.9.81" >/dev/null 2>&1
 [[ "$(cat "$BIN/falcon-pl-ctl")" == "v2.9.81-ctl" ]] || { echo "FAIL: falcon-pl-ctl not rolled back" >&2; exit 1; }
 [[ "$(kv_get "$NODE_ENV" VERSION)" == "2.9.81" ]] || { echo "FAIL: VERSION not rolled back" >&2; exit 1; }
 
-echo "PASS: all installer tests (Items #1, #8, #13) succeeded"
+# --- Test 4 (2.10.1): auto-upgrade ON by default, opt-out remembered ---
+SCTL_LOG="$TMP/sctl.log"; : >"$SCTL_LOG"
+sctl() { echo "$*" >>"$SCTL_LOG"; }
+SERVICE_MODE=system NO_AUTOUPGRADE=0
+sed -i '/^AUTOUPGRADE/d' "$NODE_ENV"
+autoupgrade_apply_default >/dev/null
+[[ "$(kv_get "$NODE_ENV" AUTOUPGRADE)" == "on" ]] || { echo "FAIL: default should enable autoupgrade" >&2; exit 1; }
+grep -q "enable --now $AUTOU_UNIT.timer" "$SCTL_LOG" || { echo "FAIL: timer not enabled by default" >&2; exit 1; }
+kv_set "$NODE_ENV" AUTOUPGRADE off   # old installers wrote off by default: upgrade turns it on
+autoupgrade_apply_default >/dev/null
+[[ "$(kv_get "$NODE_ENV" AUTOUPGRADE)" == "on" ]] || { echo "FAIL: upgrade should turn old default-off on" >&2; exit 1; }
+NO_AUTOUPGRADE=1 autoupgrade_apply_default >/dev/null
+[[ "$(kv_get "$NODE_ENV" AUTOUPGRADE_OPTOUT)" == "1" && "$(kv_get "$NODE_ENV" AUTOUPGRADE)" == "off" ]] || { echo "FAIL: --no-autoupgrade not recorded" >&2; exit 1; }
+NO_AUTOUPGRADE=0; autoupgrade_apply_default >/dev/null
+[[ "$(kv_get "$NODE_ENV" AUTOUPGRADE)" == "off" ]] || { echo "FAIL: opt-out must survive a later upgrade" >&2; exit 1; }
+grep -q '^OnActiveSec=15min' "$INSTALLER" || { echo "FAIL: timer should start 15 min after enable" >&2; exit 1; }
+SERVICE_MODE=none
+
+# --- Test 5 (2.10.1): adopted seat runner keeps the original args + working dir ---
+W="$TMP/seat"; mkdir -p "$W/keys"
+kv_set "$NODE_ENV" WORKDIR "$W"
+printf '%s\n' "--id v99 --join --listen 0.0.0.0:19399 --keys-dir keys --snapshot snapshots/v99.json" >"$CONF/node.args"
+write_adopt_runner
+printf '#!/usr/bin/env bash\necho "$PWD|$*"\n' >"$BIN/falcon-pl-node"; chmod 0755 "$BIN/falcon-pl-node"
+OUT="$("$BIN/run-node.sh")"
+[[ "$OUT" == "$W|--id v99 --join --listen 0.0.0.0:19399 --keys-dir keys --snapshot snapshots/v99.json" ]] || { echo "FAIL: adopt runner args/dir wrong: $OUT" >&2; exit 1; }
+ADOPTED=1; ( cmd_uninstall ) >/dev/null 2>&1 && { echo "FAIL: uninstall must refuse an adopted seat" >&2; exit 1; }
+ADOPTED=0
+
+echo "PASS: all installer tests (Items #1, #8, #13, 2.10.1 autoupgrade default + adopt) succeeded"

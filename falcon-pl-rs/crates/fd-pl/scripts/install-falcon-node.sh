@@ -33,7 +33,7 @@
 # (and an interactive confirmation unless --yes). Docs: docs/PUBLIC_NODE.md in the Falcon-PL repo.
 set -euo pipefail
 
-INSTALLER_VERSION="2.10.0"
+INSTALLER_VERSION="2.10.1"
 RELEASE_REPO="${FALCON_RELEASE_REPO:-beartec-jpg/falcon-pl-releases}"
 # Pinned minisign public key of the Falcon PL release key (key id 8ACFFC29EE09FAEC).
 # A valid SHA256SUMS.minisig is REQUIRED. FALCON_MINISIGN_PUBKEY="" disables the check, but only together
@@ -76,7 +76,7 @@ POLL_SECS="${FALCON_POLL_SECS:-60}"
 usage() {
   sed -n '2,30p' "${BASH_SOURCE[0]:-/dev/null}" 2>/dev/null | sed 's/^# \{0,1\}//' || true
   cat <<USAGE
-Commands: install (default) | status | balance | dash | web | logs | start | stop | restart | upgrade | autoupgrade [on|off|status|run] | validator | heartbeat | uninstall
+Commands: install (default) | status | balance | dash | web | logs | start | stop | restart | upgrade | autoupgrade [on|off|status|run] | adopt | validator | heartbeat | uninstall
 Options:
   --validator            validator mode (application -> approval -> funding -> bond -> activation)
   --id NAME              validator id (lowercase letters, digits, '-', 3-32 chars)
@@ -100,10 +100,16 @@ Options:
   --allow-remote         web: allow a non-loopback --web-listen (no auth; trusted networks only)
   --account NAME         balance: account to show (default: this node's id)
   --yes                  non-interactive (assume yes to confirmations)
+  --no-autoupgrade       install/upgrade/adopt: leave the auto-upgrade timer off (default: on, hourly, signed releases only)
+  --unit NAME            adopt: existing systemd unit of a hand-built node to bring under falcon-node
+                         (keeps its keys, data, id, peers and unit; only ExecStart is redirected via a drop-in)
 USAGE
 }
 
 AUTOUPGRADE_ACTION="status"
+NO_AUTOUPGRADE=0
+ADOPT_UNIT=""
+ADOPTED=0
 AUTOUPGRADE_JITTER_SECS="${FALCON_AUTOUPGRADE_JITTER_SECS:-}"
 SAVED_NODE_ID=""
 
@@ -134,6 +140,8 @@ parse_args() {
       --web-listen) WEB_LISTEN="${2:-}"; shift 2 ;;
       --account) BAL_ACCOUNT="${2:-}"; shift 2 ;;
       --yes|-y) YES=1; shift ;;
+      --no-autoupgrade) NO_AUTOUPGRADE=1; shift ;;
+      --unit) ADOPT_UNIT="${2:-}"; shift 2 ;;
       -h|--help) usage; exit 0 ;;
       *) die "unknown argument: $1 (see --help)" ;;
     esac
@@ -148,7 +156,9 @@ UNIT="falcon-pl-node"
 resolve_home() {
   if [[ -z "$FALCON_HOME" ]]; then
     # Re-use an existing install if we are running as its manager copy.
-    local self_dir; self_dir="$(cd "$(dirname "${BASH_SOURCE[0]:-.}")" 2>/dev/null && pwd || true)"
+    local src="${BASH_SOURCE[0]:-}" self_dir
+    [[ -n "$src" && -e "$src" ]] && src="$(readlink -f "$src" 2>/dev/null || echo "$src")"
+    self_dir="$(cd "$(dirname "${src:-.}")" 2>/dev/null && pwd || true)"
     if [[ -n "$self_dir" && -f "$self_dir/../config/node.env" ]]; then
       FALCON_HOME="$(cd "$self_dir/.." && pwd)"
     elif [[ $IS_ROOT -eq 1 ]]; then
@@ -160,6 +170,13 @@ resolve_home() {
   BIN="$FALCON_HOME/bin"; KEYS="$FALCON_HOME/keys"; DATA="$FALCON_HOME/data"; LOGS="$FALCON_HOME/logs"
   CONF="$FALCON_HOME/config"; RUN="$FALCON_HOME/run"; VALDIR="$FALCON_HOME/validator"
   NODE_ENV="$CONF/node.env"; NET_ENV="$CONF/$NETWORK_PROFILE"
+  # 2.10.1: an adopted (hand-built) seat keeps its own unit name and service user.
+  if [[ -f "$NODE_ENV" ]]; then
+    local u; u="$(kv_get "$NODE_ENV" UNIT)"
+    if [[ -n "$u" ]]; then UNIT="$u"; AUTOU_UNIT="$u-autoupgrade"; fi
+    [[ "$(kv_get "$NODE_ENV" ADOPTED)" == "1" ]] && ADOPTED=1
+    u="$(kv_get "$NODE_ENV" SVC_USER)"; [[ -n "$u" ]] && SVC_USER="$u"
+  fi
 }
 
 have() { command -v "$1" >/dev/null 2>&1; }
@@ -497,7 +514,9 @@ install_files() {
   BIN_CHANGED=$changed
   if [[ $IS_ROOT -eq 1 && "$SERVICE_MODE" == "system" ]]; then
     chown -R "$SVC_USER:$SVC_USER" "$FALCON_HOME"
-    ln -sf "$BIN/falcon-node" /usr/local/bin/falcon-node
+    if [[ $ADOPTED -ne 1 || ! -e /usr/local/bin/falcon-node || "$(readlink -f /usr/local/bin/falcon-node)" == "$BIN/falcon-node" ]]; then
+      ln -sf "$BIN/falcon-node" /usr/local/bin/falcon-node
+    fi
   else
     mkdir -p "$HOME/.local/bin" && ln -sf "$BIN/falcon-node" "$HOME/.local/bin/falcon-node" || true
   fi
@@ -1319,7 +1338,7 @@ AUTOUP
   chmod 0755 "$BIN/falcon-node-autoupgrade"
   if [[ $IS_ROOT -eq 1 && "$SERVICE_MODE" == "system" ]]; then
     chown "$SVC_USER:$SVC_USER" "$BIN/falcon-node-autoupgrade" 2>/dev/null || true
-    if [[ ! -e /usr/local/bin/falcon-node-autoupgrade || -L /usr/local/bin/falcon-node-autoupgrade ]]; then
+    if [[ ! -e /usr/local/bin/falcon-node-autoupgrade || ( -L /usr/local/bin/falcon-node-autoupgrade && $ADOPTED -ne 1 ) ]]; then
       ln -sf "$BIN/falcon-node-autoupgrade" /usr/local/bin/falcon-node-autoupgrade
     fi
   else
@@ -1345,9 +1364,9 @@ StandardError=append:$LOGS/autoupgrade.log
 U
   cat >"$d/$AUTOU_UNIT.timer" <<U
 [Unit]
-Description=Periodic Falcon PL node auto-upgrade check (disabled by default)
+Description=Periodic Falcon PL node auto-upgrade check ($FALCON_HOME)
 [Timer]
-OnBootSec=15min
+OnActiveSec=15min
 OnUnitActiveSec=1h
 Persistent=true
 [Install]
@@ -1404,6 +1423,29 @@ rollback_autoupgrade() { # prev_ver
   fi
 }
 
+# 2.10.1: auto-upgrade is ON by default for install and upgrade. Opt out with
+# --no-autoupgrade or 'falcon-node autoupgrade off' (remembered as AUTOUPGRADE_OPTOUT=1).
+autoupgrade_apply_default() {
+  if [[ "$SERVICE_MODE" == "none" ]]; then
+    [[ -n "$(kv_get "$NODE_ENV" AUTOUPGRADE)" ]] || kv_set "$NODE_ENV" AUTOUPGRADE off
+    return 0
+  fi
+  if [[ $NO_AUTOUPGRADE -eq 1 ]]; then
+    kv_set "$NODE_ENV" AUTOUPGRADE off; kv_set "$NODE_ENV" AUTOUPGRADE_OPTOUT 1
+    sctl disable --now "$AUTOU_UNIT.timer" >/dev/null 2>&1 || true
+    ok "autoupgrade off (--no-autoupgrade)"; return 0
+  fi
+  if [[ "$(kv_get "$NODE_ENV" AUTOUPGRADE_OPTOUT)" == "1" ]]; then
+    say "autoupgrade stays off (you opted out; 'falcon-node autoupgrade on' re-enables it)"; return 0
+  fi
+  kv_set "$NODE_ENV" AUTOUPGRADE on
+  if sctl enable --now "$AUTOU_UNIT.timer" >/dev/null 2>&1; then
+    ok "autoupgrade on (default; hourly, signed releases only; opt out: --no-autoupgrade or 'falcon-node autoupgrade off')"
+  else
+    warn "could not enable $AUTOU_UNIT.timer"
+  fi
+}
+
 cmd_autoupgrade() {
   load_installed
   local act="${AUTOUPGRADE_ACTION:-status}"
@@ -1411,6 +1453,7 @@ cmd_autoupgrade() {
     on|enable)
       write_autoupgrade
       kv_set "$NODE_ENV" AUTOUPGRADE on
+      kv_set "$NODE_ENV" AUTOUPGRADE_OPTOUT 0
       if [[ -n "${AUTOUPGRADE_JITTER_SECS:-}" ]]; then
         kv_set "$NODE_ENV" AUTOUPGRADE_JITTER_SECS "$AUTOUPGRADE_JITTER_SECS"
       fi
@@ -1422,6 +1465,7 @@ cmd_autoupgrade() {
     off|disable)
       write_autoupgrade
       kv_set "$NODE_ENV" AUTOUPGRADE off
+      kv_set "$NODE_ENV" AUTOUPGRADE_OPTOUT 1
       if [[ "$SERVICE_MODE" != "none" ]]; then
         sctl disable --now "$AUTOU_UNIT.timer" >/dev/null 2>&1 || true
       fi
@@ -1485,9 +1529,9 @@ cmd_install() {
   install_files
   ensure_node_config
   kv_set "$NODE_ENV" CHANNEL "$CHANNEL"
-  [[ -n "$(kv_get "$NODE_ENV" AUTOUPGRADE)" ]] || kv_set "$NODE_ENV" AUTOUPGRADE off
   write_unit
   write_autoupgrade
+  autoupgrade_apply_default
   [[ $WATCHER -eq 1 ]] && install_watcher
   install_payout
   rm -rf "$DL"
@@ -1520,8 +1564,14 @@ DONE
 cmd_upgrade() {
   load_installed
   preflight; download_release; require_public_seed; check_network_version "$DL/falcon-pl-$REL_VERSION/falcon-pl-ctl"
-  install_files; write_runner; write_unit; write_autoupgrade; rm -rf "$DL"
-  install_qc_profile; install_ring_publics
+  install_files
+  if [[ $ADOPTED -eq 1 ]]; then
+    write_adopt_runner; write_adopt_dropin   # hand-built seat: keep its unit, keys and arguments
+  else
+    write_runner; write_unit
+  fi
+  write_autoupgrade; rm -rf "$DL"
+  [[ $ADOPTED -eq 1 ]] || { install_qc_profile; install_ring_publics; }
   # 2.9.74: write node.env BEFORE the restart. Rewriting it right after the
   # restart raced the new runner ("no NODE_ID", exit 78, unit not restarted).
   [[ -n "$(kv_get "$NODE_ENV" NODE_ID)" || -z "${SAVED_NODE_ID:-}" ]] || kv_set "$NODE_ENV" NODE_ID "$SAVED_NODE_ID"
@@ -1537,10 +1587,125 @@ cmd_upgrade() {
   else
     ok "already on $REL_VERSION"
   fi
+  autoupgrade_apply_default
+}
+
+# ---------- adopt (2.10.1): bring a hand-built node under falcon-node ----------
+# Keeps the seat's systemd unit (User, EnvironmentFile, drop-ins, logs), its working
+# directory, keys, snapshot and exact command-line arguments. Only ExecStart is
+# redirected, through a drop-in, to <home>/bin/run-node.sh, which runs the verified
+# release binary with the same arguments. Never generates or reads keys.
+write_adopt_runner() {
+  cat >"$BIN/run-node.sh" <<'RUNNER'
+#!/usr/bin/env bash
+# Generated by falcon-node (adopted seat). Runs the release binary in the seat's
+# original directory with its original arguments (config/node.args).
+set -euo pipefail
+H="$(cd "$(dirname "$0")/.." && pwd)"
+g() { local l; l="$(grep -E "^$2=" "$1" | tail -1 || true)"; printf '%s' "${l#*=}"; }
+W="$(g "$H/config/node.env" WORKDIR)"
+[[ -n "$W" && -d "$W" ]] || { echo "no WORKDIR in $H/config/node.env" >&2; exit 78; }
+read -r -a A <"$H/config/node.args" || true
+[[ ${#A[@]} -gt 0 ]] || { echo "empty $H/config/node.args" >&2; exit 78; }
+cd "$W"
+exec "$H/bin/falcon-pl-node" "${A[@]}"
+RUNNER
+  chmod 0755 "$BIN/run-node.sh"
+}
+
+write_adopt_dropin() {
+  local d="/etc/systemd/system/$UNIT.service.d" p tmp
+  p="$d/90-falcon-node-adopt.conf"; mkdir -p "$d"; tmp="$(mktemp)"
+  cat >"$tmp" <<U
+# Managed by falcon-node (adopted seat, home $FALCON_HOME). To undo: delete this file,
+# systemctl daemon-reload, restart $UNIT (original unit kept in $CONF/adopted-$UNIT.service.orig).
+[Service]
+ExecStart=
+ExecStart=$BIN/run-node.sh
+U
+  if [[ -f "$p" ]] && cmp -s "$tmp" "$p"; then rm -f "$tmp"; UNIT_CHANGED=0; else mv "$tmp" "$p"; chmod 0644 "$p"; UNIT_CHANGED=1; fi
+  sctl daemon-reload
+}
+
+cmd_adopt() {
+  [[ $IS_ROOT -eq 1 ]] || die "adopt must run as root"
+  have systemctl && [[ -d /run/systemd/system ]] || die "adopt needs systemd"
+  [[ "$ADOPT_UNIT" =~ ^[A-Za-z0-9@._-]+$ ]] || die "adopt: --unit NAME is required (the existing systemd unit, e.g. falcon-pl-v13)"
+  ADOPT_UNIT="${ADOPT_UNIT%.service}"
+  [[ ! -f "$NODE_ENV" ]] || die "adopt: $FALCON_HOME already holds an install; pick another --home (nothing changed)"
+  local frag; frag="$(systemctl show -p FragmentPath --value "$ADOPT_UNIT.service" 2>/dev/null || true)"
+  [[ -n "$frag" && -f "$frag" ]] || die "adopt: unit $ADOPT_UNIT not found"
+  [[ "$(systemctl cat "$ADOPT_UNIT.service" 2>/dev/null | grep -cE '^ExecStart=')" == "1" ]] \
+    || die "adopt: $ADOPT_UNIT has more than one ExecStart (drop-in override?); nothing changed"
+  local es wd usr
+  es="$(grep -E '^ExecStart=' "$frag" | tail -1)"; es="${es#ExecStart=}"
+  wd="$(grep -E '^WorkingDirectory=' "$frag" | tail -1 | cut -d= -f2-)"
+  usr="$(grep -E '^User=' "$frag" | tail -1 | cut -d= -f2-)"; usr="${usr:-root}"
+  [[ -n "$wd" && -d "$wd" ]] || die "adopt: $ADOPT_UNIT has no usable WorkingDirectory"
+  [[ "$es" =~ ^[A-Za-z0-9.,:/@_+=\ -]+$ ]] || die "adopt: ExecStart uses quoting/variables that adopt does not handle; nothing changed"
+  local -a argv; read -r -a argv <<<"$es"
+  local oldbin="${argv[0]}" nid="" lst="" kd="" i
+  [[ -x "$oldbin" ]] || die "adopt: $oldbin is not executable"
+  for ((i = 1; i < ${#argv[@]}; i++)); do
+    case "${argv[$i]}" in
+      --id) nid="${argv[$((i + 1))]:-}" ;;
+      --listen) lst="${argv[$((i + 1))]:-}" ;;
+      --keys-dir) kd="${argv[$((i + 1))]:-}" ;;
+    esac
+  done
+  [[ "$nid" =~ ^[a-z][a-z0-9-]{0,31}$ ]] || die "adopt: no valid --id in $ADOPT_UNIT ExecStart"
+  [[ -n "$lst" && -n "$kd" ]] || die "adopt: ExecStart lacks --listen/--keys-dir"
+  ( cd "$wd" && [[ -d "$kd" ]] ) || die "adopt: keys dir $kd not found under $wd"
+  case "$lst" in 0.0.0.0:*|:*) lst="127.0.0.1:${lst##*:}" ;; esac
+  # Adopt the version that is running, so adopting changes nothing but the launcher.
+  [[ -n "$WANT_VERSION" ]] || WANT_VERSION="$("$oldbin" --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)"
+  [[ -n "$WANT_VERSION" ]] || die "adopt: could not read the running version from $oldbin --version (pass --version X.Y.Z)"
+  SERVICE_MODE="system"; SVC_USER="$usr"; UNIT="$ADOPT_UNIT"; AUTOU_UNIT="$UNIT-autoupgrade"; ADOPTED=1
+  id "$SVC_USER" >/dev/null 2>&1 || die "adopt: unit user $SVC_USER does not exist"
+  say "adopting $UNIT (id $nid, user $SVC_USER, dir $wd) into $FALCON_HOME at $WANT_VERSION"
+  preflight; download_release; require_public_seed; check_network_version "$DL/falcon-pl-$REL_VERSION/falcon-pl-ctl"
+  if ! cmp -s "$DL/falcon-pl-$REL_VERSION/falcon-pl-node" "$oldbin"; then
+    [[ $FORCE_VERSION -eq 1 ]] || { rm -rf "$DL"; die "adopt: $oldbin is not the signed $REL_VERSION release binary; nothing changed (--force-version adopts anyway)"; }
+    warn "$oldbin differs from the $REL_VERSION release binary; adopting anyway (--force-version)"
+  else
+    ok "running binary is the signed $REL_VERSION release binary"
+  fi
+  install_files
+  printf '%s\n' "${argv[*]:1}" >"$CONF/node.args"
+  cp -p "$frag" "$CONF/adopted-$UNIT.service.orig"
+  touch "$NODE_ENV"
+  kv_set "$NODE_ENV" NODE_ID "$nid"
+  kv_set "$NODE_ENV" LISTEN "$lst"
+  kv_set "$NODE_ENV" SERVICE_MODE system
+  kv_set "$NODE_ENV" VERSION "$REL_VERSION"
+  kv_set "$NODE_ENV" CHANNEL "${CHANNEL:-stable}"
+  kv_set "$NODE_ENV" ADOPTED 1
+  kv_set "$NODE_ENV" UNIT "$UNIT"
+  kv_set "$NODE_ENV" SVC_USER "$SVC_USER"
+  kv_set "$NODE_ENV" WORKDIR "$wd"
+  chown -R "$SVC_USER:$SVC_USER" "$CONF" 2>/dev/null || true
+  chmod 0644 "$CONF/node.args"
+  write_adopt_runner
+  write_autoupgrade
+  rm -rf "$DL"
+  local st prev=0; st="$(mktemp)"
+  local_status "$st" && prev="$(json_num "$st" tip_height)"; rm -f "$st"
+  write_adopt_dropin
+  if [[ $START -eq 1 ]]; then
+    svc_restart
+    if ! FALCON_AUTOUPGRADE_HEALTH_TIMEOUT="${FALCON_AUTOUPGRADE_HEALTH_TIMEOUT:-300}" autoupgrade_health_check "${prev:-0}"; then
+      warn "adopted $UNIT did not come back healthy; restoring its original ExecStart"
+      rm -f "/etc/systemd/system/$UNIT.service.d/90-falcon-node-adopt.conf"; sctl daemon-reload; svc_restart || true
+      die "adopt failed; $UNIT is back on $oldbin (managed files left in $FALCON_HOME for inspection)"
+    fi
+  fi
+  # Auto-upgrade is switched on by the next 'upgrade', which installs the matching manager.
+  ok "adopted $UNIT into $FALCON_HOME (keys, data and arguments unchanged). Next: curl -fsSL $(net SITE)/install.sh | bash -s -- upgrade$( [[ "$FALCON_HOME" != /var/lib/falcon-pl-2300 ]] && echo " --home $FALCON_HOME")"
 }
 
 cmd_uninstall() {
   load_installed
+  [[ $ADOPTED -ne 1 ]] || die "adopted seat: uninstall is not supported (it would remove the seat's own unit); delete /etc/systemd/system/$UNIT.service.d/90-falcon-node-adopt.conf to undo the adoption"
   if [[ $PURGE -eq 1 ]]; then
     confirm "PURGE $FALCON_HOME including keys (validator/bond keys and any funds they control become unrecoverable)?" || die "aborted"
   fi
@@ -1609,6 +1774,7 @@ main() {
     stop) load_installed; svc_stop; ok stopped ;;
     restart) load_installed; svc_restart; ok restarted ;;
     upgrade) cmd_upgrade ;;
+    adopt) cmd_adopt ;;
     autoupgrade) cmd_autoupgrade ;;
     validator) cmd_validator ;;
     heartbeat) cmd_heartbeat ;;
