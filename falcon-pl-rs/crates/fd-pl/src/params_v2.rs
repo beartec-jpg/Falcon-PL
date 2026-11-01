@@ -374,7 +374,7 @@ pub const TESTNET_2300_EMPTY_BLOCK_FROM_HEIGHT: u64 = TESTNET_2300_V2_10_FROM_HE
 
 /// v2.10.1: BTC4 header fork fix activation (2300). Before it, 2.10.1 applies
 /// BTC4 `RailHeader` txs exactly like 2.10.0.
-pub const TESTNET_2300_BTC4_FORK_FIX_HEIGHT: u64 = 797_000;
+pub const TESTNET_2300_BTC4_FORK_FIX_HEIGHT: u64 = 775_000;
 
 /// BTC4 fork-fix activation height (`u64::MAX` = never). Non-2300 networks may
 /// set `FPL_BTC4_FORK_FIX_FROM_HEIGHT` (devnets / tests).
