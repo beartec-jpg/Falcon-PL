@@ -319,6 +319,7 @@
 #![recursion_limit = "512"]
 
 pub mod accounts;
+pub mod pieces;
 pub mod bitvm;
 pub mod bitvm2_exit;
 pub mod bitvm2_instance;
@@ -378,7 +379,7 @@ use thiserror::Error;
 
 pub const NETWORK_NAME: &str = "falcon-pl-private-v22";
 /// Product release line. One number on crate, status, Hello, and binaries.
-pub const PRODUCT_VERSION: &str = "2.10.2";
+pub const PRODUCT_VERSION: &str = "2.10.3";
 
 /// Version string a node puts in its Hello (`WireMsg::Hello::product_version`).
 ///
@@ -513,11 +514,16 @@ impl HelloSession {
             WireMsg::Hello {
                 product_version,
                 hello_network_id,
+                release_version,
                 ..
-            } => match node.hello_reject_reason(*hello_network_id, product_version) {
+            } => match node
+                .hello_reject_reason(*hello_network_id, product_version)
+                .map(str::to_string)
+                .or_else(|| node.hello_release_reject(release_version))
+            {
                 Some(reason) => {
                     self.accepted_version = None;
-                    HelloGate::Close(reason.to_string())
+                    HelloGate::Close(reason)
                 }
                 None => {
                     self.accepted_version = Some(product_version.clone());
@@ -537,6 +543,54 @@ impl HelloSession {
 }
 
 pub const HELLO_ERR_NETWORK_ID: &str = "network_id mismatch";
+/// v2.10.3: Hello refused because the peer's release is older than
+/// [`HELLO_MIN_RELEASE`] once the local tip is past the activation height.
+/// Shown for a peer whose Hello had no `release_version` (2.10.2 or older).
+pub const PEER_RELEASE_NONE: &str = "none (pre-2.10.3)";
+
+pub const HELLO_ERR_RELEASE_TOO_OLD: &str = "release_version too old";
+
+/// Lowest release a peer may advertise after
+/// [`crate::params_v2::hello_min_release_from_height`]. **TBD**: bump to the
+/// release that ships with the activation (peers below it fork at the next
+/// consensus height, e.g. the BTC4 fork fix at 775,000).
+pub const HELLO_MIN_RELEASE: &str = "2.10.3";
+
+pub fn parse_release_pub(v: &str) -> Option<(u64, u64, u64)> {
+    parse_release(v)
+}
+
+fn parse_release(v: &str) -> Option<(u64, u64, u64)> {
+    let mut it = v.trim().split('.');
+    let a = it.next()?.parse().ok()?;
+    let b = it.next()?.parse().ok()?;
+    let c = it.next()?.parse().ok()?;
+    if it.next().is_some() {
+        return None;
+    }
+    Some((a, b, c))
+}
+
+/// `None` = acceptable. Otherwise a human-readable reason (for logs).
+pub fn hello_release_reject_detail(peer_release: &str, min: &str) -> Option<String> {
+    let Some(want) = parse_release(min) else {
+        return None;
+    };
+    if peer_release.is_empty() {
+        return Some(format!(
+            "{HELLO_ERR_RELEASE_TOO_OLD}: peer sent no release_version (binary older than 2.10.3), minimum {min}"
+        ));
+    }
+    match parse_release(peer_release) {
+        None => Some(format!(
+            "{HELLO_ERR_RELEASE_TOO_OLD}: unparseable release_version {peer_release:?}, minimum {min}"
+        )),
+        Some(got) if got < want => Some(format!(
+            "{HELLO_ERR_RELEASE_TOO_OLD}: peer {peer_release} < minimum {min}"
+        )),
+        Some(_) => None,
+    }
+}
 /// v2.9.65 (C-1) refusal: a first key that nothing commits to.
 pub const KEY_BIND_REFUSED: &str = "key bind: account has no key and this key is not committed (fund it with pay_to_key, or use the key's classic address)";
 pub const PAY_TO_KEY_NOT_ACTIVE: &str = "pay_to_key: not active before the key-bind height";
@@ -3546,6 +3600,11 @@ pub struct Node {
     pub empty_block_from_height: u64,
     /// v2.10.1: [`crate::params_v2::btc4_fork_fix_from_height`]; runtime only.
     pub btc4_fork_fix_from_height: u64,
+    /// v2.10.3 (TBD): [`crate::params_v2::hello_min_release_from_height`]; runtime only.
+    pub hello_min_release_from_height: u64,
+    /// v2.10.3: last Hello `release_version` per peer id ("" = pre-2.10.3)
+    /// and when it was seen (`now_ms`). Observability only; runtime only.
+    pub peer_releases: BTreeMap<String, (String, u64)>,
     /// v2.9.62: rewards-v2 activation height `H_act` (`u64::MAX` = unarmed).
     /// From [`params_v2::network_rewards_v2_from_height`]; runtime only.
     pub rewards_v2_from_height: u64,
@@ -3667,6 +3726,7 @@ impl Node {
         let external_addrs_from_height = crate::params_v2::external_addrs_from_height(cfg.network_id);
         let empty_block_from_height = crate::params_v2::empty_block_from_height(cfg.network_id);
         let btc4_fork_fix_from_height = crate::params_v2::btc4_fork_fix_from_height(cfg.network_id);
+        let hello_min_release_from_height = crate::params_v2::hello_min_release_from_height(cfg.network_id);
         let rewards_v2_from_height = params_v2::network_rewards_v2_from_height(cfg.network_id);
         let rewards_v2_epoch = params_v2::network_rewards_v2_epoch(cfg.network_id);
         let presence_from_height = params_v2::network_presence_from_height(cfg.network_id);
@@ -3801,6 +3861,8 @@ impl Node {
             external_addrs_from_height,
             empty_block_from_height,
             btc4_fork_fix_from_height,
+            hello_min_release_from_height,
+            peer_releases: BTreeMap::new(),
             rewards_v2_from_height,
             rewards_v2_epoch,
             presence_from_height,
@@ -4626,6 +4688,39 @@ impl Node {
             return Some(HELLO_ERR_PRODUCT_VERSION);
         }
         None
+    }
+
+    /// v2.10.3: release floor after [`Self::hello_min_release_from_height`]
+    /// (local tip). Returns a full logged reason, `None` to accept.
+    /// v2.10.3: record a peer's Hello release (observability only).
+    pub fn note_peer_release(&mut self, id: &str, release_version: &str) {
+        if id.is_empty() {
+            return;
+        }
+        self.peer_releases
+            .insert(id.to_string(), (release_version.to_string(), self.now_ms));
+    }
+
+    /// Display form: the release, or `none` (Hello without the field).
+    /// v2.10.3: may we send `WireMsg::Piece` to this peer?
+    pub fn peer_supports_pieces(&self, id: &str) -> bool {
+        self.peer_releases
+            .get(id)
+            .map_or(false, |(r, _)| crate::pieces::peer_release_supports_pieces(r))
+    }
+
+    pub fn peer_release_label(&self, id: &str) -> Option<String> {
+        self.peer_releases.get(id).map(|(r, _)| {
+            if r.is_empty() { PEER_RELEASE_NONE.to_string() } else { r.clone() }
+        })
+    }
+
+    pub fn hello_release_reject(&self, release_version: &str) -> Option<String> {
+        if self.tip_height < self.hello_min_release_from_height {
+            return None;
+        }
+        hello_release_reject_detail(release_version, HELLO_MIN_RELEASE)
+            .map(|d| format!("{d} (local tip {})", self.tip_height))
     }
 
     /// v2.9.60 rolling exec-header cut, and the v2.9.61 one-off V1 cutoff,
@@ -15265,6 +15360,14 @@ fn pack_force_full_clone() -> bool {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum WireMsg {
+    /// v2.10.3: one in-order piece of a large line ([`crate::pieces`]).
+    /// Sent only to peers whose Hello release is >= 2.10.3.
+    Piece {
+        pid: u64,
+        i: u32,
+        n: u32,
+        d: String,
+    },
     Hello {
         id: String,
         public_key: String,
@@ -15298,6 +15401,11 @@ pub enum WireMsg {
         /// Height of the last snapshot this archive can serve.
         #[serde(default)]
         snap_height: u64,
+        /// v2.10.3: real release (`PRODUCT_VERSION`). `product_version` stays
+        /// the legacy-line wire string, so it cannot tell 2.10.x releases
+        /// apart. Omitted when empty (older peers ignore unknown fields).
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        release_version: String,
     },
     /// Liveness + tip advertisement (gossiped). Does not alter lottery election.
     Pong {
@@ -15745,6 +15853,8 @@ mod eth_v3_fork_dry_run_tests;
 #[cfg(test)]
 mod hello_gate_tests;
 #[cfg(test)]
+mod hello_release_tests;
+#[cfg(test)]
 mod health_tests;
 
 #[cfg(test)]
@@ -16137,8 +16247,8 @@ mod tests {
 
     #[test]
     fn product_version_is_locked_to_crate() {
-        assert_eq!(PRODUCT_VERSION, "2.10.2");
-        assert_eq!(env!("CARGO_PKG_VERSION"), "2.10.2");
+        assert_eq!(PRODUCT_VERSION, "2.10.3");
+        assert_eq!(env!("CARGO_PKG_VERSION"), "2.10.3");
         assert_eq!(NodeRole::from_exe_name("/opt/bin/falcon-pl-val"), Some(NodeRole::Val));
         assert_eq!(NodeRole::from_exe_name("falcon-pl-archive"), Some(NodeRole::Archive));
         assert_eq!(NodeRole::VAL_MAX_CHAIN, 128);

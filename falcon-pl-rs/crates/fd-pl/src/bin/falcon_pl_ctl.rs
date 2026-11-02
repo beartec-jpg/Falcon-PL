@@ -2177,6 +2177,7 @@ mod dash_grid {
                     live.push(vec![
                         t(c, format!("{id:<idw$} {tip:>9}  ")),
                         t(C::Dim, format!("{:>6}", pong.map(age).unwrap_or("-".into()))),
+                        t(C::Dim, format!("  {}", crate::rel_short(p))),
                     ]);
                 }
             }
@@ -3226,6 +3227,15 @@ fn print_reply<T: serde::Serialize>(r: &T) -> Result<()> {
         NODE_REFUSED.store(true, std::sync::atomic::Ordering::SeqCst);
     }
     Ok(())
+}
+
+/// v2.10.3 peers view: Hello release, `none` for pre-2.10.3, `-` if unseen.
+fn rel_short(p: &serde_json::Value) -> String {
+    match p.pointer("/release_version").and_then(|x| x.as_str()) {
+        Some(r) if r.starts_with("none") => "none".into(),
+        Some(r) => r.to_string(),
+        None => "-".into(),
+    }
 }
 
 #[tokio::main]
