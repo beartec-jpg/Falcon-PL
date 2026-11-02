@@ -390,6 +390,20 @@ pub fn hello_min_release_from_height(network_id: u32) -> u64 {
     env_u64("FPL_HELLO_MIN_RELEASE_FROM_HEIGHT").unwrap_or(u64::MAX)
 }
 
+/// v2.10.4 (TBD): BTC4 lending markets price per 1 BTC4 (1e8 sats) instead of
+/// the legacy 1e6 fall-through (per 0.01 BTC4). Consensus: changes the
+/// LendSetPrice / LendBorrow result. **PLACEHOLDER / TBD**: `u64::MAX` = never.
+pub const TESTNET_2300_BTC4_LEND_SCALE_HEIGHT: u64 = u64::MAX;
+
+/// BTC4 lend-scale activation (`u64::MAX` = never). Non-2300 networks may set
+/// `FPL_BTC4_LEND_SCALE_FROM_HEIGHT`.
+pub fn btc4_lend_scale_from_height(network_id: u32) -> u64 {
+    if network_id == NETWORK_ID_PUBLIC_TESTNET_2300 {
+        return TESTNET_2300_BTC4_LEND_SCALE_HEIGHT;
+    }
+    env_u64("FPL_BTC4_LEND_SCALE_FROM_HEIGHT").unwrap_or(u64::MAX)
+}
+
 /// BTC4 fork-fix activation height (`u64::MAX` = never). Non-2300 networks may
 /// set `FPL_BTC4_FORK_FIX_FROM_HEIGHT` (devnets / tests).
 pub fn btc4_fork_fix_from_height(network_id: u32) -> u64 {
