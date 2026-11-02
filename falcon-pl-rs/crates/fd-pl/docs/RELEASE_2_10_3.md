@@ -43,3 +43,21 @@ next; v10 last; nothing on falcon2 without explicit owner OK.
   `release_version`, `last_seen_ms`, `hello_age_ms`.
 - `falcon-pl-ctl` dash and the health dash peers panel show the release column.
 - Tests: `health_peer_release_versions`, `peer_release_is_observability_only`.
+
+## Chunked ("piece") transport for large lines (incident 2 Nov 2026, crypto-dashboard @ 779,474)
+
+- Any wire line > 64 KB (LedgerBody/LedgersBatch, TxsBatch replies to NeedTxs /
+  NeedMempoolTxs, tx dish, inbound-seat sends) to a peer whose Hello said
+  `release_version >= 2.10.3` is sent as `{"type":"piece","pid","i","n","d"}` lines
+  (24,000 raw bytes each, ≤ 48 KB serialized), in order, on the same queue, all-or-nothing.
+  Pieced sends skip the "one large in flight" gate (no single line > 64 KB is written),
+  so the consensus lane can interleave between pieces.
+- 2.10.2 peers (no `release_version`) always get the legacy single line. If the queue
+  lacks room for the whole run, the legacy line is used.
+- Receiver (`fd_pl::pieces::PieceAssembler`, per connection): in-order only, ≤ 2048
+  pieces, ≤ 48 MB joined, ≤ 8 open runs, 30 s timeout; a broken run is dropped and the
+  normal retry/catch-up path re-requests. The joined line is handled exactly like a
+  line received whole (Hello gate and dispatch unchanged).
+- Piece lines are must-send in the writer (never dropped mid-run).
+- Transport only: no consensus/hash/state change.
+- Tests: `pieces::tests::*` (7), node bin `pieces_only_to_2_10_3_peers`, `mixed_version_queueing`.

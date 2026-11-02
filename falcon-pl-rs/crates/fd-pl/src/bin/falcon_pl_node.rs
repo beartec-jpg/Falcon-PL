@@ -213,6 +213,8 @@ fn line_must_send(bytes: &[u8]) -> bool {
         || head.windows(9).any(|w| w == b"TxsByIds")
         || head.windows(8).any(|w| w == b"TxsBatch")
         || head.windows(14).any(|w| w == b"propose_ledger")
+        // v2.10.3: a dropped piece breaks the whole run, so pieces never drop.
+        || head.starts_with(b"{\"type\":\"piece\"")
 }
 
 async fn write_or_shed(
@@ -405,6 +407,29 @@ fn pipe_stuck(
 }
 
 impl ByteTx {
+    /// v2.10.3: queue all piece lines of one message or none of them.
+    fn try_send_all(&self, lines: Vec<String>) -> bool {
+        use std::sync::atomic::Ordering::Relaxed;
+        let total: usize = lines.iter().map(|l| l.len()).sum();
+        if self.used.load(Relaxed) + total > self.cap || self.tx.capacity() < lines.len() {
+            return false;
+        }
+        for l in lines {
+            if !self.try_send(l, ConsClass::Other) {
+                warn!("piece stream cut short (queue raced full)");
+                return false;
+            }
+        }
+        true
+    }
+
+    /// Piece a large line when `pieces` is given, else send it as is.
+    fn send_maybe_pieced(&self, line: String, pieces: Option<Vec<String>>) -> bool {
+        match pieces {
+            Some(ps) => self.try_send_all(ps),
+            None => self.try_send(line, ConsClass::Other),
+        }
+    }
     fn try_send(&self, line: String, class: ConsClass) -> bool {
         use std::sync::atomic::Ordering::Relaxed;
         let n = line.len();
@@ -1051,6 +1076,8 @@ struct Shared {
     tx_announced: Mutex<std::collections::HashSet<String>>,
     /// Dish seats still missing this height's walk. SubmitTx to them waits.
     dish_guard: Mutex<std::collections::HashSet<String>>,
+    /// v2.10.3: peers whose last Hello said release >= 2.10.3 (accept `piece`).
+    piece_peers: Mutex<std::collections::HashSet<String>>,
     /// Heights already printed on the round-gap trace.
     gap_hard: Mutex<u64>,
     gap_named: Mutex<u64>,
@@ -1059,7 +1086,55 @@ struct Shared {
     gap_walk: Mutex<(u64, String)>,
 }
 
+/// v2.10.3: send pieces (all fit) or the legacy line on a plain reply channel.
+fn reply_send_pieced(tx: &mpsc::Sender<String>, line: String, pieces: Option<Vec<String>>) -> bool {
+    if let Some(ps) = pieces {
+        if tx.capacity() >= ps.len() {
+            for l in ps {
+                if tx.try_send(l).is_err() {
+                    warn!("piece reply stream cut short");
+                    return false;
+                }
+            }
+            return true;
+        }
+        // Not enough room for the whole run: the legacy line is still valid.
+    }
+    tx.try_send(line).is_ok()
+}
+
+static PIECE_PID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+
+/// Per-connection reassembly of `piece` lines. Returns the line to handle:
+/// the original for normal lines, the joined line when a run completes,
+/// `None` while a run is open (or broken).
+fn unpiece_line(asm: &mut fd_pl::pieces::PieceAssembler, who: &str, line: String) -> Option<String> {
+    if !line.starts_with("{\"type\":\"piece\"") {
+        return Some(line);
+    }
+    match serde_json::from_str::<WireMsg>(&line) {
+        Ok(WireMsg::Piece { pid, i, n, d }) => match asm.feed(unix_ms(), pid, i, n, &d) {
+            Ok(done) => done,
+            Err(e) => {
+                warn!("{e} from {who} (pid {pid} {i}/{n})");
+                None
+            }
+        },
+        _ => None,
+    }
+}
+
 impl Shared {
+    /// v2.10.3: piece lines for `peer` if the line is large and the peer
+    /// advertised piece support in its Hello; `None` = send legacy line.
+    fn pieces_for(&self, peer: &str, line: &str) -> Option<Vec<String>> {
+        if line.len() <= LARGE_LINE || peer.is_empty() || !self.piece_peers.lock().contains(peer) {
+            return None;
+        }
+        let pid = PIECE_PID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        fd_pl::pieces::split_line(line, pid)
+    }
+
     fn disk_stat(&self) -> Option<fd_pl::disk::DiskStat> {
         fd_pl::disk::stat(&self.data_dir)
     }
@@ -1938,10 +2013,12 @@ impl Shared {
                 if &id != seat {
                     continue;
                 }
+                let pieces = self.pieces_for(&id, &line);
+                let large = large && pieces.is_none();
                 if !self.lane_accepts_large(p, large, &id) {
                     break;
                 }
-                if p.txq.try_send(line.clone(), ConsClass::Other) {
+                if p.txq.send_maybe_pieced(line.clone(), pieces) {
                     sent = true;
                     hit = true;
                 } else if large {
@@ -1998,6 +2075,8 @@ impl Shared {
             if s.close.load(std::sync::atomic::Ordering::Relaxed) {
                 continue;
             }
+            let pieces = self.pieces_for(&s.id, line);
+            let large = large && pieces.is_none();
             if large {
                 let used = s.tx.used.load(std::sync::atomic::Ordering::Relaxed);
                 if used > PIPE_PAUSE_BYTES {
@@ -2010,7 +2089,7 @@ impl Shared {
                     return false;
                 }
             }
-            if s.tx.try_send(line.to_string(), ConsClass::Other) {
+            if s.tx.send_maybe_pieced(line.to_string(), pieces) {
                 hit += 1;
             } else if large {
                 s.large_out.clear();
@@ -2719,6 +2798,7 @@ async fn main() -> Result<()> {
         tx_relay_wait: Mutex::new(std::collections::VecDeque::new()),
         tx_announced: Mutex::new(std::collections::HashSet::new()),
         dish_guard: Mutex::new(std::collections::HashSet::new()),
+        piece_peers: Mutex::new(std::collections::HashSet::new()),
         gap_hard: Mutex::new(0),
         gap_named: Mutex::new(0),
         gap_dish: Mutex::new(0),
@@ -4045,10 +4125,15 @@ async fn peer_session(
     let mut read_task = tokio::spawn(async move {
         let mut lines = BufReader::new(reader).lines();
         let mut gate = HelloSession::default();
+        let mut asm = fd_pl::pieces::PieceAssembler::default();
         while let Ok(Some(line)) = lines.next_line().await {
             if line.trim().is_empty() {
                 continue;
             }
+            let who_r = peer_id.lock().clone();
+            let Some(line) = unpiece_line(&mut asm, &who_r, line) else {
+                continue;
+            };
             let Ok(msg) = serde_json::from_str::<WireMsg>(&line) else {
                 continue;
             };
@@ -4082,12 +4167,13 @@ async fn peer_session(
                                 | WireMsg::SnapshotChunk { .. }
                                 | WireMsg::SnapshotNo { .. }
                         );
+                        let pieces = shared_r.pieces_for(&peer_id.lock().clone(), &out);
                         if is_catchup {
-                            if catchup_tx.try_send(out).is_err() {
+                            if !reply_send_pieced(&catchup_tx, out, pieces) {
                                 warn!("LedgersBatch reply dropped (catchup queue full)");
                             }
                         } else {
-                            let _ = reply_tx.try_send(out);
+                            let _ = reply_send_pieced(&reply_tx, out, pieces);
                         }
                     }
                 }
@@ -4627,6 +4713,7 @@ async fn handle_inbound(
         }
     };
 
+    let mut asm = fd_pl::pieces::PieceAssembler::default();
     while let Ok(Some(line)) = lines.next_line().await {
         if close_me.load(std::sync::atomic::Ordering::Relaxed) || writer_task.is_finished() {
             break;
@@ -4634,6 +4721,9 @@ async fn handle_inbound(
         if line.trim().is_empty() {
             continue;
         }
+        let Some(line) = unpiece_line(&mut asm, &seen_id, line) else {
+            continue;
+        };
         let msg: WireMsg = match serde_json::from_str(&line) {
             Ok(m) => m,
             Err(e) => {
@@ -4686,8 +4776,9 @@ async fn handle_inbound(
         let replies = dispatch_wire(&shared, msg, Some(&fanout), true, false);
         for r in replies {
             let out = serde_json::to_string(&r)? + "\n";
+            let pieces = shared.pieces_for(&seen_id, &out);
             if is_catchup_reply(&r) {
-                if catch_reply_tx.try_send(out).is_err() {
+                if !reply_send_pieced(&catch_reply_tx, out, pieces) {
                     warn!("inbound catch-up reply dropped (catch-up lane full)");
                 }
             } else if should_drop_inbound_reply(inbound_registered, was_hello, &r) {
@@ -4698,6 +4789,10 @@ async fn handle_inbound(
                 // replies (NeedLedgerBody, TxsBatch, NeedMempoolTxs).
                 // Clients (no Hello) still get every ack.
                 continue;
+            } else if pieces.is_some() {
+                if !reply_send_pieced(&reply_tx, out, pieces) {
+                    warn!("inbound pieced reply dropped");
+                }
             } else {
                 enqueue(&reply_tx, out);
             }
@@ -5123,6 +5218,8 @@ fn process_msg(
     };
 
     match msg {
+        // Reassembled in the read loops; a stray piece here is ignored.
+        WireMsg::Piece { .. } => None,
         WireMsg::Hello {
             id,
             public_key,
@@ -5161,6 +5258,14 @@ fn process_msg(
                 return Some(WireMsg::Err { msg: reason.into() });
             }
             n.note_peer_release(&id, &release_version);
+            {
+                let mut pp = shared.piece_peers.lock();
+                if fd_pl::pieces::peer_release_supports_pieces(&release_version) {
+                    pp.insert(id.clone());
+                } else {
+                    pp.remove(&id);
+                }
+            }
             if let Some(reason) = n.hello_release_reject(&release_version) {
                 warn!("hello reject {id}: {reason} (local {PRODUCT_VERSION})");
                 return Some(WireMsg::Err { msg: reason });
@@ -7112,11 +7217,83 @@ mod inbound_ack_tests {
             tx_relay_wait: parking_lot::Mutex::new(std::collections::VecDeque::new()),
             tx_announced: parking_lot::Mutex::new(std::collections::HashSet::new()),
             dish_guard: parking_lot::Mutex::new(std::collections::HashSet::new()),
+            piece_peers: parking_lot::Mutex::new(std::collections::HashSet::new()),
             gap_hard: parking_lot::Mutex::new(0),
             gap_named: parking_lot::Mutex::new(0),
             gap_dish: parking_lot::Mutex::new(0),
             gap_walk: parking_lot::Mutex::new((0, String::new())),
         })
+    }
+
+    fn big_line() -> String {
+        let m = WireMsg::NeedMempoolTxs { ids: (0..12_000).map(|i| format!("tx{i:032}")).collect() };
+        serde_json::to_string(&m).unwrap() + "\n"
+    }
+
+    fn byte_tx(slots: usize, cap: usize) -> (ByteTx, mpsc::Receiver<String>) {
+        let (tx, rx) = mpsc::channel::<String>(slots);
+        (ByteTx { tx, used: Arc::new(std::sync::atomic::AtomicUsize::new(0)), cap }, rx)
+    }
+
+    #[test]
+    fn pieces_only_to_2_10_3_peers() {
+        let sh = test_shared("v1");
+        let line = big_line();
+        assert!(line.len() > 300 * 1024);
+        // Unknown / 2.10.2 peer: legacy single line.
+        assert!(sh.pieces_for("old", &line).is_none());
+        // Small line never pieced.
+        sh.piece_peers.lock().insert("new".into());
+        assert!(sh.pieces_for("new", "{\"type\":\"ping\"}\n").is_none());
+        let ps = sh.pieces_for("new", &line).expect("2.10.3 peer gets pieces");
+        assert!(ps.iter().all(|p| p.len() <= fd_pl::pieces::PIECE_MAX_LINE));
+        assert!(ps.iter().all(|p| p.len() <= LARGE_LINE && line_must_send(p.as_bytes())));
+        // Receiver joins them back to the exact original message.
+        let mut asm = fd_pl::pieces::PieceAssembler::default();
+        let mut got = None;
+        for p in ps {
+            if let Some(l) = unpiece_line(&mut asm, "v1", p.trim_end().to_string()) {
+                assert!(got.is_none());
+                got = Some(l);
+            }
+        }
+        let got = got.unwrap();
+        assert_eq!(got + "\n", line);
+        // Normal lines pass straight through the reassembler.
+        assert_eq!(unpiece_line(&mut asm, "v1", "{\"type\":\"ping\"}".into()).as_deref(), Some("{\"type\":\"ping\"}"));
+    }
+
+    #[test]
+    fn mixed_version_queueing() {
+        let sh = test_shared("v1");
+        let line = big_line();
+        sh.piece_peers.lock().insert("new".into());
+        // Legacy peer: exactly one line, identical to the original.
+        let (q, mut rx) = byte_tx(64, 8 << 20);
+        assert!(q.send_maybe_pieced(line.clone(), sh.pieces_for("old", &line)));
+        assert_eq!(rx.try_recv().unwrap(), line);
+        assert!(rx.try_recv().is_err());
+        // New peer: several in-order pieces.
+        let (q, mut rx) = byte_tx(64, 8 << 20);
+        assert!(q.send_maybe_pieced(line.clone(), sh.pieces_for("new", &line)));
+        let mut idx = 0u32;
+        while let Ok(l) = rx.try_recv() {
+            match serde_json::from_str::<WireMsg>(l.trim()).unwrap() {
+                WireMsg::Piece { i, .. } => assert_eq!(i, idx),
+                _ => panic!(),
+            }
+            idx += 1;
+        }
+        assert!(idx > 1);
+        // All or nothing: too few slots queues no piece at all.
+        let (q, mut rx) = byte_tx(2, 8 << 20);
+        assert!(!q.send_maybe_pieced(line.clone(), sh.pieces_for("new", &line)));
+        assert!(rx.try_recv().is_err());
+        assert_eq!(q.used.load(std::sync::atomic::Ordering::Relaxed), 0);
+        // Plain reply channel without room for the run falls back to legacy.
+        let (tx, mut rx) = mpsc::channel::<String>(2);
+        assert!(reply_send_pieced(&tx, line.clone(), sh.pieces_for("new", &line)));
+        assert_eq!(rx.try_recv().unwrap(), line);
     }
 
     #[test]

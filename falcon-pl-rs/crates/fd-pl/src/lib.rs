@@ -319,6 +319,7 @@
 #![recursion_limit = "512"]
 
 pub mod accounts;
+pub mod pieces;
 pub mod bitvm;
 pub mod bitvm2_exit;
 pub mod bitvm2_instance;
@@ -554,6 +555,10 @@ pub const HELLO_ERR_RELEASE_TOO_OLD: &str = "release_version too old";
 /// release that ships with the activation (peers below it fork at the next
 /// consensus height, e.g. the BTC4 fork fix at 775,000).
 pub const HELLO_MIN_RELEASE: &str = "2.10.3";
+
+pub fn parse_release_pub(v: &str) -> Option<(u64, u64, u64)> {
+    parse_release(v)
+}
 
 fn parse_release(v: &str) -> Option<(u64, u64, u64)> {
     let mut it = v.trim().split('.');
@@ -4697,6 +4702,13 @@ impl Node {
     }
 
     /// Display form: the release, or `none` (Hello without the field).
+    /// v2.10.3: may we send `WireMsg::Piece` to this peer?
+    pub fn peer_supports_pieces(&self, id: &str) -> bool {
+        self.peer_releases
+            .get(id)
+            .map_or(false, |(r, _)| crate::pieces::peer_release_supports_pieces(r))
+    }
+
     pub fn peer_release_label(&self, id: &str) -> Option<String> {
         self.peer_releases.get(id).map(|(r, _)| {
             if r.is_empty() { PEER_RELEASE_NONE.to_string() } else { r.clone() }
@@ -15348,6 +15360,14 @@ fn pack_force_full_clone() -> bool {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum WireMsg {
+    /// v2.10.3: one in-order piece of a large line ([`crate::pieces`]).
+    /// Sent only to peers whose Hello release is >= 2.10.3.
+    Piece {
+        pid: u64,
+        i: u32,
+        n: u32,
+        d: String,
+    },
     Hello {
         id: String,
         public_key: String,
