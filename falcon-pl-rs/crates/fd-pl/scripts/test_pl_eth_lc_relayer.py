@@ -21,6 +21,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 _HERE = Path(__file__).resolve().parent
+os.environ.setdefault("ETH_SCAN_PACE_SEC", "0")
+os.environ.setdefault("ETH_RPC_BACKOFF_SEC", "0.1")
 _spec = importlib.util.spec_from_file_location("relayer", _HERE / "pl-eth-lc-relayer.py")
 rel = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(rel)
@@ -1686,6 +1688,7 @@ class ScanLimits(unittest.TestCase):
     def setUp(self):
         rel._scan_resume["addr"] = ""
         rel._scan_resume["from_block"] = -1
+        rel._scan_failed_spans.clear()
         rel._block_ts_cache.clear()
         rel._block_ts_failed.clear()
         rel._last_deposit_scan = 0.0
@@ -1926,9 +1929,50 @@ class ScanLimits(unittest.TestCase):
         ), redirect_stdout(io.StringIO()):
             rel.scan_unminted_deposits({}, now=1_000_000)
             self.assertEqual(rel._scan_resume["addr"], v2)
+            # The failed V1 span is queued for retry, not skipped.
+            self.assertIn(seen[0], rel._scan_failed_spans)
             rel._last_deposit_scan = 0.0
             rel.scan_unminted_deposits({}, now=1_000_001)
-        self.assertEqual([a for a, _f in seen], [v1, v2])
+        # Retry of the failed V1 span first (still failing, budget spent), so
+        # it stays queued; the rotation cursor still points at V2.
+        self.assertEqual([a for a, _f in seen], [v1, v1])
+        self.assertIn(seen[0], rel._scan_failed_spans)
+        self.assertEqual(rel._scan_resume["addr"], v2)
+
+    def test_429_span_is_retried_until_it_succeeds(self):
+        """2026-11-02: a getLogs span that 429s is retried next scan and never skipped."""
+        head = 200_000
+        start = head - rel.deposit_scan_window_blocks()
+        v1 = rel.QC_BRIDGE_V1.lower()
+        bad_from = start + 2 * rel._log_chunk_blocks()
+        state = {"fail": True}
+        seen = []
+
+        def eth_rpc(method, params):
+            if method == "eth_blockNumber":
+                return hex(head)
+            if method == "eth_getLogs":
+                q = params[0]
+                key = (q["address"], int(q["fromBlock"], 16))
+                seen.append(key)
+                if key == (v1, bad_from) and state["fail"]:
+                    raise RuntimeError("HTTP Error 429: Too Many Requests")
+                return []
+            raise AssertionError(method)
+
+        with self._scan_env("600"), patch.object(rel, "eth_rpc", eth_rpc), redirect_stdout(io.StringIO()):
+            rel.scan_unminted_deposits({}, now=1_000_000)
+            self.assertIn((v1, bad_from), rel._scan_failed_spans)
+            # Later V1 spans were not visited this cycle; they are queued too.
+            self.assertIn((v1, bad_from + rel._log_chunk_blocks()), rel._scan_failed_spans)
+            # Next scan is due after ETH_SCAN_RETRY_SEC, not ETH_ALERT_EVERY_SEC.
+            due = rel._last_deposit_scan + rel.alert_every_sec() - 1_000_000
+            self.assertLessEqual(due, rel.scan_retry_sec())
+            state["fail"] = False
+            seen.clear()
+            rel.scan_unminted_deposits({}, now=1_000_000 + rel.alert_every_sec())
+        self.assertEqual(seen[0], (v1, bad_from))
+        self.assertEqual(rel._scan_failed_spans, set())
 
     def test_timestamp_cap_rewinds_and_finishes_next_cycle(self):
         """More than 64 distinct blocks: rewind to that span, finish next cycle, no re-lookups."""
@@ -2144,6 +2188,33 @@ class TransientRetryAndBackfillTests(unittest.TestCase):
         ), redirect_stdout(io.StringIO()):
             with self.assertRaises(RuntimeError):
                 rel.backfill_exec_hole(self._st(conn=200, tip=300, exec_n=100 + rel.EXEC_PRUNE_BLOCKS, prune=0))
+
+
+
+class RpcBackoff(unittest.TestCase):
+    def test_429_is_retried_with_backoff_then_succeeds(self):
+        import urllib.error
+        calls = {"n": 0}
+
+        def once(method, params):
+            calls["n"] += 1
+            if calls["n"] < 3:
+                raise urllib.error.HTTPError("u", 429, "Too Many Requests", {}, io.BytesIO())
+            return "0x1"
+
+        sleeps = []
+        with patch.object(rel, "_eth_rpc_once", once), patch.object(rel.time, "sleep", sleeps.append):
+            self.assertEqual(rel.eth_rpc("eth_blockNumber", []), "0x1")
+        self.assertEqual(len(sleeps), 2)
+        self.assertLess(sleeps[0], sleeps[1])
+
+    def test_non_rate_limit_error_is_not_retried(self):
+        def once(method, params):
+            raise RuntimeError("eth_getLogs: {'code': -32602, 'message': 'invalid params'}")
+
+        with patch.object(rel, "_eth_rpc_once", once), patch.object(rel.time, "sleep", lambda s: None):
+            with self.assertRaises(RuntimeError):
+                rel.eth_rpc("eth_getLogs", [])
 
 
 if __name__ == "__main__":
