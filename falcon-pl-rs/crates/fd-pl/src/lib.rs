@@ -379,7 +379,7 @@ use thiserror::Error;
 
 pub const NETWORK_NAME: &str = "falcon-pl-private-v22";
 /// Product release line. One number on crate, status, Hello, and binaries.
-pub const PRODUCT_VERSION: &str = "2.10.3";
+pub const PRODUCT_VERSION: &str = "2.10.4";
 
 /// Version string a node puts in its Hello (`WireMsg::Hello::product_version`).
 ///
@@ -3600,6 +3600,8 @@ pub struct Node {
     pub empty_block_from_height: u64,
     /// v2.10.1: [`crate::params_v2::btc4_fork_fix_from_height`]; runtime only.
     pub btc4_fork_fix_from_height: u64,
+    /// v2.10.4 (TBD): [`crate::params_v2::btc4_lend_scale_from_height`]; runtime only.
+    pub btc4_lend_scale_from_height: u64,
     /// v2.10.3 (TBD): [`crate::params_v2::hello_min_release_from_height`]; runtime only.
     pub hello_min_release_from_height: u64,
     /// v2.10.3: last Hello `release_version` per peer id ("" = pre-2.10.3)
@@ -3726,6 +3728,7 @@ impl Node {
         let external_addrs_from_height = crate::params_v2::external_addrs_from_height(cfg.network_id);
         let empty_block_from_height = crate::params_v2::empty_block_from_height(cfg.network_id);
         let btc4_fork_fix_from_height = crate::params_v2::btc4_fork_fix_from_height(cfg.network_id);
+        let btc4_lend_scale_from_height = crate::params_v2::btc4_lend_scale_from_height(cfg.network_id);
         let hello_min_release_from_height = crate::params_v2::hello_min_release_from_height(cfg.network_id);
         let rewards_v2_from_height = params_v2::network_rewards_v2_from_height(cfg.network_id);
         let rewards_v2_epoch = params_v2::network_rewards_v2_epoch(cfg.network_id);
@@ -3861,6 +3864,7 @@ impl Node {
             external_addrs_from_height,
             empty_block_from_height,
             btc4_fork_fix_from_height,
+            btc4_lend_scale_from_height,
             hello_min_release_from_height,
             peer_releases: BTreeMap::new(),
             rewards_v2_from_height,
@@ -4186,6 +4190,25 @@ impl Node {
     /// v2.10.1: BTC4 fork-fix rules for the ledger being applied now (`tip + 1`).
     pub fn btc4_fork_fix_open(&self) -> bool {
         self.tip_height.saturating_add(1) >= self.btc4_fork_fix_from_height
+    }
+
+    /// v2.10.4: BTC4 lend markets pin 1e8 raw/coin for the ledger applied now.
+    pub fn btc4_lend_scale_open(&self) -> bool {
+        self.tip_height.saturating_add(1) >= self.btc4_lend_scale_from_height
+    }
+
+    /// Market with the v2.10.4 BTC4 scale pinned when active (pure; no write).
+    fn lend_market_rescaled(&self, m: &crate::defi::LendingMarket) -> crate::defi::LendingMarket {
+        let mut m = m.clone();
+        if m.raw_per_coin.is_none()
+            && m.asset == crate::bridge::RAIL_BTC4
+            && self.btc4_lend_scale_open()
+        {
+            // Re-express the stored per-1e6 price per 1e8 so value is unchanged.
+            m.raw_per_coin = Some(100_000_000);
+            m.price_native_per_scale = m.price_native_per_scale.saturating_mul(100).max(1);
+        }
+        m
     }
 
     pub fn external_addrs_at(&self, height: u64) -> bool {
@@ -4619,7 +4642,7 @@ impl Node {
             if m.share_supply == 0 {
                 continue;
             }
-            let scale = crate::defi::coin_scale(&m.asset).max(1);
+            let scale = m.scale();
             for (a, sh) in &m.supply_shares {
                 let h = held(format!("lend|{mid}|{a}"), *sh);
                 let amount = h as u128 * m.total_supply as u128 / m.share_supply as u128;
@@ -6264,6 +6287,11 @@ impl Node {
 
     /// FPL per one whole coin from the deepest FPL pool for this asset.
     fn pool_price_fpl(&self, asset: &str) -> Option<u64> {
+        self.pool_price_fpl_scaled(asset, crate::defi::coin_scale(asset))
+    }
+
+    /// v2.10.4: pool spot as FPL per `scale` raw units.
+    fn pool_price_fpl_scaled(&self, asset: &str, scale: u128) -> Option<u64> {
         let mut best_raw = 0u64;
         let mut best: Option<u64> = None;
         for p in self.defi.pools.values() {
@@ -6277,7 +6305,7 @@ impl Node {
             if raw <= best_raw {
                 continue;
             }
-            if let Some(px) = crate::defi::fpl_per_coin(fpl, raw, asset) {
+            if let Some(px) = crate::defi::fpl_per_coin_scaled(fpl, raw, scale) {
                 best_raw = raw;
                 best = Some(px);
             }
@@ -6287,21 +6315,16 @@ impl Node {
 
     /// Write the pool spot onto the market. ETH fits because the price is per 1 ETH, not per million wei.
     pub fn sync_lend_price(&mut self, market_id: &str) -> Result<u64, String> {
-        let asset = self
-            .defi
-            .markets
-            .get(market_id)
-            .ok_or("unknown market")?
-            .asset
-            .clone();
+        let m = self
+            .lend_market_rescaled(self.defi.markets.get(market_id).ok_or("unknown market")?);
+        let asset = m.asset.clone();
+        let scale = m.scale();
         let px = self
-            .pool_price_fpl(&asset)
+            .pool_price_fpl_scaled(&asset, scale)
             .ok_or_else(|| format!("no pool price for {asset}"))?;
-        self.defi
-            .markets
-            .get_mut(market_id)
-            .unwrap()
-            .set_price(px);
+        let slot = self.defi.markets.get_mut(market_id).unwrap();
+        *slot = m;
+        slot.set_price(px);
         Ok(px)
     }
 
@@ -6320,7 +6343,10 @@ impl Node {
             .asset
             .clone();
         // A pool spot replaces the stored price before the LTV check, so ETH cannot borrow at 1 wei = 1 FPL.
-        if self.pool_price_fpl(&asset).is_some() {
+        let scale = self
+            .lend_market_rescaled(self.defi.markets.get(market_id).ok_or("unknown market")?)
+            .scale();
+        if self.pool_price_fpl_scaled(&asset, scale).is_some() {
             let _ = self.sync_lend_price(market_id);
         }
         if collateral_fpl > 0 {
@@ -10117,8 +10143,8 @@ impl Node {
                     .markets
                     .get(market_id)
                     .ok_or_else(|| "unknown market".to_string())?;
-                let mut m_probe = m.clone();
-                if let Some(px) = self.pool_price_fpl(&m_probe.asset) {
+                let mut m_probe = self.lend_market_rescaled(m);
+                if let Some(px) = self.pool_price_fpl_scaled(&m_probe.asset, m_probe.scale()) {
                     m_probe.set_price(px);
                 }
                 m_probe.borrow(&tx.account, *amount, *collateral_fpl)?;
@@ -16247,8 +16273,8 @@ mod tests {
 
     #[test]
     fn product_version_is_locked_to_crate() {
-        assert_eq!(PRODUCT_VERSION, "2.10.3");
-        assert_eq!(env!("CARGO_PKG_VERSION"), "2.10.3");
+        assert_eq!(PRODUCT_VERSION, "2.10.4");
+        assert_eq!(env!("CARGO_PKG_VERSION"), "2.10.4");
         assert_eq!(NodeRole::from_exe_name("/opt/bin/falcon-pl-val"), Some(NodeRole::Val));
         assert_eq!(NodeRole::from_exe_name("falcon-pl-archive"), Some(NodeRole::Archive));
         assert_eq!(NodeRole::VAL_MAX_CHAIN, 128);
@@ -23903,3 +23929,5 @@ mod v2_10_activation_tests;
 
 #[cfg(test)]
 mod btc4_fork_fix_tests;
+#[cfg(test)]
+mod btc4_lend_scale_tests;
