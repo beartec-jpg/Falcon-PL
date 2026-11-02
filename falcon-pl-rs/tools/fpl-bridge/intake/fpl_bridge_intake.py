@@ -54,6 +54,24 @@ def run(args, **kw):
     return subprocess.run(args, capture_output=True, text=True, timeout=kw.pop("timeout", 120), **kw)
 
 
+def utxo_confirmed(u: dict) -> bool:
+    if u.get('status', {}).get('confirmed'):
+        return True
+    try:
+        r = subprocess.run([
+            '/opt/fpl-tn4btc/bin/bitcoin-cli',
+            '-conf=/opt/fpl-tn4btc/bitcoin.conf',
+            '-datadir=/opt/fpl-tn4btc/data',
+            'gettxout', str(u['txid']), str(u['vout']), 'false'
+        ], capture_output=True, text=True, timeout=5)
+        if r.returncode == 0 and r.stdout.strip():
+            d = json.loads(r.stdout)
+            return int(d.get('confirmations', 0)) >= 1
+    except Exception:
+        pass
+    return False
+
+
 def esplora(path, data=None):
     req = urllib.request.Request(ESP + path, data=data.encode() if data else None)
     with urllib.request.urlopen(req, timeout=20) as r:
@@ -123,7 +141,7 @@ def outpoint_unspent(txid, vout):
 
 def pick_kickoff(need):
     used = reserved_kickoffs()
-    utxos = [u for u in esplora(f"address/{OP_ADDR}/utxo") if u["status"]["confirmed"] and u["value"] >= need]
+    utxos = [u for u in esplora(f"address/{OP_ADDR}/utxo") if utxo_confirmed(u) and u["value"] >= need]
     utxos = [u for u in sorted(utxos, key=lambda u: u["value"]) if f"{u['txid']}:{u['vout']}" not in used]
     return (f"{utxos[0]['txid']}:{utxos[0]['vout']}", utxos[0]["value"]) if utxos else (None, 0)
 
@@ -135,7 +153,7 @@ def ledger_bound(dep_txid):
     ctl = E("FPL_FALCON_CTL")
     if not ctl:
         return False
-    args = [ctl] + (["--rpc", E("FPL_FALCON_RPC")] if E("FPL_FALCON_RPC") else []) + ["status"]
+    args = [ctl] + (["--addr", E("FPL_FALCON_RPC")] if E("FPL_FALCON_RPC") else []) + ["status"]
     st = json.loads(run(args).stdout or "{}")
     bo = st.get("body", st).get("bridge_operators") or {}
     active = [o.get("btc_xonly_hex") for o in (bo.get("operators") or {}).values() if str(o.get("status", "")).lower() == "active"]
@@ -154,7 +172,7 @@ def step(r):
             op = f"{u['txid']}:{u['vout']}"
             if op in used:
                 continue  # coin already bound to another request (shared per-pubkey address)
-            if u["status"]["confirmed"] and MIN_SATS + PEG_IN_FEE <= u["value"] <= MAX_SATS + PEG_IN_FEE \
+            if utxo_confirmed(u) and MIN_SATS + PEG_IN_FEE <= u["value"] <= MAX_SATS + PEG_IN_FEE \
                     and outpoint_unspent(u["txid"], u["vout"]):
                 r.update(state="funded", funding=f"{u['txid']}:{u['vout']}", funding_sats=u["value"]); return True
         return False
@@ -284,6 +302,45 @@ class H(BaseHTTPRequestHandler):
             j = json.loads(self.body(256 << 10) or b"{}")
         except ValueError:
             return self.send(400, {"error": "bad json"})
+        if p == "/v1/faucet":
+            addr = str(j.get("address", "")).strip()
+            if not re.fullmatch(r"(?:tb1[ac-hj-np-z02-9]{25,87}|[mn2][a-km-zA-HJ-NP-Z1-9]{25,34})", addr):
+                return self.send(400, {"error": "valid Testnet4 BTC address (tb1...) required"})
+            faucet_file = os.path.join(STATE, "faucet_claims.json")
+            now = int(time.time())
+            with LOCK:
+                try:
+                    claims = json.load(open(faucet_file)) if os.path.exists(faucet_file) else {}
+                except Exception:
+                    claims = {}
+                last_ts = int(claims.get(addr.lower(), 0))
+                if now - last_ts < 21600:
+                    rem_h = max(1, (21600 - (now - last_ts) + 3599) // 3600)
+                    return self.send(429, {"error": f"This Testnet4 BTC address already claimed within 6h (try again in ~{rem_h}h)."})
+                cli = ["/opt/fpl-tn4btc/bin/bitcoin-cli", "-conf=/opt/fpl-tn4btc/bitcoin.conf", "-datadir=/opt/fpl-tn4btc/data"]
+                out = run(cli + ["-rpcwallet=fpl-operator", "-named", "sendtoaddress", f"address={addr}", "amount=0.01", "fee_rate=1"], timeout=30)
+                if out.returncode != 0 or not out.stdout.strip():
+                    log("faucet err", addr, out.stderr or out.stdout)
+                    return self.send(502, {"error": "tBTC faucet send failed: " + (out.stderr or out.stdout).strip()[-200:]})
+                txid = out.stdout.strip()
+                claims[addr.lower()] = now
+                with open(faucet_file + ".tmp", "w") as fh:
+                    json.dump(claims, fh)
+                os.replace(faucet_file + ".tmp", faucet_file)
+            # Best-effort relay raw tx to mempool.space/testnet4 so user sees it immediately
+            try:
+                raw = run(cli + ["getrawtransaction", txid], timeout=10)
+                if raw.returncode == 0 and raw.stdout.strip():
+                    raw_hex = raw.stdout.strip()
+                    try:
+                        req = urllib.request.Request(ESP + "tx", data=raw_hex.encode(), method="POST")
+                        urllib.request.urlopen(req, timeout=8).read()
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+            log("faucet sent 0.01 tBTC", addr, txid)
+            return self.send(200, {"ok": True, "txid": txid, "address": addr, "amount_sats": 1000000, "amount_btc": "0.01"})
         if p == "/v1/deposits":
             acct, pk = str(j.get("account", "")).strip(), str(j.get("depositor_pubkey", "")).lower()
             if not ACCT.match(acct) or not PUBK.match(pk):
