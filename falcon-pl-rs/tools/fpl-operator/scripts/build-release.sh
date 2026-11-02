@@ -29,7 +29,7 @@ if [[ "${1:-}" == "--with-bitvm" ]]; then
   [[ -n "${OPENSSL_DIR:-}" ]] && export OPENSSL_STATIC=1
   # AVX-512 count 0: aws-lc (rustls) AVX-512 asm is guarded by MY_ASSEMBLER_IS_TOO_OLD_FOR_512AVX, which
   # aws-lc-sys' cc builder does not pass to .S files -> zig cc wrapper adds it; blake3 via feature "pure".
-  ZCC=$(ls "$HOME"/.cache/cargo-zigbuild/*/zigcc-x86_64-unknown-linux-gnu.2.34-*.sh 2>/dev/null | tail -1)
+  ZCC=$(ls "$HOME"/.cache/cargo-zigbuild/*/zigcc-x86_64-unknown-linux-gnu.2.34-*.sh 2>/dev/null | tail -1 || true)
   [[ -n "$ZCC" ]] && export FPL_ZIGCC="$ZCC" CC_x86_64_unknown_linux_gnu="$ROOT/scripts/zigcc-noavx512.sh"
   # Space-separated. fpl-tn4-timelocks (testnet4 timelocks = mainnet/28, Disprove window 72 blocks) changes
   # graph scripts: every party of a graph must use the same setting -> enable only with Scott's OK, for all kits at once.
