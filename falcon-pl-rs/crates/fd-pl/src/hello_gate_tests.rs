@@ -30,6 +30,7 @@ fn hello(version: &str, network_id: u32) -> WireMsg {
         hello_network_id: network_id,
         archive: false,
         snap_height: 0,
+        release_version: String::new(),
     }
 }
 

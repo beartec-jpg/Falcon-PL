@@ -55,7 +55,60 @@ struct InboundSink {
     id: String,
     tx: ByteTx,
     close: Arc<std::sync::atomic::AtomicBool>,
-    large_out: Arc<std::sync::atomic::AtomicBool>,
+    large_out: Arc<LargeGate>,
+}
+
+/// v2.10.3: a large send whose completion is never observed (writer
+/// skipped it, socket wedged, peer stalled) used to hold the per-peer
+/// "large in flight" flag forever, so every later dish logged "one already
+/// in flight" (1 Nov 2026, crypto-dashboard). The gate now carries the time it
+/// was taken and is treated as stale (and retaken) after LARGE_OUT_STALE.
+const LARGE_OUT_STALE: std::time::Duration = std::time::Duration::from_secs(10);
+
+struct LargeGate {
+    /// Milliseconds since `base` when taken; 0 = clear.
+    since_ms: std::sync::atomic::AtomicU64,
+    base: std::time::Instant,
+}
+
+impl LargeGate {
+    fn new() -> Self {
+        Self {
+            since_ms: std::sync::atomic::AtomicU64::new(0),
+            base: std::time::Instant::now(),
+        }
+    }
+
+    fn now_ms(&self) -> u64 {
+        // +1 so a gate taken at t=0 is never confused with "clear".
+        self.base.elapsed().as_millis() as u64 + 1
+    }
+
+    /// Take the gate. Returns false while a fresh send is in flight.
+    fn try_acquire(&self, id: &str) -> bool {
+        self.try_acquire_at(self.now_ms(), id)
+    }
+
+    fn try_acquire_at(&self, now: u64, id: &str) -> bool {
+        use std::sync::atomic::Ordering::Relaxed;
+        let cur = self.since_ms.load(Relaxed);
+        if cur != 0 {
+            let age = now.saturating_sub(cur);
+            if age < LARGE_OUT_STALE.as_millis() as u64 {
+                return false;
+            }
+            if self.since_ms.compare_exchange(cur, now, Relaxed, Relaxed).is_err() {
+                return false;
+            }
+            warn!("large send gate to {id} stale after {age} ms, cleared");
+            return true;
+        }
+        self.since_ms.compare_exchange(0, now, Relaxed, Relaxed).is_ok()
+    }
+
+    fn clear(&self) {
+        self.since_ms.store(0, std::sync::atomic::Ordering::Relaxed);
+    }
 }
 
 /// Drop a TCP session whose kernel send or receive queue stays over this.
@@ -920,7 +973,7 @@ struct PeerOut {
     /// Learned from Hello on this outbound session (empty until first Hello).
     peer_id: Arc<parking_lot::Mutex<String>>,
     /// One large body in flight on this socket.
-    large_out: Arc<std::sync::atomic::AtomicBool>,
+    large_out: Arc<LargeGate>,
 }
 
 #[derive(Clone)]
@@ -1892,8 +1945,7 @@ impl Shared {
                     sent = true;
                     hit = true;
                 } else if large {
-                    p.large_out
-                        .store(false, std::sync::atomic::Ordering::Relaxed);
+                    p.large_out.clear();
                     warn!("tx dish dropped for peer {id} bytes={}", line.len());
                 }
                 break;
@@ -1915,14 +1967,7 @@ impl Shared {
             warn!("pause large dish to {id} cons={cons} txq={txu}");
             return false;
         }
-        if p.large_out
-            .compare_exchange(
-                false,
-                true,
-                std::sync::atomic::Ordering::Relaxed,
-                std::sync::atomic::Ordering::Relaxed,
-            )
-            .is_err()
+        if !p.large_out.try_acquire(id)
         {
             warn!("pause large dish to {id}: one already in flight");
             return false;
@@ -1933,8 +1978,7 @@ impl Shared {
     fn clear_large_out(fanout: &Arc<Vec<PeerOut>>, id: &str) {
         for p in fanout.iter() {
             if p.peer_id.lock().as_str() == id {
-                p.large_out
-                    .store(false, std::sync::atomic::Ordering::Relaxed);
+                p.large_out.clear();
             }
         }
     }
@@ -1960,14 +2004,7 @@ impl Shared {
                     warn!("pause large send to inbound {} bytes={}", s.id, line.len());
                     return false;
                 }
-                if s.large_out
-                    .compare_exchange(
-                        false,
-                        true,
-                        std::sync::atomic::Ordering::Relaxed,
-                        std::sync::atomic::Ordering::Relaxed,
-                    )
-                    .is_err()
+                if !s.large_out.try_acquire(&s.id)
                 {
                     warn!("pause large send to inbound {}: one already in flight", s.id);
                     return false;
@@ -1976,8 +2013,7 @@ impl Shared {
             if s.tx.try_send(line.to_string(), ConsClass::Other) {
                 hit += 1;
             } else if large {
-                s.large_out
-                    .store(false, std::sync::atomic::Ordering::Relaxed);
+                s.large_out.clear();
             }
         }
         hit > 0
@@ -2026,17 +2062,31 @@ impl Shared {
         by_id: &WireMsg,
         header: &WireMsg,
     ) {
-        let Ok(dish) = serde_json::to_string(&WireMsg::TxsBatch { txs: txs.to_vec() }) else {
-            return;
-        };
+        // v2.10.3: split the dish into <=48 KB TxsBatch pieces (a 1.3 MB single
+        // line sat in one slow WAN socket and held the large-send gate).
+        let mut dish_lines = Vec::new();
+        let mut dish_bytes = 0usize;
+        for piece in Self::dish_pieces(txs) {
+            let Ok(d) = serde_json::to_string(&WireMsg::TxsBatch { txs: piece }) else {
+                return;
+            };
+            dish_bytes += d.len();
+            dish_lines.push(d + "\n");
+        }
         let Ok(body) = serde_json::to_string(by_id) else {
             return;
         };
         let Ok(head) = serde_json::to_string(header) else {
             return;
         };
-        info!("pre-dish bytes={} n={}", dish.len(), txs.len());
-        let lines = [dish + "\n", body + "\n", head + "\n"];
+        info!(
+            "pre-dish bytes={dish_bytes} n={} pieces={}",
+            txs.len(),
+            dish_lines.len()
+        );
+        let mut lines = dish_lines;
+        lines.push(body + "\n");
+        lines.push(head + "\n");
         let mut hit = 0usize;
         for p in fanout.iter() {
             let id = p.peer_id.lock().clone();
@@ -2709,7 +2759,7 @@ async fn main() -> Result<()> {
                 cap: CATCH_QUEUE_BYTES,
             },
             peer_id: Arc::new(parking_lot::Mutex::new(String::new())),
-            large_out: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            large_out: Arc::new(LargeGate::new()),
         });
         peer_rxs.push((
             peer, cons_rx, tx_rx, body_rx, catch_rx, cons_used, tx_used, body_used, catch_used,
@@ -3969,6 +4019,7 @@ async fn peer_session(
                 .as_ref()
                 .map(|m| m.tip)
                 .unwrap_or(0),
+            release_version: PRODUCT_VERSION.to_string(),
         };
         serde_json::to_string(&hello)? + "\n"
     };
@@ -4014,6 +4065,7 @@ async fn peer_session(
                         HelloGate::Pass => {}
                         HelloGate::Drop => continue,
                         HelloGate::Close(reason) => {
+                            warn!("hello gate close outbound {}: {reason}", peer_id.lock());
                             *hello_rejected_r.lock() = Some(reason);
                             return;
                         }
@@ -4430,6 +4482,7 @@ async fn handle_inbound(
                 .as_ref()
                 .map(|m| m.tip)
                 .unwrap_or(0),
+            release_version: PRODUCT_VERSION.to_string(),
         };
         serde_json::to_string(&hello)? + "\n"
     };
@@ -4448,7 +4501,7 @@ async fn handle_inbound(
     let close_w = close_me.clone();
     let shed = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let shed_w = shed.clone();
-    let large_out = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let large_out = Arc::new(LargeGate::new());
     let large_w = large_out.clone();
     let remote_w = remote.clone();
     let shared_w = shared.clone();
@@ -4533,7 +4586,7 @@ async fn handle_inbound(
                             } else if !line_must_send(line.as_bytes()) && unsent > CONS_LOW_WATER {
                                 if inv_left < line.len() {
                                     if line.len() > LARGE_LINE {
-                                        large_w.store(false, std::sync::atomic::Ordering::Relaxed);
+                                        large_w.clear();
                                     }
                                     continue;
                                 }
@@ -4548,7 +4601,7 @@ async fn handle_inbound(
                                 inv_left = DISH_INV_BUDGET;
                             }
                             if line.len() > LARGE_LINE {
-                                large_w.store(false, std::sync::atomic::Ordering::Relaxed);
+                                large_w.clear();
                             }
                         }
                         None => break,
@@ -4595,6 +4648,7 @@ async fn handle_inbound(
                 HelloGate::Pass => {}
                 HelloGate::Drop => continue,
                 HelloGate::Close(reason) => {
+                    warn!("hello gate close inbound {remote}: {reason}");
                     let err = serde_json::to_string(&WireMsg::Err {
                         msg: reason.clone(),
                     })? + "\n";
@@ -5082,6 +5136,7 @@ fn process_msg(
             hello_network_id,
             archive,
             snap_height,
+            release_version,
         } => {
             // Live bond-in: Hello only advertises keys (+ tip). Bonded seats come
             // from genesis register or Bond ledger txs — never free-register from wire.
@@ -5104,6 +5159,10 @@ fn process_msg(
                     n.cfg.network_id
                 );
                 return Some(WireMsg::Err { msg: reason.into() });
+            }
+            if let Some(reason) = n.hello_release_reject(&release_version) {
+                warn!("hello reject {id}: {reason} (local {PRODUCT_VERSION})");
+                return Some(WireMsg::Err { msg: reason });
             }
             // v2.9.62 A6: a v2 seat's key is bound on chain (BondV2 + PoP);
             // a Hello claiming that id with another key is refused.
@@ -6939,6 +6998,70 @@ fn crate_lc_vote_rounds(keys_dir: &str) -> u64 {
 }
 
 #[cfg(test)]
+mod large_gate_tests {
+    use super::*;
+
+    #[test]
+    fn fresh_gate_blocks_second_send() {
+        let g = LargeGate::new();
+        assert!(g.try_acquire_at(1_000, "p"));
+        assert!(!g.try_acquire_at(1_000 + 9_999, "p"));
+    }
+
+    #[test]
+    fn stale_gate_is_retaken_after_10s() {
+        let g = LargeGate::new();
+        assert!(g.try_acquire_at(1_000, "p"));
+        assert!(g.try_acquire_at(1_000 + LARGE_OUT_STALE.as_millis() as u64, "p"));
+        // Retaken at the new time: fresh again.
+        assert!(!g.try_acquire_at(11_500, "p"));
+    }
+
+    #[test]
+    fn clear_releases_gate() {
+        let g = LargeGate::new();
+        assert!(g.try_acquire("p"));
+        assert!(!g.try_acquire("p"));
+        g.clear();
+        assert!(g.try_acquire("p"));
+    }
+
+    fn tx(i: usize, pad: usize) -> fd_pl::Tx {
+        fd_pl::Tx {
+            account: format!("a{i}"),
+            sequence: i as u64,
+            destination: "d".into(),
+            amount: 1,
+            fee: 1,
+            network_id: 1,
+            public_key: "ab".repeat(pad),
+            signature: "cd".repeat(pad),
+            tx_id: format!("t{i}"),
+            body: Default::default(),
+        }
+    }
+
+    #[test]
+    fn dish_pieces_are_at_most_48kb() {
+        // ~5.3 KB per tx, 250 txs ~ 1.3 MB (the pre-dish size in the incident).
+        let batch: Vec<_> = (0..250).map(|i| tx(i, 1_300)).collect();
+        let pieces = Shared::dish_pieces(&batch);
+        assert!(pieces.len() > 20);
+        let mut n = 0;
+        for p in &pieces {
+            let line = serde_json::to_string(&WireMsg::TxsBatch { txs: p.clone() }).unwrap();
+            assert!(line.len() <= 48 * 1024, "piece {} bytes", line.len());
+            assert!(line.len() + 1 <= LARGE_LINE, "piece must not trip the large gate");
+            n += p.len();
+        }
+        assert_eq!(n, batch.len(), "no tx lost and order kept");
+        let flat: Vec<_> = pieces.concat().into_iter().map(|t| t.tx_id).collect();
+        let want: Vec<_> = batch.iter().map(|t| t.tx_id.clone()).collect();
+        assert_eq!(flat, want);
+    }
+}
+
+#[cfg(test)]
 mod inbound_ack_tests {
     use super::*;
     use std::sync::atomic::AtomicU64;
@@ -7069,6 +7192,7 @@ mod inbound_ack_tests {
             hello_network_id: 1,
             archive: false,
             snap_height: 0,
+            release_version: String::new(),
         };
         cw.write_all((serde_json::to_string(&hello).unwrap() + "\n").as_bytes()).await.unwrap();
 
@@ -7137,6 +7261,7 @@ mod inbound_ack_tests {
             hello_network_id: 999,
             archive: false,
             snap_height: 0,
+            release_version: String::new(),
         };
         let mut gate = HelloSession::default();
         let verdict = gate.check(&shared.node.lock(), &bad_hello);

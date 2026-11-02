@@ -376,6 +376,41 @@ pub const TESTNET_2300_EMPTY_BLOCK_FROM_HEIGHT: u64 = TESTNET_2300_V2_10_FROM_HE
 /// BTC4 `RailHeader` txs exactly like 2.10.0.
 pub const TESTNET_2300_BTC4_FORK_FIX_HEIGHT: u64 = 775_000;
 
+/// v2.10.3 (TBD): lagging-proposer skip activation (2300). From this height the
+/// tip-fixed lottery skips a bonded seat whose last on-chain attestation is
+/// more than [`LAGGING_PROPOSER_MAX_BEHIND`] blocks behind the tip (incident
+/// 2026-11-01, crypto-dashboard stuck at 775,000 kept winning turns).
+///
+/// **PLACEHOLDER / TBD**: `u64::MAX` = never. Consensus-affecting: every seat
+/// must run the release carrying this rule before a real height is set.
+pub const TESTNET_2300_LAGGING_PROPOSER_SKIP_HEIGHT: u64 = u64::MAX;
+
+/// A seat attested more than this many blocks behind the tip is skipped.
+pub const LAGGING_PROPOSER_MAX_BEHIND: u64 = 3;
+
+/// Lagging-proposer skip activation (`u64::MAX` = never). Non-2300 networks
+/// may set `FPL_LAGGING_PROPOSER_SKIP_FROM_HEIGHT` (devnets / tests).
+pub fn lagging_proposer_skip_from_height(network_id: u32) -> u64 {
+    if network_id == NETWORK_ID_PUBLIC_TESTNET_2300 {
+        return TESTNET_2300_LAGGING_PROPOSER_SKIP_HEIGHT;
+    }
+    env_u64("FPL_LAGGING_PROPOSER_SKIP_FROM_HEIGHT").unwrap_or(u64::MAX)
+}
+
+/// v2.10.3 (TBD): Hello minimum-release activation (2300). From this local tip
+/// a peer must advertise `release_version >= HELLO_MIN_RELEASE`. Local only
+/// (session admission), not consensus. **PLACEHOLDER / TBD**: `u64::MAX` = never.
+pub const TESTNET_2300_HELLO_MIN_RELEASE_HEIGHT: u64 = u64::MAX;
+
+/// Hello minimum-release activation (`u64::MAX` = never). Non-2300 networks
+/// may set `FPL_HELLO_MIN_RELEASE_FROM_HEIGHT`.
+pub fn hello_min_release_from_height(network_id: u32) -> u64 {
+    if network_id == NETWORK_ID_PUBLIC_TESTNET_2300 {
+        return TESTNET_2300_HELLO_MIN_RELEASE_HEIGHT;
+    }
+    env_u64("FPL_HELLO_MIN_RELEASE_FROM_HEIGHT").unwrap_or(u64::MAX)
+}
+
 /// BTC4 fork-fix activation height (`u64::MAX` = never). Non-2300 networks may
 /// set `FPL_BTC4_FORK_FIX_FROM_HEIGHT` (devnets / tests).
 pub fn btc4_fork_fix_from_height(network_id: u32) -> u64 {
