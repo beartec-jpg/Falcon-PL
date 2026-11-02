@@ -137,7 +137,7 @@ dependencies = [
 
 [[package]]
 name = "fpl-operator"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "bech32",
  "hex",
