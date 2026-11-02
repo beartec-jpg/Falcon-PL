@@ -5160,6 +5160,7 @@ fn process_msg(
                 );
                 return Some(WireMsg::Err { msg: reason.into() });
             }
+            n.note_peer_release(&id, &release_version);
             if let Some(reason) = n.hello_release_reject(&release_version) {
                 warn!("hello reject {id}: {reason} (local {PRODUCT_VERSION})");
                 return Some(WireMsg::Err { msg: reason });

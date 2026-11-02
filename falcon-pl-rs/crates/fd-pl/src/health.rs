@@ -411,6 +411,17 @@ impl crate::Node {
                     "id": v.id,
                     "tip": v.last_advertised_tip,
                     "pong_age_ms": if v.last_pong_ms == 0 { Value::Null } else { now.saturating_sub(v.last_pong_ms).into() },
+                    "account": v.bond_account,
+                    "release_version": self.peer_release_label(&v.id),
+                    "hello_age_ms": self.peer_releases.get(&v.id).map(|(_, t)| now.saturating_sub(*t)),
+                })).collect::<Vec<_>>(),
+                // v2.10.3: every peer that said Hello (seats and non-seats).
+                "releases": self.peer_releases.iter().map(|(id, (r, t))| json!({
+                    "id": id,
+                    "account": self.validators.get(id).map(|v| v.bond_account.clone()),
+                    "release_version": if r.is_empty() { crate::PEER_RELEASE_NONE } else { r.as_str() },
+                    "last_seen_ms": t,
+                    "hello_age_ms": now.saturating_sub(*t),
                 })).collect::<Vec<_>>(),
             },
         })
@@ -565,10 +576,11 @@ pub mod dash {
             for p in a.iter().take(10) {
                 let tip = u(p, "/tip").unwrap_or(0);
                 let line = format!(
-                    "{:<20} {:>10}  pong {}",
+                    "{:<20} {:>10}  pong {}  rel {}",
                     s(p, "/id"),
                     tip,
-                    u(p, "/pong_age_ms").map(|a| format!("{}s", a / 1000)).unwrap_or("-".into())
+                    u(p, "/pong_age_ms").map(|a| format!("{}s", a / 1000)).unwrap_or("-".into()),
+                    p.pointer("/release_version").and_then(|x| x.as_str()).unwrap_or("-")
                 );
                 peers.push(if local.saturating_sub(tip) >= super::SYNCING_LAG { st.c(YELLOW, &line) } else { line });
             }

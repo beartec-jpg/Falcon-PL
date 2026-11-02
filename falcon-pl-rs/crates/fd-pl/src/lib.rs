@@ -378,7 +378,7 @@ use thiserror::Error;
 
 pub const NETWORK_NAME: &str = "falcon-pl-private-v22";
 /// Product release line. One number on crate, status, Hello, and binaries.
-pub const PRODUCT_VERSION: &str = "2.10.2";
+pub const PRODUCT_VERSION: &str = "2.10.3";
 
 /// Version string a node puts in its Hello (`WireMsg::Hello::product_version`).
 ///
@@ -544,13 +544,16 @@ impl HelloSession {
 pub const HELLO_ERR_NETWORK_ID: &str = "network_id mismatch";
 /// v2.10.3: Hello refused because the peer's release is older than
 /// [`HELLO_MIN_RELEASE`] once the local tip is past the activation height.
+/// Shown for a peer whose Hello had no `release_version` (2.10.2 or older).
+pub const PEER_RELEASE_NONE: &str = "none (pre-2.10.3)";
+
 pub const HELLO_ERR_RELEASE_TOO_OLD: &str = "release_version too old";
 
 /// Lowest release a peer may advertise after
 /// [`crate::params_v2::hello_min_release_from_height`]. **TBD**: bump to the
 /// release that ships with the activation (peers below it fork at the next
 /// consensus height, e.g. the BTC4 fork fix at 775,000).
-pub const HELLO_MIN_RELEASE: &str = PRODUCT_VERSION;
+pub const HELLO_MIN_RELEASE: &str = "2.10.3";
 
 fn parse_release(v: &str) -> Option<(u64, u64, u64)> {
     let mut it = v.trim().split('.');
@@ -3592,10 +3595,11 @@ pub struct Node {
     pub empty_block_from_height: u64,
     /// v2.10.1: [`crate::params_v2::btc4_fork_fix_from_height`]; runtime only.
     pub btc4_fork_fix_from_height: u64,
-    /// v2.10.3 (TBD): [`crate::params_v2::lagging_proposer_skip_from_height`]; runtime only.
-    pub lagging_skip_from_height: u64,
     /// v2.10.3 (TBD): [`crate::params_v2::hello_min_release_from_height`]; runtime only.
     pub hello_min_release_from_height: u64,
+    /// v2.10.3: last Hello `release_version` per peer id ("" = pre-2.10.3)
+    /// and when it was seen (`now_ms`). Observability only; runtime only.
+    pub peer_releases: BTreeMap<String, (String, u64)>,
     /// v2.9.62: rewards-v2 activation height `H_act` (`u64::MAX` = unarmed).
     /// From [`params_v2::network_rewards_v2_from_height`]; runtime only.
     pub rewards_v2_from_height: u64,
@@ -3717,7 +3721,6 @@ impl Node {
         let external_addrs_from_height = crate::params_v2::external_addrs_from_height(cfg.network_id);
         let empty_block_from_height = crate::params_v2::empty_block_from_height(cfg.network_id);
         let btc4_fork_fix_from_height = crate::params_v2::btc4_fork_fix_from_height(cfg.network_id);
-        let lagging_skip_from_height = crate::params_v2::lagging_proposer_skip_from_height(cfg.network_id);
         let hello_min_release_from_height = crate::params_v2::hello_min_release_from_height(cfg.network_id);
         let rewards_v2_from_height = params_v2::network_rewards_v2_from_height(cfg.network_id);
         let rewards_v2_epoch = params_v2::network_rewards_v2_epoch(cfg.network_id);
@@ -3853,8 +3856,8 @@ impl Node {
             external_addrs_from_height,
             empty_block_from_height,
             btc4_fork_fix_from_height,
-            lagging_skip_from_height,
             hello_min_release_from_height,
+            peer_releases: BTreeMap::new(),
             rewards_v2_from_height,
             rewards_v2_epoch,
             presence_from_height,
@@ -4684,6 +4687,22 @@ impl Node {
 
     /// v2.10.3: release floor after [`Self::hello_min_release_from_height`]
     /// (local tip). Returns a full logged reason, `None` to accept.
+    /// v2.10.3: record a peer's Hello release (observability only).
+    pub fn note_peer_release(&mut self, id: &str, release_version: &str) {
+        if id.is_empty() {
+            return;
+        }
+        self.peer_releases
+            .insert(id.to_string(), (release_version.to_string(), self.now_ms));
+    }
+
+    /// Display form: the release, or `none` (Hello without the field).
+    pub fn peer_release_label(&self, id: &str) -> Option<String> {
+        self.peer_releases.get(id).map(|(r, _)| {
+            if r.is_empty() { PEER_RELEASE_NONE.to_string() } else { r.clone() }
+        })
+    }
+
     pub fn hello_release_reject(&self, release_version: &str) -> Option<String> {
         if self.tip_height < self.hello_min_release_from_height {
             return None;
@@ -9793,24 +9812,9 @@ impl Node {
         // A9: integer pick — seed % total_bond over sorted bonds (no f64).
         // v2.9.62 A3: from H_act every eligible seat weighs 1 (equal odds).
         let equal = self.rv2_at(height);
-        // v2.10.3 (TBD height): skip seats attested > N blocks behind tip.
-        // Not a seed input; never empties the draw (see `lagging_seats`).
-        let lagging = if height >= self.lagging_skip_from_height {
-            let mut lag = self.lagging_seats();
-            let remaining = all
-                .iter()
-                .filter(|(id, _, _)| !extra_skips.contains(id) && !lag.contains(id))
-                .count();
-            if remaining == 0 {
-                lag.clear();
-            }
-            lag
-        } else {
-            BTreeSet::new()
-        };
         let eligible: Vec<(String, u64)> = all
             .into_iter()
-            .filter(|(id, _, _)| !extra_skips.contains(id) && !lagging.contains(id))
+            .filter(|(id, _, _)| !extra_skips.contains(id))
             .map(|(id, _, bond)| (id, if equal { 1 } else { bond }))
             .collect();
         if eligible.is_empty() {
@@ -9832,57 +9836,6 @@ impl Node {
             r -= b;
         }
         eligible.last().map(|(id, _)| id.clone())
-    }
-
-    /// Committed window used by [`Self::lagging_seats`].
-    pub const LAGGING_WINDOW: usize = 16;
-
-    /// v2.10.3 (TBD): seats whose last **on-chain** attestation is more than
-    /// [`crate::params_v2::LAGGING_PROPOSER_MAX_BEHIND`] blocks behind the tip.
-    ///
-    /// The certified ONLINE roster carries members only (no per-seat heights),
-    /// and pongs / tips are local views, so they cannot be a lottery input.
-    /// The deterministic "attested height" of a seat is instead taken from
-    /// the committed chain: the highest height it signed in a `parent_cert`
-    /// (or packed). A seat is lagging only if it was **in** the cert committee
-    /// at a height after that and did not vote (so a healthy seat that simply
-    /// was not drawn is never skipped). Uses the last [`Self::LAGGING_WINDOW`]
-    /// ledgers; with a shorter in-memory chain (fresh snapshot) nothing is
-    /// skipped.
-    pub fn lagging_seats(&self) -> BTreeSet<String> {
-        let mut out = BTreeSet::new();
-        let n = self.chain.len();
-        if n < Self::LAGGING_WINDOW {
-            return out;
-        }
-        let tip = self.tip_height;
-        let window = &self.chain[n - Self::LAGGING_WINDOW..];
-        let mut last_ok: BTreeMap<&str, u64> = BTreeMap::new();
-        let mut last_miss: BTreeMap<&str, u64> = BTreeMap::new();
-        for l in window {
-            let e = last_ok.entry(l.packer.as_str()).or_insert(0);
-            *e = (*e).max(l.height);
-            if let Some(c) = &l.parent_cert {
-                for v in &c.voters {
-                    let e = last_ok.entry(v.as_str()).or_insert(0);
-                    *e = (*e).max(c.height);
-                }
-                for m in &c.committee {
-                    if !c.voters.iter().any(|v| v == m) && m != &l.packer {
-                        let e = last_miss.entry(m.as_str()).or_insert(0);
-                        *e = (*e).max(c.height);
-                    }
-                }
-            }
-        }
-        let max_behind = crate::params_v2::LAGGING_PROPOSER_MAX_BEHIND;
-        for (id, miss) in last_miss {
-            let ok = last_ok.get(id).copied().unwrap_or(0);
-            if miss > ok && tip.saturating_sub(ok) > max_behind {
-                out.insert(id.to_string());
-            }
-        }
-        out
     }
 
     /// Full tip-fixed order for this height (ignores network skips).
@@ -15880,7 +15833,7 @@ mod eth_v3_fork_dry_run_tests;
 #[cfg(test)]
 mod hello_gate_tests;
 #[cfg(test)]
-mod lagging_seat_tests;
+mod hello_release_tests;
 #[cfg(test)]
 mod health_tests;
 
@@ -16274,8 +16227,8 @@ mod tests {
 
     #[test]
     fn product_version_is_locked_to_crate() {
-        assert_eq!(PRODUCT_VERSION, "2.10.2");
-        assert_eq!(env!("CARGO_PKG_VERSION"), "2.10.2");
+        assert_eq!(PRODUCT_VERSION, "2.10.3");
+        assert_eq!(env!("CARGO_PKG_VERSION"), "2.10.3");
         assert_eq!(NodeRole::from_exe_name("/opt/bin/falcon-pl-val"), Some(NodeRole::Val));
         assert_eq!(NodeRole::from_exe_name("falcon-pl-archive"), Some(NodeRole::Archive));
         assert_eq!(NodeRole::VAL_MAX_CHAIN, 128);

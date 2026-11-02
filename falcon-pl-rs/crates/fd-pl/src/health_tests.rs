@@ -198,3 +198,41 @@ fn balance_from_account_status_and_one_line() {
     let b = from_account_status("nobody", None, Some(&st));
     assert_eq!(one_line(&b), "nobody: liquid 0 FPL · bonded 0 FPL · pending rewards 0 FPL");
 }
+
+#[test]
+fn health_peer_release_versions() {
+    let mut net = sealed(1);
+    let n = net.nodes.get_mut("v1").unwrap();
+    n.now_ms = 10_000;
+    n.note_peer_release("v2", "2.10.3");
+    n.note_peer_release("v3", ""); // 2.10.2 Hello: field absent
+    n.note_peer_release("", "2.10.3"); // ignored
+    n.now_ms = 12_500;
+    let h = n.health_core();
+    let seats = h["peers"]["seats"].as_array().unwrap();
+    let by = |id: &str| seats.iter().find(|p| p["id"] == id).unwrap().clone();
+    assert_eq!(by("v2")["release_version"], "2.10.3");
+    assert_eq!(by("v3")["release_version"], PEER_RELEASE_NONE);
+    assert_eq!(by("v2")["hello_age_ms"], 2_500);
+    let rel = h["peers"]["releases"].as_array().unwrap();
+    assert_eq!(rel.len(), 2);
+    assert_eq!(rel[0]["last_seen_ms"], 10_000);
+    // Unseen peer -> null, not "none".
+    let n2 = net.nodes.get("v2").unwrap();
+    let h2 = n2.health_core();
+    let s2 = h2["peers"]["seats"].as_array().unwrap();
+    assert!(s2.iter().all(|p| p["release_version"].is_null()));
+    // Dash renders the release column.
+    let out = render_health(&h, &Style { color: false }, "a", "now").join("\n");
+    assert!(out.contains("rel 2.10.3"), "{out}");
+}
+
+#[test]
+fn peer_release_is_observability_only() {
+    let mut net = sealed(2);
+    let n = net.nodes.get_mut("v1").unwrap();
+    let before = (n.tip_hash.clone(), n.commitment_root());
+    n.note_peer_release("v2", "9.9.9");
+    assert_eq!(before, (n.tip_hash.clone(), n.commitment_root()));
+    assert!(n.hello_release_reject("").is_none());
+}
