@@ -107,6 +107,20 @@ def reserved_kickoffs():
     return {r.get("kickoff") for r in all_reqs() if r.get("kickoff") and r["state"] not in ("failed", "expired")}
 
 
+def reserved_fundings(exclude_id=None):
+    """Depositor funding outpoints already bound to a live request (one coin -> one request)."""
+    return {r.get("funding") for r in all_reqs()
+            if r.get("funding") and r["id"] != exclude_id and r["state"] not in ("failed", "expired")}
+
+
+def outpoint_unspent(txid, vout):
+    """False if the outpoint is already spent (confirmed or in mempool) per esplora."""
+    try:
+        return not esplora(f"tx/{txid}/outspend/{vout}").get("spent")
+    except Exception:
+        return False  # unknown -> don't bind now, retry next pass
+
+
 def pick_kickoff(need):
     used = reserved_kickoffs()
     utxos = [u for u in esplora(f"address/{OP_ADDR}/utxo") if u["status"]["confirmed"] and u["value"] >= need]
@@ -135,8 +149,13 @@ def step(r):
     if s == "awaiting_funding":
         if time.time() - r["created"] > 3 * 86400:
             r["state"] = "expired"; return True
+        used = reserved_fundings(r["id"])
         for u in esplora(f"address/{r['address']}/utxo"):
-            if u["status"]["confirmed"] and MIN_SATS + PEG_IN_FEE <= u["value"] <= MAX_SATS + PEG_IN_FEE:
+            op = f"{u['txid']}:{u['vout']}"
+            if op in used:
+                continue  # coin already bound to another request (shared per-pubkey address)
+            if u["status"]["confirmed"] and MIN_SATS + PEG_IN_FEE <= u["value"] <= MAX_SATS + PEG_IN_FEE \
+                    and outpoint_unspent(u["txid"], u["vout"]):
                 r.update(state="funded", funding=f"{u['txid']}:{u['vout']}", funding_sats=u["value"]); return True
         return False
     if s in ("funded", "waiting_operator_liquidity"):
