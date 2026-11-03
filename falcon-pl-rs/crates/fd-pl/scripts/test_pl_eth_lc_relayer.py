@@ -2146,5 +2146,63 @@ class TransientRetryAndBackfillTests(unittest.TestCase):
                 rel.backfill_exec_hole(self._st(conn=200, tip=300, exec_n=100 + rel.EXEC_PRUNE_BLOCKS, prune=0))
 
 
+class V3UnmintedAlerts(unittest.TestCase):
+    def setUp(self):
+        rel._last_v3_scan = 0.0
+        rel._v3_warned_no_res = False
+
+    @staticmethod
+    def _log(dep_id: str, ts: int, block: int = 100) -> dict:
+        data = "0x" + ("00" * 32) * 3 + format(ts, "064x")
+        return {"topics": ["0x" + rel.V3_DEPOSIT_TOPIC0, "0x" + dep_id, "0x" + "00" * 32],
+                "data": data, "blockNumber": hex(block)}
+
+    def test_topic_is_keccak_of_contract_event(self):
+        self.assertEqual(rel.v3_deposit_topic(), "0x" + rel.V3_DEPOSIT_TOPIC0)
+
+    def test_default_threshold_inside_refund_window(self):
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("ETH_UNMINTED_V3_DEPOSIT_SEC", None)
+            self.assertEqual(rel.unminted_v3_sec(), 21600)
+        self.assertLess(rel.UNMINTED_V3_DEFAULT_SEC, rel.V3_DEPOSIT_EXPIRY_SEC)
+        with patch.dict(os.environ, {"ETH_UNMINTED_V3_DEPOSIT_SEC": "999999999"}):
+            self.assertEqual(rel.unminted_v3_sec(), rel.V3_DEPOSIT_EXPIRY_SEC)
+
+    def test_scan_alerts_only_old_unresolved(self):
+        now = 2_000_000
+        old = now - 21600
+        logs = [self._log("aa" * 32, old), self._log("bb" * 32, old), self._log("cc" * 32, now - 60)]
+        st = {"eth_v3_bridge": "0xABC", "eth_v3_resolutions": [{"deposit_id": "bb" * 32, "Mint": {}}]}
+        calls = []
+
+        def fake_rpc(method, params):
+            calls.append((method, params))
+            return hex(10_000) if method == "eth_blockNumber" else (logs if params[0]["fromBlock"] == hex(max(0, 10_000 - rel.deposit_scan_window_blocks())) else [])
+
+        buf = io.StringIO()
+        with patch.object(rel, "eth_rpc", fake_rpc), redirect_stdout(buf):
+            lines = rel.scan_unminted_v3_deposits(st, now=now)
+        self.assertEqual(lines, [f"ALERT unminted V3 deposit {'aa' * 32} age=21600s block=100"])
+        self.assertTrue(all(p[0]["address"] == "0xabc" for m, p in calls if m == "eth_getLogs"))
+        self.assertTrue(all(p[0]["topics"] == ["0x" + rel.V3_DEPOSIT_TOPIC0] for m, p in calls if m == "eth_getLogs"))
+        self.assertIn("V3 deposit scan bridge=0xabc", buf.getvalue())
+        # Throttled by ETH_ALERT_EVERY_SEC.
+        with patch.object(rel, "eth_rpc", fake_rpc), redirect_stdout(io.StringIO()):
+            self.assertEqual(rel.scan_unminted_v3_deposits(st, now=now + 1), [])
+            again = rel.scan_unminted_v3_deposits(st, now=now + rel.alert_every_sec())
+        self.assertEqual(len(again), 1)
+
+    def test_missing_resolutions_skips_without_alert(self):
+        buf = io.StringIO()
+        with patch.object(rel, "eth_rpc", lambda *a: self.fail("no rpc")), redirect_stdout(buf):
+            self.assertEqual(rel.scan_unminted_v3_deposits({"eth_v3_bridge": "0xabc"}, now=5_000_000), [])
+        self.assertIn("no eth_v3_resolutions", buf.getvalue())
+
+    def test_refunded_id_with_0x_prefix_counts_as_resolved(self):
+        deps = [rel.parse_v3_deposit_log(self._log("dd" * 32, 0))]
+        st = {"eth_v3_resolutions": [{"deposit_id": "0x" + "DD" * 32, "Refund": {}}]}
+        self.assertEqual(rel.unminted_v3_alerts(deps, rel.v3_resolved_ids(st), 10**9, 21600), [])
+
+
 if __name__ == "__main__":
     unittest.main()
