@@ -399,10 +399,10 @@ pub fn hello_min_release_from_height(network_id: u32) -> u64 {
 ///   book+AMM routing for `Swap` / `SwapRoute`, per-ledger expiry and
 ///   AMM-cross trigger hook.
 ///
-/// **PLACEHOLDER**: `u64::MAX` = never. Scott sets H once every seat runs
-/// 2.10.4 (all seats must upgrade before H; 2.10.3 cannot decode the new
-/// tx kinds and computes a different root from H on).
-pub const TESTNET_2300_V2_10_4_FROM_HEIGHT: u64 = u64::MAX;
+/// **H = 800,000** (approved by Scott 2026-11-03). All seats must run 2.10.4
+/// before H: 2.10.3 cannot decode the new tx kinds and computes a different
+/// root from H on.
+pub const TESTNET_2300_V2_10_4_FROM_HEIGHT: u64 = 800_000;
 
 /// The one 2.10.4 activation height. 2300: the constant above. Other
 /// networks: `FPL_V2_10_4_FROM_HEIGHT`, else `default_other`.

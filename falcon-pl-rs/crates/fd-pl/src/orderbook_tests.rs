@@ -326,7 +326,7 @@ fn single_2_10_4_height_gates_every_new_rule_on_2300() {
     use crate::params_v2::*;
     let nid = NETWORK_ID_PUBLIC_TESTNET_2300;
     let h = TESTNET_2300_V2_10_4_FROM_HEIGHT;
-    assert_eq!(h, u64::MAX, "placeholder until Scott sets it");
+    assert!(h > 789_000 && h < u64::MAX, "2.10.4 height must be set (approved)");
     assert_eq!(btc4_lend_scale_from_height(nid), h);
     assert_eq!(orderbook_from_height(nid), h);
     assert_eq!(network_asset_pay_btc4_from_height(nid), h);
