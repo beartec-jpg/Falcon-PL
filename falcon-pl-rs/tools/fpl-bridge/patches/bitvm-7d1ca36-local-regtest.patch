@@ -1035,7 +1035,7 @@ index 0000000..fe3a876
 +}
 diff --git a/bridge/examples/fpl_depositor_ext.rs b/bridge/examples/fpl_depositor_ext.rs
 new file mode 100644
-index 0000000..308d480
+index 0000000..9ac6b16
 --- /dev/null
 +++ b/bridge/examples/fpl_depositor_ext.rs
 @@ -0,0 +1,63 @@
@@ -2698,10 +2698,10 @@ index 0000000..113bcc4
 +    a
 +}
 diff --git a/bridge/src/graphs/base.rs b/bridge/src/graphs/base.rs
-index 1a73a51..f0fb2f7 100644
+index 1a73a51..505b64f 100644
 --- a/bridge/src/graphs/base.rs
 +++ b/bridge/src/graphs/base.rs
-@@ -25,11 +25,38 @@ pub const GRAPH_VERSION: &str = "0.1";
+@@ -25,11 +25,47 @@ pub const GRAPH_VERSION: &str = "0.1";
  
  //1 btc
  pub const CROWDFUNDING_AMOUNT: f64 = 1.0;
@@ -2737,10 +2737,19 @@ index 1a73a51..f0fb2f7 100644
 +pub const FPL_RELAY_FEE_SAT_PER_KVB: u64 = DEFAULT_MIN_RELAY_TX_FEE as u64;
 +#[cfg(feature = "fpl-tn4-lowfee")]
 +pub const FPL_RELAY_FEE_SAT_PER_KVB: u64 = 125; // 0.1 sat/vB + 25% margin: kickoff1 vsize estimate (6231) is ~5% under actual (6530)
++/// FPL: fee rate (sat/kvB) for the peg-in deposit / confirm / refund txs only. These are the
++/// user-visible txs that must confirm promptly; 0.125 sat/vB was relayed but ignored by public
++/// testnet4 miners (deposits sat unconfirmed for hours). Paid by the depositor (PEG_IN_FEE),
++/// not by operators. Peg-out graph fees keep FPL_RELAY_FEE_SAT_PER_KVB (assert set is ~1.26M vB).
++/// Changes peg-in tx amounts: every party of a ceremony must use the same build.
++#[cfg(not(feature = "fpl-tn4-lowfee"))]
++pub const FPL_PEG_IN_FEE_SAT_PER_KVB: u64 = FPL_RELAY_FEE_SAT_PER_KVB;
++#[cfg(feature = "fpl-tn4-lowfee")]
++pub const FPL_PEG_IN_FEE_SAT_PER_KVB: u64 = 2_000; // 2 sat/vB
  pub const DUST_RELAY_FEE_RATE: u64 = (DUST_RELAY_TX_FEE / 1000) as u64;
  
  // set reward percentage as 2% of peg in deposit
-@@ -48,7 +75,18 @@ pub const PEG_OUT_FEE: u64 = MIN_RELAY_FEE_PEG_OUT_CONFIRM // depth 0
+@@ -48,7 +84,18 @@ pub const PEG_OUT_FEE: u64 = MIN_RELAY_FEE_PEG_OUT_CONFIRM // depth 0
      + MIN_RELAY_FEE_START_TIME // include START_TIME tx, spent in kickoff 1
      + MIN_RELAY_FEE_KICK_OFF_2 // depth 2
      + MIN_RELAY_FEE_ASSERT_SET // depth 3
@@ -3591,7 +3600,7 @@ index a58a847..7185821 100644
 +    String::from_utf8(raw).unwrap_or_else(|_| format!("fplraw:{hexstr}"))
 +}
 diff --git a/bridge/src/transactions/base.rs b/bridge/src/transactions/base.rs
-index 75d62ad..5b0b9d1 100644
+index 75d62ad..41af22b 100644
 --- a/bridge/src/transactions/base.rs
 +++ b/bridge/src/transactions/base.rs
 @@ -1,7 +1,6 @@
@@ -3602,7 +3611,7 @@ index 75d62ad..5b0b9d1 100644
  };
  use bitcoin::{Amount, OutPoint, PublicKey, Script, Transaction, Txid, XOnlyPublicKey};
  use core::cmp;
-@@ -12,10 +11,11 @@ use std::collections::HashMap;
+@@ -12,16 +11,17 @@ use std::collections::HashMap;
  
  // TODO: set to larger value to be compatible with future tx modifications
  pub const RELAY_FEE_BUFFER_MULTIPLIER: f32 = 1.0;
@@ -3616,13 +3625,27 @@ index 75d62ad..5b0b9d1 100644
  pub const MIN_RELAY_FEE_KICK_OFF_TIMEOUT: u64 = relay_fee(182);
  pub const MIN_RELAY_FEE_TAKE_1: u64 = relay_fee(380);
  pub const MIN_RELAY_FEE_TAKE_2: u64 = relay_fee(347);
-@@ -57,7 +57,8 @@ pub trait BaseTransaction {
+-pub const MIN_RELAY_FEE_PEG_IN_DEPOSIT: u64 = relay_fee(122);
+-pub const MIN_RELAY_FEE_PEG_IN_CONFIRM: u64 = relay_fee(173);
+-pub const MIN_RELAY_FEE_PEG_IN_REFUND: u64 = relay_fee(138);
++pub const MIN_RELAY_FEE_PEG_IN_DEPOSIT: u64 = peg_in_relay_fee(122);
++pub const MIN_RELAY_FEE_PEG_IN_CONFIRM: u64 = peg_in_relay_fee(173);
++pub const MIN_RELAY_FEE_PEG_IN_REFUND: u64 = peg_in_relay_fee(138);
+ pub const MIN_RELAY_FEE_PEG_OUT: u64 = relay_fee(122);
+ pub const MIN_RELAY_FEE_PEG_OUT_CONFIRM: u64 = relay_fee(122);
+ pub const MIN_RELAY_FEE_ASSERT: u64 = relay_fee(232);
+@@ -57,7 +57,13 @@ pub trait BaseTransaction {
  }
  
  pub const fn relay_fee(vsize: usize) -> u64 {
 -    (vsize as f32 * RELAY_FEE_BUFFER_MULTIPLIER) as u64 * MIN_RELAY_FEE_RATE
 +    // sat/kvB, rounded up
 +    ((vsize as f32 * RELAY_FEE_BUFFER_MULTIPLIER) as u64 * crate::graphs::base::FPL_RELAY_FEE_SAT_PER_KVB).div_ceil(1000)
++}
++
++/// FPL: peg-in deposit/confirm/refund fee at FPL_PEG_IN_FEE_SAT_PER_KVB (sat/kvB, rounded up).
++pub const fn peg_in_relay_fee(vsize: usize) -> u64 {
++    ((vsize as f32 * RELAY_FEE_BUFFER_MULTIPLIER) as u64 * crate::graphs::base::FPL_PEG_IN_FEE_SAT_PER_KVB).div_ceil(1000)
  }
  
  pub fn merge_transactions(

@@ -817,6 +817,60 @@ def load_atts(height: int) -> dict[str, dict]:
     return out
 
 
+def load_atts_for(height: int, seats: list[str]) -> dict[str, dict]:
+    """Attestations at `height` for the given seat ids, by direct path lookup.
+
+    sigs-v2 holds millions of files; globbing it once per candidate height is
+    far too slow for a downward scan, so only `<height>-<seat>.json` is opened.
+    """
+    out: dict[str, dict] = {}
+    for sid in seats:
+        if not sid or sid in out:
+            continue
+        p = SIGS / f"{height:010}-{sid}.json"
+        try:
+            att = json.loads(p.read_text())
+        except (OSError, json.JSONDecodeError):
+            continue
+        sig = att.get("sig") or {}
+        got = (sig.get("id") if isinstance(sig, dict) else None) or att.get("id")
+        if str(got) == sid and isinstance(sig, dict) and sig.get("sig_hex"):
+            out[sid] = att
+    return out
+
+
+# Downward scan window for a height that every picked committee seat signed.
+TARGET_SCAN = int(os.environ.get("FALCON_QC_V3_TARGET_SCAN", "20000"))
+
+
+def find_signed_target(tip: int, hi: int, order: list[str], threshold: int = THRESHOLD,
+                       scan: int = TARGET_SCAN) -> tuple[int, dict[str, dict]]:
+    """Highest H in (tip, hi] with `threshold` trusted-committee sigs that agree.
+
+    The mesh tip often has only 2-3 of the committee sigs collected (a lagging
+    seat signs later or not at all), so always aiming at the tip never lands.
+    """
+    lo = max(tip + 1, hi - max(1, scan) + 1)
+    seats = [s for s in order if s]
+    best_n, best_h = 0, 0
+    for h in range(hi, lo - 1, -1):
+        atts = load_atts_for(h, seats)
+        if len(atts) > best_n:
+            best_n, best_h = len(atts), h
+        if len(atts) < threshold:
+            continue
+        try:
+            picked = pick_signers(order, atts, threshold)
+            headers_agree(atts, [sid for _, sid in picked])
+        except ValueError:
+            continue
+        return h, atts
+    raise ValueError(
+        f"no height in [{lo}, {hi}] has {threshold} trusted-committee sigs "
+        f"(best {best_n} at h={best_h})"
+    )
+
+
 def poll_atts() -> None:
     SIGS.mkdir(parents=True, exist_ok=True)
     for addr in SEATS:
@@ -1018,7 +1072,12 @@ def run_once(args: argparse.Namespace, key: str = "") -> None:
     poll_atts()
     leaves = load_onchain_leaves(bridge, only)
     order = trusted_seat_order(leaves, load_seat_leaves())
-    atts = load_atts(target)
+    if args.jump and not args.height:
+        # Auto mode: the highest height in the window that all picked seats signed.
+        target, atts = find_signed_target(tip, target, order, THRESHOLD)
+        print(f"v3 prover signed target={target} (scan<= {TARGET_SCAN})", flush=True)
+    else:
+        atts = load_atts(target)
     picked = pick_signers(order, atts, THRESHOLD)
     indices, proofs, meta = prove_v3(target, order, picked, atts, leaves)
     quote = fetch_gas_quote(only)

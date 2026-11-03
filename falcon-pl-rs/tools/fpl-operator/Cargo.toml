@@ -1,6 +1,6 @@
 [package]
 name = "fpl-operator"
-version = "0.6.0"
+version = "0.6.1"
 edition = "2021"
 license = "LicenseRef-All-Rights-Reserved"
 description = "Falcon PL BitVM2 bridge operator service (fronts BTC withdrawals from the operator's own wallet)"

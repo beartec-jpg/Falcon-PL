@@ -43,6 +43,9 @@ SEAT_SUBDIRS = ("pub", "nonces", "sigs", "attest")
 SEAT_SHARED = ("request.json", "graphs.json", "nonced.json", "final.json", "transcript.json",
                "peg_in_unsigned.json", "peg_in_signed.json", "depositor_request.json")
 LOCK = threading.RLock()
+# Testnet4 tBTC faucet drip in sats (default 0.1 tBTC). Keep <= FPL_MAX_SATS
+# so one drip can be bridged.
+FAUCET_SATS = max(1000, int(E("FPL_FAUCET_SATS", "10000000")))
 os.makedirs(STATE, exist_ok=True); os.makedirs(GRAPHS, exist_ok=True)
 
 
@@ -318,7 +321,7 @@ class H(BaseHTTPRequestHandler):
                     rem_h = max(1, (21600 - (now - last_ts) + 3599) // 3600)
                     return self.send(429, {"error": f"This Testnet4 BTC address already claimed within 6h (try again in ~{rem_h}h)."})
                 cli = ["/opt/fpl-tn4btc/bin/bitcoin-cli", "-conf=/opt/fpl-tn4btc/bitcoin.conf", "-datadir=/opt/fpl-tn4btc/data"]
-                out = run(cli + ["-rpcwallet=fpl-operator", "-named", "sendtoaddress", f"address={addr}", "amount=0.01", "fee_rate=1"], timeout=30)
+                out = run(cli + ["-rpcwallet=fpl-operator", "-named", "sendtoaddress", f"address={addr}", f"amount={FAUCET_SATS / 1e8:.8f}", "fee_rate=1"], timeout=30)
                 if out.returncode != 0 or not out.stdout.strip():
                     log("faucet err", addr, out.stderr or out.stdout)
                     return self.send(502, {"error": "tBTC faucet send failed: " + (out.stderr or out.stdout).strip()[-200:]})
@@ -339,8 +342,8 @@ class H(BaseHTTPRequestHandler):
                         pass
             except Exception:
                 pass
-            log("faucet sent 0.01 tBTC", addr, txid)
-            return self.send(200, {"ok": True, "txid": txid, "address": addr, "amount_sats": 1000000, "amount_btc": "0.01"})
+            log(f"faucet sent {FAUCET_SATS} sats", addr, txid)
+            return self.send(200, {"ok": True, "txid": txid, "address": addr, "amount_sats": FAUCET_SATS, "amount_btc": f"{FAUCET_SATS / 1e8:g}"})
         if p == "/v1/deposits":
             acct, pk = str(j.get("account", "")).strip(), str(j.get("depositor_pubkey", "")).lower()
             if not ACCT.match(acct) or not PUBK.match(pk):

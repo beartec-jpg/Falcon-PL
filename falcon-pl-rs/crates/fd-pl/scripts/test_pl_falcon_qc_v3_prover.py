@@ -563,6 +563,7 @@ class OneRpcPerRun(unittest.TestCase):
             "poll_atts": lambda: None,
             "load_seat_leaves": lambda: {f"v{i}": leaf(i + 1) for i in range(6)},
             "load_atts": lambda h: {f"v{i}": {} for i in range(6)},
+            "find_signed_target": lambda tip, hi, order, thr=4: (hi, {f"v{i}": {} for i in range(6)}),
             "prove_v3": lambda h, order, picked, atts, leaves=None: ([i for i, _ in picked], [proof] * 4, meta),
             "emit": lambda cmd, gl, gp, send, key, pass_fds=(): sent.append(cmd) or "0x" + "aa" * 32,
         }
@@ -679,6 +680,35 @@ class GasLimit(unittest.TestCase):
         self._with_cast(self._fake_cast("echo 16000001"))
         with self.assertRaises(prov.EstimateTooHigh):
             prov.resolve_gas_limit(0, "0x" + "12" * 20, [], "http://x")
+
+
+class SignedTarget(unittest.TestCase):
+    """Auto jump picks the highest height that all 4 committee seats signed."""
+
+    def _att(self, h, sid, header="aa"):
+        return {"height": h, "header": header, "parent": "bb", "claim_root": "cc",
+                "inner_hash": "dd", "next_committee_root": "ee",
+                "sig": {"id": sid, "sig_hex": "01"}}
+
+    def test_scans_down_to_full_quorum(self):
+        order = ["v10", "falcon-node", "v12", "v1", "v2", "v3"]
+        with tempfile.TemporaryDirectory() as d:
+            old = prov.SIGS
+            prov.SIGS = __import__("pathlib").Path(d)
+            try:
+                def put(h, sids):
+                    for sid in sids:
+                        (prov.SIGS / f"{h:010}-{sid}.json").write_text(json.dumps(self._att(h, sid)))
+                put(775_500, ["v10", "falcon-node", "v12", "v1"])
+                put(775_600, ["v10", "v1", "v12"])
+                put(775_700, ["v1", "v12"])
+                h, atts = prov.find_signed_target(764_197, 775_700, order, 4)
+                self.assertEqual(h, 775_500)
+                self.assertEqual(len(prov.pick_signers(order, atts, 4)), 4)
+                with self.assertRaises(ValueError):
+                    prov.find_signed_target(775_500, 775_700, order, 4)
+            finally:
+                prov.SIGS = old
 
 if __name__ == "__main__":
     unittest.main()
