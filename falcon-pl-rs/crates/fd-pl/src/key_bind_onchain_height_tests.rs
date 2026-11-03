@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! 2.9.79: Fix B (`TESTNET_2300_KEY_BIND_ONCHAIN_FROM_HEIGHT`) brought forward
 //! from 702_000 to 692_000. The ring restore (#118) stays at 702_000.
 

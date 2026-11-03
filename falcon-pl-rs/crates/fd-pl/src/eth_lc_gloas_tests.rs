@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! v2.9.60 tests: the Gloas ETH light-client rules are height-gated at the
 //! ledger level (pack + verify + commit on every node agree), and a hash-only
 //! LC head resolves its number/receipts root from RLP-verified exec headers.

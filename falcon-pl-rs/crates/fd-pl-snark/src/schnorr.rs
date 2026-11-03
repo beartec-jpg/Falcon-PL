@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! BabyJubJub Schnorr over the LC statement (native, off-circuit).
 
 use crate::codec::{fr_from_be_hex, fr_to_be_hex, public_inputs};

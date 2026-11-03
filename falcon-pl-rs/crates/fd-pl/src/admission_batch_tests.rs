@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! v2.9.76: ApproveValidator from a key-bound admission account.
 //! 2.9.75 stall (2300 h=668627): the Merkle batch stripped the admission
 //! account's known key, apply then compared an empty signer key with the

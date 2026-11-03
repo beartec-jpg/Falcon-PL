@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! Groth16 R1CS: k Falcon-512 signatures over the dest-lock header statement.
 //!
 //! Public IO matches `FplLcCircuit` (same Solidity `_lcInputs` order).

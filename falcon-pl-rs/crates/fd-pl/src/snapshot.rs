@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! JSON snapshot persistence for private fleet restarts (v2.2.x).
 //!
 //! ## Reliability (v2.2.1 / snapshot schema 2)

@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! BitVM2 instance spend graph — no watch key, no unsound Disprove leaves.
 //!
 //! NUMS key-path is unspendable. Instance script paths:

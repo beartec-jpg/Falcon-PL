@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! v2.9.60: rolling ETH exec-header prune, same activation height as Gloas.
 //!
 //! The floor is `max(old, lc.execution_number - ETH_EXEC_HEADER_WINDOW)` once

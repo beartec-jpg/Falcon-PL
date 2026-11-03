@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! `falcon-pl-ctl dash --once` / `health` against fake nodes: new node
 //! (Health reply), older node (rejects or ignores HealthReq → status
 //! fallback), and no node at all.

@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! falcon-node 2026-10-21: a seat whose local ring held `falcon-node-bond`'s
 //! key packed that account's unbound tx (62b58294, seq 4). Every seat without
 //! the ring entry rejected the block with `KEY_BIND_REFUSED`, so all of

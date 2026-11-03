@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! Public Groth16 setup tooling (arkworks <-> snarkjs). Holds NO secret.
 //!
 //!   falcon-pl-bitvm2-setup r1cs  --circuit v1|v3 --out C.r1cs        circuit shape for `snarkjs zkey new`

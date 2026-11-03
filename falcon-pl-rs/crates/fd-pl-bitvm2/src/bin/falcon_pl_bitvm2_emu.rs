@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! Phase C emulator CLI — honest payout + false claim disprove demos.
 
 use clap::{Parser, Subcommand};

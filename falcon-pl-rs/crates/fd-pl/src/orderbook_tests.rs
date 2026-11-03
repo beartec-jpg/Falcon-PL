@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! v2.10.4 on-ledger order book: matching, escrow conservation, partial
 //! fills, cancel/expiry refunds, AMM-cross triggers, determinism across
 //! seats, and pre-activation no-op.

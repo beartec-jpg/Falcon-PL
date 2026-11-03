@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! v2.9.65 audit C-1: first-seen key binding.
 //!
 //! Before `TESTNET_2300_KEY_BIND_FROM_HEIGHT` any tx that carries a Falcon key

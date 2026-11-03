@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! v2.9.77.
 //!
 //! Fix A (mempool, not consensus): a tx a seat dropped as permanently invalid

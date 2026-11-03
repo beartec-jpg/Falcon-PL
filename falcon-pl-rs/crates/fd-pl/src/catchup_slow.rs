@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! Joiner-side NeedLedgers peer rotation (v2.9.72). Node-local routing only:
 //! no wire, state, or consensus effect.
 //!

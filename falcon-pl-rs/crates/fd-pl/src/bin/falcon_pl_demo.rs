@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! In-process multi-validator demo.
 //!   cargo run -p fd-pl --bin falcon-pl-demo -- --scheme hmac
 //!   cargo run -p fd-pl --bin falcon-pl-demo -- --scheme falcon-512 --txs 10

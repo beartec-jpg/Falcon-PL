@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! v2.9.66 audit R-2: catch-up verifies per-tx Falcon sigs by default.
 
 #[test]

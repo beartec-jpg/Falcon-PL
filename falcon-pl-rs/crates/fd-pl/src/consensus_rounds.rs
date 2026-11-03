@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! # Round-scoped votes, deterministic per-round proposer, liveness (v2.10.0)
 //!
 //! **Incident (2026-09-28, testnet 2300, h=369421):** a timeout let two seats

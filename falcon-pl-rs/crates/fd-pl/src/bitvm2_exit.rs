@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! BitVM2 BTC exit mode (Phase D) — operator-fronting + Groth16 Claim.
 
 use serde::{Deserialize, Serialize};

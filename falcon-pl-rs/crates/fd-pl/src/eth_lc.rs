@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! Ethereum PoS light client (Altair sync committee) for Sepolia.
 //!
 //! Bootstrap is a weak-subjectivity checkpoint (genesis validators root +

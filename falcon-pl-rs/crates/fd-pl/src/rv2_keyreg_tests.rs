@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! v2.9.62 A13: consensus keys come from a deterministic registry from `H_act`.
 //!
 //! Regression for the devnet halt (installer worker, 9 Oct 2026): a validator

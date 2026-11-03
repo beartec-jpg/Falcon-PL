@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! v2.9.49 / v2.9.50 / v2.9.51 tests: cheap per-tx pack rollback (same txs + same state
 //! root as the old full-clone path), catch-up from any healthy peer (including
 //! a hub that fell behind holding its own uncommitted proposal after a fork),

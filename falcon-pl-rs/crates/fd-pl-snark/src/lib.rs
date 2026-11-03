@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! Groth16 light-client attestations for Falcon PL headers on Ethereum.
 //!
 //! Two circuits share the same public IO:

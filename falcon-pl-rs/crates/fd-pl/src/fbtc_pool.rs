@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! Pooled BTC rail with transferable FBTC.
 //!
 //! Peg-in to one NUMS P2TR pool. FPL mints fungible FBTC (Dave can pay Sally).

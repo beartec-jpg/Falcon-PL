@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! Bitcoin testnet scaffolding for a BitVM2 instance (Phase C).
 //!
 //! Does **not** yet emit the full Groth16-verifier tapscript tree. It defines

@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! 2.9.79-beta.3 reverse guard rail: from the Fix B height no new wallet
 //! account can take a registered validator seat id (with a different key).
 

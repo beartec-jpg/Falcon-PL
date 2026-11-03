@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! Field / hash encoding shared with the Solidity verifier.
 
 use ark_bn254::Fr;

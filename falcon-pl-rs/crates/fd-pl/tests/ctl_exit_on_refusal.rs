@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! #58: `falcon-pl-ctl` must exit non-zero when the node refuses a request,
 //! and still print the reply on stdout.
 

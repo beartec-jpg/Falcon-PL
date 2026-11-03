@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! Public-input ABI for `FplWithdrawValid` (`fpl-bitvm2-wd-v1`).
 //!
 //! Matches [BITVM2_ENGINE.md](../../fd-pl/docs/BITVM2_ENGINE.md) §5.1.

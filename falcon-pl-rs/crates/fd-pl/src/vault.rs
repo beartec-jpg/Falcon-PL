@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! Fungible BTC vault: UTXO set + t-of-n Shamir shares (full key never on disk).
 //!
 //! Shares live in per-seat local files only. Snapshot/RPC must never contain

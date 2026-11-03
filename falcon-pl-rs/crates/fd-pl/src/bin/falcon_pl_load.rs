@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! Load / flood / stability harness for Falcon PL (in-process).
 //!
 //!   cargo run -p fd-pl --release --bin falcon-pl-load

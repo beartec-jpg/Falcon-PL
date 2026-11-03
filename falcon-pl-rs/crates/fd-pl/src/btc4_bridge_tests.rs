@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! BRIDGE testnet4 rail (`BTC4`): created at the bridge height, anchored at
 //! the hard-coded checkpoint, graph-bound peg-in mint (>= 6 confs, depositor
 //! fixed at bind, all active operators), burn -> BitVM2 claim, refund.

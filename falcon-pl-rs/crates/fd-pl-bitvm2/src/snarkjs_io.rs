@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! Public Groth16 setup interop (iden3 / snarkjs formats) for the FPL circuits.
 //!
 //! The circuit-specific phase 2 runs with audited snarkjs on a public

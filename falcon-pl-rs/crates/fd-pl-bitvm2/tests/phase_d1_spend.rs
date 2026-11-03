@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! Phase D.1: instance spend graph — no watch key, n-of-n Challenge.
 
 use fd_pl_bitvm2::spend::{

@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! v2.9.54 tests: chained BTC header admission (mempool only).
 //!
 //! A submitter burst h+1..h+32 from one account must be admitted while h+1 is

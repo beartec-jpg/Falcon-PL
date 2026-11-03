@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! Phase C.1b — BitVM BN254/Groth16 script-pack bridge.
 //!
 //! Upstream [BitVM/BitVM](https://github.com/BitVM/BitVM) owns the pairing tapscripts

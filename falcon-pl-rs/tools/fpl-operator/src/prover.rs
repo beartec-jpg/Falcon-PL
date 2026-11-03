@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! Prover wiring: the Groth16 proof/VK the kit hands to fpl_pregen, the ceremony and the
 //! Disprove watcher (FPL_PROOF_DIR), plus the M1 withdraw VK used by the attest hook.
 //! On testnet4/mainnet there is no fallback to the upstream BitVM mock VK: if the proof dir

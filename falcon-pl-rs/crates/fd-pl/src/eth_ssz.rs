@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! SSZ hash_tree_root + Merkle branch (Ethereum consensus types).
 //! SHA256, little-endian basic types. Not keccak (that's execution).
 

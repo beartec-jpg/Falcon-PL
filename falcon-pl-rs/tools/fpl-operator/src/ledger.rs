@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! BRIDGE ledger ops: once the Falcon node reports `bridge_operators.active`
 //! (the one combined bridge height), the kit puts its operator duties on the
 //! ledger with `falcon-pl-ctl operator`:

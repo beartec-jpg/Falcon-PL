@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! v2.10.3: chunked ("piece") transport for large wire lines.
 //!
 //! A JSON line over [`PIECE_THRESHOLD`] bytes (ledger bodies, LedgersBatch,

@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! v2.10.1 BTC4 header fork fix (`btc4_fork_fix_from_height`).
 //!
 //! Reproduces the live testnet4 stall: stored main chain up to a stale 157549

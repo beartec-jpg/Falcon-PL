@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! Phase C.1b: BitVM BN254/Groth16 pack bridge.
 
 use fd_pl_bitvm2::abi::test_vk_hash;

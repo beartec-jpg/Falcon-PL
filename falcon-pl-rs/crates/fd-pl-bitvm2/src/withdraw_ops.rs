@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! High-level withdraw prove helpers for Phase D integration.
 
 use crate::abi::test_vk_hash;

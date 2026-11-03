@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! #118: ring restore from the account's on-chain key is activation-gated.
 //!
 //! The key ring is node-local and not rebuilt on restart, so restoring a key in

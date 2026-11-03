@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! 2.9.63 memory leak regressions (seat OOMs, 12 Oct 2026):
 //! `body_fill` grew on every relayed `TxsBatch`; in-sync seats asked for a
 //! full snapshot every 5 s.

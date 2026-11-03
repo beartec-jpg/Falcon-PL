@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! Pluggable signing: HMAC-dev (fast) or Falcon-512 (PQ).
 
 use hmac::{Hmac, Mac};

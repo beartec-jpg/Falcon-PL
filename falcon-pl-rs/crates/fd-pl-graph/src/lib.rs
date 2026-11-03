@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! M2: BitVM2-style presigned peg-out graph for the Falcon PL BTC bridge.
 //!
 //! Design rules this crate enforces structurally:

@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! Native Falcon-512 verify matching PQClean (pqcrypto-falcon 0.3).
 //!
 //! Witness extraction only: decompress pk/sig, SHAKE256 HashToPoint-CT,

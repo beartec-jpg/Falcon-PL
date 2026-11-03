@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! Dealerless FROST (secp256k1 Taproot) for the 2300 BTC vault.
 //!
 //! Combined **signature** exists. Combined **secret** does not. Each seat

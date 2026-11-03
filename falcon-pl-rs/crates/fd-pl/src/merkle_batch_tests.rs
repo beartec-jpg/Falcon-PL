@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! Sender signatures stay on a Merkle batch. Receivers re-check them.
 //! Public keys already known to the seat are left off the wire.
 

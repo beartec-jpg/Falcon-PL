@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! v2.9.62 A1: watcher presence slots survive a restart (snapshot round-trip)
 //! once rewards v2 is active; unchanged (and byte-identical) before.
 

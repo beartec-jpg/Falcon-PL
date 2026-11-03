@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! Disk-backed ledger bodies for `--archive` (v2.9.1).
 //!
 //! RAM always strips txs older than `max_body_ledgers`. An archive node writes

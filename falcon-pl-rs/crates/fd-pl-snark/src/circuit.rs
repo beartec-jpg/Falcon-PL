@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! Groth16 R1CS: k-of-n BabyJubJub Schnorr over an FPL header statement.
 //!
 //! Public: height, parent_hi/lo, header_hi/lo, claim_hi/lo, keyRoot, threshold, network_id.

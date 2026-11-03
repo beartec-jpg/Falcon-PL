@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! Execution-layer proofs: header ancestry + receipt MPT + FalconQc Deposit log.
 //!
 //! keccak256 / RLP. Used after the beacon LC has verified `execution_block_hash`.

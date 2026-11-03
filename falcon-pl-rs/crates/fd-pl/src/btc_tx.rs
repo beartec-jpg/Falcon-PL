@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! Bitcoin transaction build / BIP143 / BIP341 / address decode for the vault rail.
 //!
 //! Key-path FROST Schnorr lives in `frost_vault`. NUMS script-path Kickoff

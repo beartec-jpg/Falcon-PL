@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! v2.9.58: check and time the cached commitment root on a real snapshot.
 //!
 //! `cargo run --release --example lean_root_bench -- snapshots/vN.json`

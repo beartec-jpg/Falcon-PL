@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! `falcon.health.v1` body from a live sim node + dash rendering / fallback.
 
 use super::*;

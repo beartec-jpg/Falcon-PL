@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! Groth16 from a public BN254 Powers-of-Tau (Hermez / PSE `.ptau`) plus
 //! circuit-specific δ contributions. Tau is never sampled in this process.
 

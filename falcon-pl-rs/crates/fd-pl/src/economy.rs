@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! Falcon PL v2.2 economics — epoch emission, sector splits, caps, work weights.
 //!
 //! See `docs/EXPANSION_PLAN_v2.2.0.md`.

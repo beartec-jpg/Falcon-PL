@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! In-process BitVM2 optimistic engine (Phase C).
 //!
 //! Verifies `FplWithdrawValid` Groth16 off-chain in place of the future

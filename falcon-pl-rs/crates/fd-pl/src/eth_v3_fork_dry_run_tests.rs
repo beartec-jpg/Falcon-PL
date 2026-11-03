@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! v2.9.61 V3 test plan, FPL side of the anvil Sepolia-fork dry run.
 //!
 //! `#[ignore]`d and inert unless `FPL_V3_FORK_CASE` names a case file written

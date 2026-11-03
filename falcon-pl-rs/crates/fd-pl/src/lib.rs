@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! # Falcon PL (FPL) — Participation Ledger
 //!
 //! Product **Falcon PL**, ticker **FPL**, consensus **Falcon Consensus**,

@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! M1 node-level activation gate: before `bitvm2_m1_from_height` nothing changes
 //! (V2 attest refused, no checkpoints, legacy paths open); from it, V2 is the only
 //! attest path and checkpoints are recorded in rail state.

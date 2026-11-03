@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! fpl-operatord: Falcon PL BitVM2 bridge operator node (operator network).
 //!
 //! Every operator runs the same kit:

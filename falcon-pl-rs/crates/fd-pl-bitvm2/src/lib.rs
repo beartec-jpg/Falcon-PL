@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! BitVM2 engine — Phases B–D.1.
 //!
 //! Spec: `fd-pl/docs/BITVM2_ENGINE.md`.

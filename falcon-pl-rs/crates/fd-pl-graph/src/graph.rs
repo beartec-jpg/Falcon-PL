@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! Presigned peg-out graph templates.
 //!
 //! deposit (NUMS + n-of-n leaf only)
