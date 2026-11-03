@@ -12381,6 +12381,12 @@ impl Node {
             || err.contains("BTC header does not meet target")
             || err.contains("header height want")
             || err.contains("no pool price")
+            // 2.10.4 draft: a disallowed AssetPay (e.g. BTC4 before activation) can never
+            // apply; without this it sits at the account head forever and stale gossip
+            // evicts valid same-seq resubmits (scott.reynolds.123 seq 51, 3 Nov 2026).
+            || err.contains("asset pay: only")
+            || err.contains("asset pay: bad destination")
+            || err.contains("asset pay: zero amount")
             || err.contains("deposit already spent")
             || err.contains("lock_id mismatch")
             || err.contains("block_hash mismatch")
