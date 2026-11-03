@@ -332,6 +332,7 @@ pub mod btc_spv;
 pub mod btc_tx;
 pub mod crypto;
 pub mod defi;
+pub mod orderbook;
 pub mod disk;
 pub mod economy;
 pub mod eth_exec;
@@ -379,7 +380,7 @@ use thiserror::Error;
 
 pub const NETWORK_NAME: &str = "falcon-pl-private-v22";
 /// Product release line. One number on crate, status, Hello, and binaries.
-pub const PRODUCT_VERSION: &str = "2.10.3";
+pub const PRODUCT_VERSION: &str = "2.10.4";
 
 /// Version string a node puts in its Hello (`WireMsg::Hello::product_version`).
 ///
@@ -616,6 +617,8 @@ fn account_tx_json(tx: &Tx, led: &Ledger) -> serde_json::Value {
             TxBody::Claim => "claim",
             TxBody::AssetPay { .. } => "asset_pay",
             TxBody::SetExternalAddrs { .. } => "set_external_addrs",
+            TxBody::PlaceLimitOrder { .. } => "place_limit_order",
+            TxBody::CancelOrder { .. } => "cancel_order",
             _ => "tx",
         },
         "account": tx.account,
@@ -875,6 +878,17 @@ pub fn network_eth_lc_gloas_from_height(network_id: u32) -> u64 {
 /// `eth_v3_from_height == H2` before the tip reaches H2, and
 /// `FPL_SEPOLIA_QC_V3_BRIDGE` must be identical on every seat before then.
 pub const TESTNET_2300_ETH_V3_FROM_HEIGHT: u64 = 414_000;
+
+/// P2P `AssetPay` of BTC4 (testnet4 FBTC): opens at the single 2.10.4
+/// height ([`params_v2::TESTNET_2300_V2_10_4_FROM_HEIGHT`]); `u64::MAX`
+/// keeps today's behaviour (BTC4 rejected at pack).
+pub const TESTNET_2300_ASSET_PAY_BTC4_FROM_HEIGHT: u64 = params_v2::TESTNET_2300_V2_10_4_FROM_HEIGHT;
+
+/// Non-2300 networks keep the draft's default (open from genesis) unless
+/// `FPL_V2_10_4_FROM_HEIGHT` is set.
+pub fn network_asset_pay_btc4_from_height(network_id: u32) -> u64 {
+    params_v2::v2_10_4_from_height_or(network_id, 0)
+}
 
 /// Network-constant V3 deposit activation height (`u64::MAX` = off).
 pub fn network_eth_v3_from_height(network_id: u32) -> u64 {
@@ -1410,6 +1424,23 @@ pub enum TxBody {
     SetExternalAddrs {
         chain: String,
         address: String,
+    },
+    /// v2.10.4 (order book): place a limit order on `pair` (`"<ASSET>-FPL"`).
+    /// `side` = `"buy"` (escrows FPL) / `"sell"` (escrows the asset);
+    /// `price` = FPL raw per one whole coin; `amount` = base raw units.
+    /// Matches book + AMM at once; the rest rests until filled, cancelled
+    /// or past `expiry_height`.
+    PlaceLimitOrder {
+        pair: String,
+        side: String,
+        price: u64,
+        amount: u64,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        expiry_height: Option<u64>,
+    },
+    /// v2.10.4: cancel own open order; unfilled escrow is refunded.
+    CancelOrder {
+        order_id: u64,
     },
 }
 
@@ -2967,6 +2998,8 @@ pub const SEAT_PAYOUT_NOT_ACTIVE: &str = "seat payout not active yet";
 /// v2.10.0: `SetExternalAddrs` before `external_addrs_from_height` (not kept or
 /// relayed; deliberately not matched by `is_permanent_tx_failure`).
 pub const EXTERNAL_ADDRS_NOT_ACTIVE: &str = "set external addrs not active yet";
+/// v2.10.4: order-book tx before the 2.10.4 height (not permanent).
+pub const ORDERBOOK_NOT_ACTIVE: &str = "order book not active yet";
 
 fn is_zero_u32(v: &u32) -> bool {
     *v == 0
@@ -3600,6 +3633,11 @@ pub struct Node {
     pub empty_block_from_height: u64,
     /// v2.10.1: [`crate::params_v2::btc4_fork_fix_from_height`]; runtime only.
     pub btc4_fork_fix_from_height: u64,
+    /// v2.10.4 (TBD): [`crate::params_v2::btc4_lend_scale_from_height`]; runtime only.
+    pub btc4_lend_scale_from_height: u64,
+    /// v2.10.4 (TBD): [`crate::params_v2::orderbook_from_height`] (= the single
+    /// 2.10.4 height); runtime only.
+    pub orderbook_from_height: u64,
     /// v2.10.3 (TBD): [`crate::params_v2::hello_min_release_from_height`]; runtime only.
     pub hello_min_release_from_height: u64,
     /// v2.10.3: last Hello `release_version` per peer id ("" = pre-2.10.3)
@@ -3726,6 +3764,8 @@ impl Node {
         let external_addrs_from_height = crate::params_v2::external_addrs_from_height(cfg.network_id);
         let empty_block_from_height = crate::params_v2::empty_block_from_height(cfg.network_id);
         let btc4_fork_fix_from_height = crate::params_v2::btc4_fork_fix_from_height(cfg.network_id);
+        let btc4_lend_scale_from_height = crate::params_v2::btc4_lend_scale_from_height(cfg.network_id);
+        let orderbook_from_height = crate::params_v2::orderbook_from_height(cfg.network_id);
         let hello_min_release_from_height = crate::params_v2::hello_min_release_from_height(cfg.network_id);
         let rewards_v2_from_height = params_v2::network_rewards_v2_from_height(cfg.network_id);
         let rewards_v2_epoch = params_v2::network_rewards_v2_epoch(cfg.network_id);
@@ -3861,6 +3901,8 @@ impl Node {
             external_addrs_from_height,
             empty_block_from_height,
             btc4_fork_fix_from_height,
+            btc4_lend_scale_from_height,
+            orderbook_from_height,
             hello_min_release_from_height,
             peer_releases: BTreeMap::new(),
             rewards_v2_from_height,
@@ -4188,6 +4230,25 @@ impl Node {
         self.tip_height.saturating_add(1) >= self.btc4_fork_fix_from_height
     }
 
+    /// v2.10.4: BTC4 lend markets pin 1e8 raw/coin for the ledger applied now.
+    pub fn btc4_lend_scale_open(&self) -> bool {
+        self.tip_height.saturating_add(1) >= self.btc4_lend_scale_from_height
+    }
+
+    /// Market with the v2.10.4 BTC4 scale pinned when active (pure; no write).
+    fn lend_market_rescaled(&self, m: &crate::defi::LendingMarket) -> crate::defi::LendingMarket {
+        let mut m = m.clone();
+        if m.raw_per_coin.is_none()
+            && m.asset == crate::bridge::RAIL_BTC4
+            && self.btc4_lend_scale_open()
+        {
+            // Re-express the stored per-1e6 price per 1e8 so value is unchanged.
+            m.raw_per_coin = Some(100_000_000);
+            m.price_native_per_scale = m.price_native_per_scale.saturating_mul(100).max(1);
+        }
+        m
+    }
+
     pub fn external_addrs_at(&self, height: u64) -> bool {
         height >= self.external_addrs_from_height
     }
@@ -4195,6 +4256,38 @@ impl Node {
     /// v2.10.0: a `SetExternalAddrs` tx before activation: refused at
     /// admission, never relayed/exported (2.9.81 seats cannot decode the
     /// variant), rejected at apply.
+    /// v2.10.4: order-book tx kinds before the 2.10.4 height. Refused before
+    /// fee / sequence and never kept or relayed (2.10.3 cannot decode them).
+    pub fn orderbook_tx_pre_activation(&self, tx: &Tx) -> bool {
+        matches!(tx.body, TxBody::PlaceLimitOrder { .. } | TxBody::CancelOrder { .. })
+            && !self.orderbook_open()
+    }
+
+    /// v2.10.4: order book (and hybrid swaps) apply in the ledger built now.
+    pub fn orderbook_open(&self) -> bool {
+        self.tip_height.saturating_add(1) >= self.orderbook_from_height
+    }
+
+    /// v2.10.4 per-ledger order-book hook (expiry + AMM-cross triggers) on a
+    /// draft. Same call in pack, verify (`stage_drafts`) and commit, before
+    /// txs: it settles what the previous ledger's final pool price crossed.
+    pub(crate) fn orderbook_ledger_hook(&self, state: &mut WorldState, defi: &mut DefiState, height: u64) {
+        if height < self.orderbook_from_height {
+            return;
+        }
+        let mut b = crate::orderbook::Books { state, defi };
+        crate::orderbook::ledger_hook(&mut b, height);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn orderbook_ledger_hook_for_test(&mut self, height: u64) {
+        let mut st = std::mem::take(&mut self.state);
+        let mut df = std::mem::take(&mut self.defi);
+        self.orderbook_ledger_hook(&mut st, &mut df, height);
+        self.state = st;
+        self.defi = df;
+    }
+
     pub fn external_addrs_tx_pre_activation(&self, tx: &Tx) -> bool {
         matches!(tx.body, TxBody::SetExternalAddrs { .. })
             && !self.external_addrs_at(self.tip_height.saturating_add(1))
@@ -4619,7 +4712,7 @@ impl Node {
             if m.share_supply == 0 {
                 continue;
             }
-            let scale = crate::defi::coin_scale(&m.asset).max(1);
+            let scale = m.scale();
             for (a, sh) in &m.supply_shares {
                 let h = held(format!("lend|{mid}|{a}"), *sh);
                 let amount = h as u128 * m.total_supply as u128 / m.share_supply as u128;
@@ -4652,6 +4745,7 @@ impl Node {
             || self.rv2_tx_pre_activation(tx)
             || self.seat_tx_pre_activation(tx)
             || self.external_addrs_tx_pre_activation(tx)
+            || self.orderbook_tx_pre_activation(tx)
     }
 
     /// v2.9.62: same treatment for the new v2 tx kinds before `H_act` (not
@@ -6204,6 +6298,45 @@ impl Node {
         Ok(out)
     }
 
+    /// Swap leg: legacy pool-only before 2.10.4; from the 2.10.4 height an
+    /// `<ASSET>/FPL` pool leg routes best-price across the order book and
+    /// the pool ([`crate::orderbook::hybrid_swap`]). With an empty book the
+    /// result is the same as the pool swap.
+    pub fn swap_any(
+        &mut self,
+        pool_id: &str,
+        who: &str,
+        token_in: &str,
+        amount_in: u64,
+        min_out: u64,
+    ) -> Result<u64, String> {
+        let fpl_pair = self
+            .defi
+            .pools
+            .get(pool_id)
+            .map(|p| (p.asset_a == "FPL") != (p.asset_b == "FPL"))
+            .unwrap_or(false);
+        if !(self.orderbook_open() && fpl_pair) {
+            return self.swap(pool_id, who, token_in, amount_in, min_out);
+        }
+        {
+            let p = &self.defi.pools[pool_id];
+            if token_in != p.asset_a && token_in != p.asset_b {
+                return Err("swap: unknown asset".into());
+            }
+            if amount_in == 0 {
+                return Err("swap: zero in".into());
+            }
+        }
+        let h = self.tip_height.saturating_add(1);
+        let mut b = crate::orderbook::Books { state: &mut self.state, defi: &mut self.defi };
+        let out = crate::orderbook::hybrid_swap(&mut b, pool_id, who, token_in, amount_in, h)?;
+        if out < min_out {
+            return Err(format!("swap: slippage out {out} < min {min_out}"));
+        }
+        Ok(out)
+    }
+
     pub fn create_market(&mut self, market_id: &str, asset: &str) -> Result<(), String> {
         if self.defi.markets.contains_key(market_id) {
             return Err("market exists".into());
@@ -6264,6 +6397,11 @@ impl Node {
 
     /// FPL per one whole coin from the deepest FPL pool for this asset.
     fn pool_price_fpl(&self, asset: &str) -> Option<u64> {
+        self.pool_price_fpl_scaled(asset, crate::defi::coin_scale(asset))
+    }
+
+    /// v2.10.4: pool spot as FPL per `scale` raw units.
+    fn pool_price_fpl_scaled(&self, asset: &str, scale: u128) -> Option<u64> {
         let mut best_raw = 0u64;
         let mut best: Option<u64> = None;
         for p in self.defi.pools.values() {
@@ -6277,7 +6415,7 @@ impl Node {
             if raw <= best_raw {
                 continue;
             }
-            if let Some(px) = crate::defi::fpl_per_coin(fpl, raw, asset) {
+            if let Some(px) = crate::defi::fpl_per_coin_scaled(fpl, raw, scale) {
                 best_raw = raw;
                 best = Some(px);
             }
@@ -6287,21 +6425,16 @@ impl Node {
 
     /// Write the pool spot onto the market. ETH fits because the price is per 1 ETH, not per million wei.
     pub fn sync_lend_price(&mut self, market_id: &str) -> Result<u64, String> {
-        let asset = self
-            .defi
-            .markets
-            .get(market_id)
-            .ok_or("unknown market")?
-            .asset
-            .clone();
+        let m = self
+            .lend_market_rescaled(self.defi.markets.get(market_id).ok_or("unknown market")?);
+        let asset = m.asset.clone();
+        let scale = m.scale();
         let px = self
-            .pool_price_fpl(&asset)
+            .pool_price_fpl_scaled(&asset, scale)
             .ok_or_else(|| format!("no pool price for {asset}"))?;
-        self.defi
-            .markets
-            .get_mut(market_id)
-            .unwrap()
-            .set_price(px);
+        let slot = self.defi.markets.get_mut(market_id).unwrap();
+        *slot = m;
+        slot.set_price(px);
         Ok(px)
     }
 
@@ -6320,7 +6453,10 @@ impl Node {
             .asset
             .clone();
         // A pool spot replaces the stored price before the LTV check, so ETH cannot borrow at 1 wei = 1 FPL.
-        if self.pool_price_fpl(&asset).is_some() {
+        let scale = self
+            .lend_market_rescaled(self.defi.markets.get(market_id).ok_or("unknown market")?)
+            .scale();
+        if self.pool_price_fpl_scaled(&asset, scale).is_some() {
             let _ = self.sync_lend_price(market_id);
         }
         if collateral_fpl > 0 {
@@ -6445,17 +6581,17 @@ impl Node {
             return Err("swap: same asset".into());
         }
         if let Some(id) = self.find_pool(token_in, token_out) {
-            return self.swap(&id, who, token_in, amount_in, min_out);
+            return self.swap_any(&id, who, token_in, amount_in, min_out);
         }
         if token_in != "FPL" && token_out != "FPL" {
             let p1 = self
                 .find_pool(token_in, "FPL")
                 .ok_or("no pool from sell asset to FPL")?;
-            let mid = self.swap(&p1, who, token_in, amount_in, 1)?;
+            let mid = self.swap_any(&p1, who, token_in, amount_in, 1)?;
             let p2 = self
                 .find_pool("FPL", token_out)
                 .ok_or("no pool from FPL to buy asset")?;
-            return self.swap(&p2, who, "FPL", mid, min_out);
+            return self.swap_any(&p2, who, "FPL", mid, min_out);
         }
         Err("no route".into())
     }
@@ -7499,6 +7635,9 @@ impl Node {
         }
         if self.external_addrs_tx_pre_activation(&tx) {
             return Err(EXTERNAL_ADDRS_NOT_ACTIVE.into());
+        }
+        if self.orderbook_tx_pre_activation(&tx) {
+            return Err(ORDERBOOK_NOT_ACTIVE.into());
         }
         if self.v3_deposit_pre_activation(&tx) {
             return Err(crate::bridge::V3_DEPOSITS_NOT_ACTIVE.into());
@@ -10117,8 +10256,8 @@ impl Node {
                     .markets
                     .get(market_id)
                     .ok_or_else(|| "unknown market".to_string())?;
-                let mut m_probe = m.clone();
-                if let Some(px) = self.pool_price_fpl(&m_probe.asset) {
+                let mut m_probe = self.lend_market_rescaled(m);
+                if let Some(px) = self.pool_price_fpl_scaled(&m_probe.asset, m_probe.scale()) {
                     m_probe.set_price(px);
                 }
                 m_probe.borrow(&tx.account, *amount, *collateral_fpl)?;
@@ -11574,6 +11713,9 @@ impl Node {
         if self.external_addrs_tx_pre_activation(tx) {
             return Err(EXTERNAL_ADDRS_NOT_ACTIVE.into());
         }
+        if self.orderbook_tx_pre_activation(tx) {
+            return Err(ORDERBOOK_NOT_ACTIVE.into());
+        }
         self.note_sender_key(tx)?;
         if self.tx_name_enroll(tx) && !tx.public_key.is_empty() {
             self.enroll_name_key(tx)?;
@@ -11663,8 +11805,10 @@ impl Node {
             }
             TxBody::AssetPay { asset } => {
                 let asset = asset.trim().to_ascii_uppercase();
-                if !matches!(asset.as_str(), "BTC" | "ETH" | "USDC") {
-                    return Err("asset pay: only BTC, ETH, USDC".into());
+                let btc4_ok = asset == "BTC4"
+                    && self.tip_height.saturating_add(1) >= network_asset_pay_btc4_from_height(self.cfg.network_id);
+                if !(matches!(asset.as_str(), "BTC" | "ETH" | "USDC") || btc4_ok) {
+                    return Err("asset pay: only BTC, ETH, USDC (BTC4 after activation)".into());
                 }
                 if tx.destination.is_empty() || tx.destination == tx.account {
                     return Err("asset pay: bad destination".into());
@@ -11860,7 +12004,22 @@ impl Node {
                 amount_in,
                 min_out,
             } => {
-                let _ = self.swap(pool_id, &tx.account, token_in, *amount_in, *min_out)?;
+                let _ = self.swap_any(pool_id, &tx.account, token_in, *amount_in, *min_out)?;
+            }
+            TxBody::PlaceLimitOrder {
+                pair,
+                side,
+                price,
+                amount,
+                expiry_height,
+            } => {
+                let h = self.tip_height.saturating_add(1);
+                let mut b = crate::orderbook::Books { state: &mut self.state, defi: &mut self.defi };
+                crate::orderbook::place_limit(&mut b, &tx.account, pair, side, *price, *amount, *expiry_height, h)?;
+            }
+            TxBody::CancelOrder { order_id } => {
+                let mut b = crate::orderbook::Books { state: &mut self.state, defi: &mut self.defi };
+                crate::orderbook::cancel(&mut b, &tx.account, *order_id)?;
             }
             TxBody::CreateMarket { market_id, asset } => {
                 self.create_market(market_id, asset)?;
@@ -12342,6 +12501,14 @@ impl Node {
             || err.contains("BTC header does not meet target")
             || err.contains("header height want")
             || err.contains("no pool price")
+            // 2.10.4 draft: a disallowed AssetPay (e.g. BTC4 before activation) can never
+            // apply; without this it sits at the account head forever and stale gossip
+            // evicts valid same-seq resubmits (scott.reynolds.123 seq 51, 3 Nov 2026).
+            || err.contains("asset pay: only")
+            || err.contains("asset pay: bad destination")
+            || err.contains("asset pay: zero amount")
+            // 2.10.4 order book: validation failures cannot change for this seq.
+            || err.contains("order: ")
             || err.contains("deposit already spent")
             || err.contains("lock_id mismatch")
             || err.contains("block_hash mismatch")
@@ -12486,6 +12653,7 @@ impl Node {
             .unwrap_or_default();
         self.rv2_ledger_hook(&mut draft.vals, height, &me, r0.as_deref(), &voters);
         self.seat_migrate_hook(&mut draft.vals, &mut draft.claim, height);
+        self.orderbook_ledger_hook(&mut draft.state, &mut draft.defi, height);
         let saved_now = self.now_ms;
         self.now_ms = stamp;
         let force_full = pack_force_full_clone();
@@ -13700,6 +13868,7 @@ impl Node {
             .unwrap_or_default();
         self.rv2_ledger_hook(&mut draft_vals, ledger.height, &ledger.packer, r0.as_deref(), &voters);
         self.seat_migrate_hook(&mut draft_vals, &mut draft_claim, ledger.height);
+        self.orderbook_ledger_hook(&mut draft_state, &mut draft_defi, ledger.height);
         let saved = self.now_ms;
         self.now_ms = ledger.sealed_at_ms;
         let mut fee_total = 0u64;
@@ -14024,6 +14193,7 @@ impl Node {
             .unwrap_or_default();
         self.rv2_ledger_hook(&mut draft_vals, ledger.height, &ledger.packer, r0.as_deref(), &voters);
         self.seat_migrate_hook(&mut draft_vals, &mut draft_claim, ledger.height);
+        self.orderbook_ledger_hook(&mut draft_state, &mut draft_defi, ledger.height);
         let mut fee_total = 0u64;
         let mut apply_err = None;
         // Merkle-batch bodies: packer batch_sig + (from H=520000) per-sender
@@ -15732,6 +15902,30 @@ pub enum WireMsg {
     AccountQuery {
         account: String,
     },
+    /// v2.10.4 RPC: order book depth for `pair` (`"BTC4-FPL"`), best
+    /// `levels` price levels per side (default 50, max 200) + pool spot.
+    OrderBookQuery {
+        pair: String,
+        #[serde(default)]
+        levels: u32,
+    },
+    /// v2.10.4 RPC: one account's open orders.
+    OpenOrdersQuery {
+        account: String,
+    },
+    /// v2.10.4 RPC: recent fills (book and AMM legs), newest first.
+    FillsQuery {
+        #[serde(default)]
+        pair: Option<String>,
+        #[serde(default)]
+        account: Option<String>,
+        #[serde(default)]
+        limit: u32,
+    },
+    /// Reply to the three order-book queries.
+    OrderBook {
+        body: serde_json::Value,
+    },
     Account {
         body: serde_json::Value,
     },
@@ -16247,8 +16441,8 @@ mod tests {
 
     #[test]
     fn product_version_is_locked_to_crate() {
-        assert_eq!(PRODUCT_VERSION, "2.10.3");
-        assert_eq!(env!("CARGO_PKG_VERSION"), "2.10.3");
+        assert_eq!(PRODUCT_VERSION, "2.10.4");
+        assert_eq!(env!("CARGO_PKG_VERSION"), "2.10.4");
         assert_eq!(NodeRole::from_exe_name("/opt/bin/falcon-pl-val"), Some(NodeRole::Val));
         assert_eq!(NodeRole::from_exe_name("falcon-pl-archive"), Some(NodeRole::Archive));
         assert_eq!(NodeRole::VAL_MAX_CHAIN, 128);
@@ -23903,3 +24097,7 @@ mod v2_10_activation_tests;
 
 #[cfg(test)]
 mod btc4_fork_fix_tests;
+#[cfg(test)]
+mod btc4_lend_scale_tests;
+#[cfg(test)]
+mod orderbook_tests;

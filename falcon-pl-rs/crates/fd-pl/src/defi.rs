@@ -23,10 +23,15 @@ pub fn coin_scale(asset: &str) -> u128 {
 
 /// FPL for one whole coin, from pool reserves. None when the quote rounds to zero.
 pub fn fpl_per_coin(reserve_fpl: u64, reserve_asset: u64, asset: &str) -> Option<u64> {
+    fpl_per_coin_scaled(reserve_fpl, reserve_asset, coin_scale(asset))
+}
+
+/// v2.10.4: [`fpl_per_coin`] with an explicit raw-units-per-coin scale.
+pub fn fpl_per_coin_scaled(reserve_fpl: u64, reserve_asset: u64, scale: u128) -> Option<u64> {
     if reserve_fpl == 0 || reserve_asset == 0 {
         return None;
     }
-    let v = (reserve_fpl as u128).saturating_mul(coin_scale(asset)) / reserve_asset as u128;
+    let v = (reserve_fpl as u128).saturating_mul(scale.max(1)) / reserve_asset as u128;
     if v == 0 {
         None
     } else {
@@ -172,6 +177,12 @@ pub struct LendingMarket {
     /// FPL per one whole coin (1 ETH, 1 BTC, 1 USDC). Not per million raw units.
     pub price_native_per_scale: u64,
     pub ltv_bps: u64,
+    /// v2.10.4: raw units per whole coin pinned on the market (BTC4 = 1e8 sats
+    /// once `btc4_lend_scale_from_height` is open). `None` = legacy
+    /// [`coin_scale`] (BTC4 fell through to 1e6, pricing per 0.01 BTC).
+    /// Skipped when `None` so pre-activation state serializes byte-identically.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub raw_per_coin: Option<u64>,
 }
 
 impl LendingMarket {
@@ -190,7 +201,16 @@ impl LendingMarket {
             collateral: BTreeMap::new(),
             price_native_per_scale: price.max(1),
             ltv_bps: DEFAULT_LTV_BPS,
+            raw_per_coin: None,
         }
+    }
+
+    /// Raw units per whole coin for this market's price math.
+    pub fn scale(&self) -> u128 {
+        self.raw_per_coin
+            .map(|v| v as u128)
+            .unwrap_or_else(|| coin_scale(&self.asset))
+            .max(1)
     }
 
     pub fn set_price(&mut self, price_fpl_per_coin: u64) {
@@ -240,7 +260,7 @@ impl LendingMarket {
     }
 
     fn debt_value_native(&self, debt_asset: u64) -> u64 {
-        let scale = coin_scale(&self.asset).max(1);
+        let scale = self.scale();
         ((debt_asset as u128)
             .saturating_mul(self.price_native_per_scale as u128)
             / scale) as u64
@@ -248,7 +268,7 @@ impl LendingMarket {
 
     pub fn max_borrow_asset(&self, collateral_native: u64) -> u64 {
         let max_debt_native = collateral_native.saturating_mul(self.ltv_bps) / 10_000;
-        let scale = coin_scale(&self.asset).max(1);
+        let scale = self.scale();
         ((max_debt_native as u128).saturating_mul(scale)
             / self.price_native_per_scale.max(1) as u128) as u64
     }
@@ -350,6 +370,10 @@ pub struct DefiState {
     /// draft without new plumbing. Empty (omitted) before activation.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub validator_approvals: BTreeMap<String, crate::ValidatorApproval>,
+    /// v2.10.4: on-ledger order book (escrowed orders + recent fills).
+    /// Omitted while empty, so pre-activation roots are byte-identical.
+    #[serde(default, skip_serializing_if = "crate::orderbook::OrderBook::is_empty")]
+    pub orderbook: crate::orderbook::OrderBook,
 }
 
 impl DefiState {

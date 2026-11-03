@@ -390,6 +390,53 @@ pub fn hello_min_release_from_height(network_id: u32) -> u64 {
     env_u64("FPL_HELLO_MIN_RELEASE_FROM_HEIGHT").unwrap_or(u64::MAX)
 }
 
+/// **v2.10.4 single activation height** (testnet 2300). Every 2.10.4
+/// consensus rule opens here together:
+/// * BTC4 lend markets price per 1 BTC4 (1e8 sats) instead of the 1e6
+///   fall-through (LendSetPrice / LendBorrow results change);
+/// * `AssetPay` accepts BTC4;
+/// * on-ledger order book: `PlaceLimitOrder` / `CancelOrder`, hybrid
+///   book+AMM routing for `Swap` / `SwapRoute`, per-ledger expiry and
+///   AMM-cross trigger hook.
+///
+/// **H = 800,000** (approved by Scott 2026-11-03). All seats must run 2.10.4
+/// before H: 2.10.3 cannot decode the new tx kinds and computes a different
+/// root from H on.
+pub const TESTNET_2300_V2_10_4_FROM_HEIGHT: u64 = 800_000;
+
+/// The one 2.10.4 activation height. 2300: the constant above. Other
+/// networks: `FPL_V2_10_4_FROM_HEIGHT`, else `default_other`.
+pub fn v2_10_4_from_height_or(network_id: u32, default_other: u64) -> u64 {
+    if network_id == NETWORK_ID_PUBLIC_TESTNET_2300 {
+        return TESTNET_2300_V2_10_4_FROM_HEIGHT;
+    }
+    env_u64("FPL_V2_10_4_FROM_HEIGHT").unwrap_or(default_other)
+}
+
+/// 2.10.4 height with `never` as the non-2300 default.
+pub fn v2_10_4_from_height(network_id: u32) -> u64 {
+    v2_10_4_from_height_or(network_id, u64::MAX)
+}
+
+/// Legacy alias kept for the lend-scale code/tests (= [`TESTNET_2300_V2_10_4_FROM_HEIGHT`]).
+pub const TESTNET_2300_BTC4_LEND_SCALE_HEIGHT: u64 = TESTNET_2300_V2_10_4_FROM_HEIGHT;
+
+/// BTC4 lend-scale activation = the 2.10.4 height. Non-2300 networks may
+/// still use `FPL_BTC4_LEND_SCALE_FROM_HEIGHT` (tests/devnets).
+pub fn btc4_lend_scale_from_height(network_id: u32) -> u64 {
+    if network_id == NETWORK_ID_PUBLIC_TESTNET_2300 {
+        return TESTNET_2300_V2_10_4_FROM_HEIGHT;
+    }
+    env_u64("FPL_BTC4_LEND_SCALE_FROM_HEIGHT")
+        .or_else(|| env_u64("FPL_V2_10_4_FROM_HEIGHT"))
+        .unwrap_or(u64::MAX)
+}
+
+/// Order book activation = the 2.10.4 height (non-2300: env, else never).
+pub fn orderbook_from_height(network_id: u32) -> u64 {
+    v2_10_4_from_height(network_id)
+}
+
 /// BTC4 fork-fix activation height (`u64::MAX` = never). Non-2300 networks may
 /// set `FPL_BTC4_FORK_FIX_FROM_HEIGHT` (devnets / tests).
 pub fn btc4_fork_fix_from_height(network_id: u32) -> u64 {

@@ -7009,6 +7009,26 @@ fn process_msg(
             }
             Some(WireMsg::Account { body })
         }
+        WireMsg::OrderBookQuery { pair, levels } => {
+            let n = shared.node.lock();
+            let lv = if levels == 0 { 50 } else { (levels as usize).min(200) };
+            Some(WireMsg::OrderBook {
+                body: fd_pl::orderbook::depth_json(&n.defi, &pair, lv),
+            })
+        }
+        WireMsg::OpenOrdersQuery { account } => {
+            let n = shared.node.lock();
+            Some(WireMsg::OrderBook {
+                body: fd_pl::orderbook::account_orders_json(&n.defi, &account),
+            })
+        }
+        WireMsg::FillsQuery { pair, account, limit } => {
+            let n = shared.node.lock();
+            let lim = if limit == 0 { 50 } else { limit as usize };
+            Some(WireMsg::OrderBook {
+                body: fd_pl::orderbook::fills_json(&n.defi, pair.as_deref(), account.as_deref(), lim),
+            })
+        }
         WireMsg::RailChallenge {
             asset,
             note_id,
@@ -7027,7 +7047,8 @@ fn process_msg(
         | WireMsg::Health { .. }
         | WireMsg::Ok { .. }
         | WireMsg::Err { .. }
-        | WireMsg::Account { .. } => None,
+        | WireMsg::Account { .. }
+        | WireMsg::OrderBook { .. } => None,
     }
 }
 
