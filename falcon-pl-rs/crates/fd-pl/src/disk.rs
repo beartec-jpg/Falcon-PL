@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! Disk hygiene for node-local dumps (v2.9.53).
 //!
 //! 2026-10-07: host2 (v3 hub + v11) hit 100% disk. The hub wrote a fresh

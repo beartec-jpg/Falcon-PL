@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! EVM deposit-event SPV (ETH native + ERC-20 USDC).
 //!
 //! Headers are hash-linked watcher submissions. A deposit leaf binds

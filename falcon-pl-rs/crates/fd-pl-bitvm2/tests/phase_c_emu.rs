@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! Phase C: optimistic engine e2e (emulator).
 
 use ark_bn254::Fr;

@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! Export BitVM chunk script digests for Falcon C.1b pack cache.
 //!
 //! Separate from the Falcon workspace: depends on vendored BitVM (ark 0.5).

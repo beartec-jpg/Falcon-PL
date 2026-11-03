@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! OPEN=1 Falcon-512 QC circuit v2: statement is outer hash (no free claim).
 //! Public IO length 16. Next-6 pk leaves are public.
 

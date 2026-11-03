@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! Off-chain LC keygen, Schnorr sign, Groth16 setup/prove/verify.
 
 use anyhow::{bail, Context, Result};

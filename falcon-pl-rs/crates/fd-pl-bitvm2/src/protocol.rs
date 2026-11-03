@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! BitVM2 optimistic protocol types (Phase C core).
 //!
 //! Full on-chain Groth16 verifier tapscript split is **not** included yet —

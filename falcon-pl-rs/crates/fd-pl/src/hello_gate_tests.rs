@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! v2.9.60 Hello version gate: any 2.9.x before the Gloas gate H, 2.9.x with
 //! x >= 60 once the local tip reaches H, and a refused peer's session closes
 //! without the peer ever being marked live.

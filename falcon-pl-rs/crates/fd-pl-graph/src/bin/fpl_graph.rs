@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! `fpl-graph regtest-acceptance` — end-to-end graph test on a local bitcoind regtest.
 //! Env: FPL_BTC_CLI (default "bitcoin-cli"), FPL_BTC_DATADIR.
 use fd_pl_graph::bitcoin::{consensus, Address, Amount, Network, OutPoint, ScriptBuf, Transaction, Txid};

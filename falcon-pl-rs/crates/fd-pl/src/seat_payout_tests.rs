@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! Seat payout: validator rewards kept per seat (`ValidatorInfo::seat_claimable`),
 //! `SetSeatPayout` / `ClaimSeat` signed with the seat key by `<id>#seat`,
 //! one-off migration at the activation height, nothing changes before it.

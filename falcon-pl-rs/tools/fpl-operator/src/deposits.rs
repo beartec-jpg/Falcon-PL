@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! Deposit-graph lookup: which presigned deposit graph serves a Falcon withdrawal.
 //!
 //! The deposit ceremony leaves `graphs/<dir>/final.json` (peg-in + peg-out

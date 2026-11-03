@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! Export an FplWithdrawValidV2 Groth16 proof for the BitVM split verifier.
 //! Usage: falcon-pl-bitvm2-v2-proof --out DIR --amount SATS --dest-h160 HEX
 //!          --pegout-txid HEX --height H --header-hex HEX [--note ID] [--seed HEX]

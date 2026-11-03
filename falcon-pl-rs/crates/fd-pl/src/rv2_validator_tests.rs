@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! v2.9.62 workstream A validator-set rules (A3, A6–A11), gated on `H_act`.
 
 use super::*;

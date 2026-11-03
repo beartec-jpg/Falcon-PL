@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! Falcon-512 ledger fill / sign / verify timings.
 //!
 //!   cargo run -p fd-pl --release --bin falcon-pl-bench

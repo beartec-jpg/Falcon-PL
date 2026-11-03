@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! Non-custodial 1:1 BTC vault: only the user's key can spend.
 //!
 //! ```text

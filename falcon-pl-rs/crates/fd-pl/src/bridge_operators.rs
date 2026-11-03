@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! BRIDGE: the BitVM2 operator network wired into the ledger.
 //!
 //! Everything here is refused / inert before the combined bridge height

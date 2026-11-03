@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! Node health snapshot (`falcon.health.v1`) and the `falcon-node dash` renderer.
 //!
 //! Read-only. The node answers [`crate::WireMsg::HealthReq`] on its existing

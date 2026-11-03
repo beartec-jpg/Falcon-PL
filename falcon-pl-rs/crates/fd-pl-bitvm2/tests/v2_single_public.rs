@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 use ark_groth16::Groth16;
 use ark_snark::SNARK;
 use fd_pl_bitvm2::*;

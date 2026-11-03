@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! SHAKE256 (FIPS 202) as an R1CS gadget over BN254.
 //!
 //! HashToPoint is SHAKE256(nonce || message) then 16-bit rejection.

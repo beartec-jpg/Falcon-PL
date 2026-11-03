@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! v2.9.61: V3 mint-or-refund. Synthetic receipts and RLP headers only
 //! (no beacon network). The V3 bridge is set on the node, never via env.
 

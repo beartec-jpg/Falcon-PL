@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! v2.10.4: on-ledger limit order book, hybrid with the constant-product AMM.
 //!
 //! Design (after the XRPL DEX + XLS-30 AMM, adapted to Falcon PL state):

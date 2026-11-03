@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! Minimal Bitcoin script builders for Disprove leaves.
 
 /// Bitcoin script opcodes used here.

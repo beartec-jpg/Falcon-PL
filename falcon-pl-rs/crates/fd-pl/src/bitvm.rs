@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! Legacy BTC exit helpers: dest-locked claim (CSV) + NUMS Kickoff with watch co-sign.
 //!
 //! This is **not** BitVM2. Kickoff requires dest BIP340 + operator watch BIP340.

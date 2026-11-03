@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! Helpers for `falcon-pl-ctl web`: bind policy, request parsing, and the
 //! in-memory history the local server samples. The page itself is
 //! `health_web.html`, embedded with `include_str!` (no CDN, no external fetch).

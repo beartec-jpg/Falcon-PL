@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! Falcon-512-in-circuit light client (replaces BabyJubJub 4-of-6 LC).
 //!
 //! Ethereum verifies a Groth16 proof that k Falcon-512 signatures over the

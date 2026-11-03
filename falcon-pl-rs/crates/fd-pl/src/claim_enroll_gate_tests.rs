@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! 8980c0b made `Claim` bind a first-seen key. No seat ever ran it (the 2.9.63+
 //! deploy line took only its account-tail hunks), and it changes which blocks
 //! a node accepts, so on main it is gated at `claim_enroll_from_height`

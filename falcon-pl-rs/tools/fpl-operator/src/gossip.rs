@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! Signed operator records + peer gossip.
 //!
 //! Every operator signs records (BIP340 Schnorr, its registry x-only key) about

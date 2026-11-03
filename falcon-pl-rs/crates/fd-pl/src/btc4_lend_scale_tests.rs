@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! v2.10.4 BTC4 lend price scale (`btc4_lend_scale_from_height`).
 //!
 //! Live 2300: pool btc4-fpl 406,760 FPL / 10,000,000 sats made `lend-set-price`

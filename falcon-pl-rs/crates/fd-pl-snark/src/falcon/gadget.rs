@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! R1CS gadgets: range, HashToPoint-CT, negacyclic mul, L2 bound, pk leaf.
 
 use super::native::{

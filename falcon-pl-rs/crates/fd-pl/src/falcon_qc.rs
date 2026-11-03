@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! Falcon-512 dest-lock attestations with the seat's **node** Falcon key.
 //!
 //! Not the BabyJub LC secret in `keys/lc/`. Same statement the Groth16 circuit

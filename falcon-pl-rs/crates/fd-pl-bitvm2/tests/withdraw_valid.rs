@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! Phase B acceptance tests: honest prove/verify; reject bad dest/amount; nullifier.
 
 use ark_bn254::Fr;

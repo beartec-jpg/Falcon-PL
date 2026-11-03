@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! Falcon PL 2.10.0 activation gates (`external_addrs_from_height`,
 //! `empty_block_from_height`): before the height a 2.10.0 node behaves exactly
 //! like 2.9.81 on consensus paths (no `SetExternalAddrs`, no empty ledger, same

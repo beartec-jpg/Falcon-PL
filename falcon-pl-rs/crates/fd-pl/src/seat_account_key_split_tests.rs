@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! 2.9.79-beta.3: seat/account key split. An account named like a validator
 //! seat (`nodesafe`) has wallet key A on chain; the ring holds seat key B under
 //! the same id. From the Fix B height account txs verify against A (on chain);

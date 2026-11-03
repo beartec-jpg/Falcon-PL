@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! Local LC Schnorr after native Falcon QC. Secrets stay in `keys/lc/<id>.json`.
 
 use crate::bridge::BridgeState;

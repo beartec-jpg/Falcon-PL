@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! MiMC-7 over BN254 Fr. Domain-separated constants (not circomlib).
 //! Used as the SNARK-friendly hash for LC keys, merkle, and Schnorr Fiat-Shamir.
 

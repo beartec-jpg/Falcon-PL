@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 fn main() {
     let vk = bridge::proof::get_proof().vk;
     let s = bitvm::chunk::api::api_generate_partial_script(&vk);

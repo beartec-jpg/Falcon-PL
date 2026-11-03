@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! M1 attest assembly for the operator kit (snarkjs prover path; no proving key in Rust).
 //!
 //!   falcon-pl-bitvm2-attest input --status status.json --note-id N --pegout-txid DISPLAY [--checkpoint-height H] --out attest.json

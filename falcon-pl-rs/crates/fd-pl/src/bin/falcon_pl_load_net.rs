@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! Network load with real Falcon-512 (or HMAC) against live falcon-pl-node(s).
 //!
 //! Persistent TCP (no connect+Hello per tx) — required for Falcon multi-host inject rate.

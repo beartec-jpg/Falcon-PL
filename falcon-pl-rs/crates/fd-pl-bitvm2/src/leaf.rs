@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! SNARK-friendly withdraw leaf + MiMC merkle helpers for Phase B.
 //!
 //! Semantic fields match legacy `bitvm::withdraw_leaf` (note, dest20, amount).

@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! M4 ceremony primitives: each participant holds its key in RAM only, signs the
 //! graph sighashes, then wipes the key and emits a signed deletion attestation.
 //! Testnet: a single operator may play all n participants (logged; labelled

@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! BRIDGE node-level end to end: one activation height arms the operator
 //! network. Covers: unarmed = refused + root/settle unchanged; register + 5k
 //! bond; heartbeats + capacity; FBTC burn -> M1 attest (SPV peg-out + Groth16)

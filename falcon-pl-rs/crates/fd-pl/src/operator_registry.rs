@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! BitVM2 bridge operator registry + emissions reward (DESIGN, NOT ARMED).
 //!
 //! Model (Scott, 2026-10-18): outside operators front BTC withdrawals with

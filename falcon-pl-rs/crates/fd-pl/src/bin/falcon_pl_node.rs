@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! Multi-process PL node — JSON-TCP with **persistent peer writers**.
 //!
 //! Shared `--keys-dir` required for multi-process key material.

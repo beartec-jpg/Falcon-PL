@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! v2.9.62 workstream B (rewards v2), gated on the epoch gate `E_v2`.
 
 use super::*;

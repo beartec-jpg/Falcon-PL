@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! Protocol account classes (v2.2) — Vault single-destination hard lock.
 
 use serde::{Deserialize, Serialize};

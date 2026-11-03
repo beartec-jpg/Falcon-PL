@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! Bitcoin SPV primitives for the FPL BTC rail.
 //!
 //! This is the Bitcoin header / merkle / tx extract — not a port of xrpld.

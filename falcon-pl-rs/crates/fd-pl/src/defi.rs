@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! Minimal AMM + lending markets for Falcon PL v2.2 private fleet.
 //!
 //! Constant-product AMM (x*y=k) and fixed-LTV lending with external price.

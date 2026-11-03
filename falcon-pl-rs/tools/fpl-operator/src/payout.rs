@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! Exact BitVM2 PEG_OUT payout script (upstream `generate_pay_to_pubkey_hash_with_inscription_script`):
 //!
 //!   P2WSH( OP_FALSE OP_IF <RIPEMD160(SHA256(pkh || be32(timestamp) || chain_addr))> OP_ENDIF

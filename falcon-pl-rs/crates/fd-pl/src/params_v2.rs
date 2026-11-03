@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! v2.9.62 "rewards-v2": activation constants and confirmed parameters
 //! (Scott, 13:44 BST 9 Oct 2026; see docs/ops/REWARDS_IMPLEMENTATION_PLAN.md).
 //!

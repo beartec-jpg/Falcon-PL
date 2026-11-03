@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! v4 two-stage ledger seal: inner packer-sig hash + outer sha256 opening.
 //!
 //! Outer preimage is fixed-width for Solidity `sha256(abi.encodePacked(...))`.

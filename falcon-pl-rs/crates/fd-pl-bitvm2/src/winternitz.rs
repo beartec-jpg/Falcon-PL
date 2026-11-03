@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! Lamport one-time signatures for BitVM2 Assert / equivocation slash.
 //!
 //! A 32-byte digest is 256 bits. Each bit has a pair of SHA256 pubkeys.

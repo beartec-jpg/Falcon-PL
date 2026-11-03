@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! Groth16 R1CS: `FplWithdrawValid` — withdraw leaf ∈ claim merkle root + bindings.
 
 use crate::abi::{domain_fr, note_id_fr, test_vk_hash, MERKLE_DEPTH};

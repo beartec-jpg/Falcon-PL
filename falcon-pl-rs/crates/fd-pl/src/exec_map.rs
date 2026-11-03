@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! v2.9.58 "lean node": the ETH execution-header map with a cached canonical
 //! JSON encoding, plus a commitment-root hasher that reuses it.
 //!

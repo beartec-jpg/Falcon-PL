@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! v2.10.3: Hello `release_version` (sent; enforcement off until
 //! `hello_min_release_from_height`, u64::MAX on 2300).
 use super::*;

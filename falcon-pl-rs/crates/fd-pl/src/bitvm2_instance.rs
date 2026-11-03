@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! BitVM2 Bitcoin instance: NUMS P2TR + claimer Kickoff + setup-once Challenge.
 //!
 //! No watch key. Key-path is unspendable (NUMS). Kickoff dest-locks to the

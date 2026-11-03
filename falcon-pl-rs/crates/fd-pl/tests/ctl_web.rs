@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! `falcon-pl-ctl web` against a fake node: page, health proxy (body
 //! unchanged), history sampling, Host guard, read-only, loopback-only bind.
 

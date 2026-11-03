@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! Native verify-trace for BitVM2 Assert commitments.
 
 use crate::abi::{domain_fr, note_id_fr, N_PUBLIC};

@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! Hardcoded SPV rails for Falcon PL — custodialess mint/burn substrate.
 //!
 //! Relayers submit headers + merkle proofs. No federated mint authority.

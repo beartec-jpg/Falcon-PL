@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 // falcon-pl-loadgen — steady background Pay load for a live Falcon PL testnet.
 //
 // Round-robin 1-FPL transfers between dedicated test wallets, each wallet

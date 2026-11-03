@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! BIP341 taptree over Disprove leaves (C.1a SHA256 + C.1b BitVM pack bind).
 
 use super::bn254_pack::{

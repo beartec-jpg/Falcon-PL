@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! Prove `FplWithdrawValid` for operator sidecar (reads leaves from FPL status).
 
 use clap::Parser;

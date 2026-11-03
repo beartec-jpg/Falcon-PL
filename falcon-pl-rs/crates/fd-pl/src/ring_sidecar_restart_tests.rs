@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! Restart loss of ring-only keys (host1 2026-10-19/20, `watcher-eth`).
 //!
 //! An account whose key was bound before the key-bind gate, but never

@@ -1,3 +1,4 @@
+// Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
 //! Control client for falcon-pl-node (Falcon PL / FPL).
 //!
 //!   falcon-pl-ctl gen-keys / gen-wallet --keys-dir ...
