@@ -370,6 +370,10 @@ pub struct DefiState {
     /// draft without new plumbing. Empty (omitted) before activation.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub validator_approvals: BTreeMap<String, crate::ValidatorApproval>,
+    /// v2.10.4: on-ledger order book (escrowed orders + recent fills).
+    /// Omitted while empty, so pre-activation roots are byte-identical.
+    #[serde(default, skip_serializing_if = "crate::orderbook::OrderBook::is_empty")]
+    pub orderbook: crate::orderbook::OrderBook,
 }
 
 impl DefiState {
