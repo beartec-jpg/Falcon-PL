@@ -876,6 +876,17 @@ pub fn network_eth_lc_gloas_from_height(network_id: u32) -> u64 {
 /// `FPL_SEPOLIA_QC_V3_BRIDGE` must be identical on every seat before then.
 pub const TESTNET_2300_ETH_V3_FROM_HEIGHT: u64 = 414_000;
 
+/// P2P `AssetPay` of BTC4 (testnet4 FBTC) activation height. DRAFT 2.10.4:
+/// set H before release; `u64::MAX` keeps today's behaviour (BTC4 rejected at pack).
+pub const TESTNET_2300_ASSET_PAY_BTC4_FROM_HEIGHT: u64 = u64::MAX;
+
+pub fn network_asset_pay_btc4_from_height(network_id: u32) -> u64 {
+    match network_id {
+        NETWORK_ID_PUBLIC_TESTNET_2300 => TESTNET_2300_ASSET_PAY_BTC4_FROM_HEIGHT,
+        _ => 0,
+    }
+}
+
 /// Network-constant V3 deposit activation height (`u64::MAX` = off).
 pub fn network_eth_v3_from_height(network_id: u32) -> u64 {
     match network_id {
@@ -11689,8 +11700,10 @@ impl Node {
             }
             TxBody::AssetPay { asset } => {
                 let asset = asset.trim().to_ascii_uppercase();
-                if !matches!(asset.as_str(), "BTC" | "ETH" | "USDC") {
-                    return Err("asset pay: only BTC, ETH, USDC".into());
+                let btc4_ok = asset == "BTC4"
+                    && self.tip_height.saturating_add(1) >= network_asset_pay_btc4_from_height(self.cfg.network_id);
+                if !(matches!(asset.as_str(), "BTC" | "ETH" | "USDC") || btc4_ok) {
+                    return Err("asset pay: only BTC, ETH, USDC (BTC4 after activation)".into());
                 }
                 if tx.destination.is_empty() || tx.destination == tx.account {
                     return Err("asset pay: bad destination".into());
