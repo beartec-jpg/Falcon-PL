@@ -49,8 +49,9 @@ head has not moved for ETH_LC_STALE_SEC (default 3600), and when a V1 or V2
 bridge Deposit inside the scan window is older than ETH_UNMINTED_DEPOSIT_SEC
 (default 86400) and is not in the ETH/USDC rail spent_deposits. The scan
 window defaults to the 50_400-block prune window (~7 days), not 7200, and
-is fetched in eth_getLogs chunks. A third bridge that is not V1/V2 is
-skipped: V3's Deposit topic is different, and that scan comes with #29.
+is fetched in eth_getLogs chunks. V3 (FalconQcBridgeV3, its own Deposit topic) has a separate scan: a V3
+Deposit older than ETH_UNMINTED_V3_DEPOSIT_SEC (default 6 h) whose id is not
+in body.eth_v3_resolutions prints ALERT unminted V3 deposit <id> age=<s>.
 Both alerts repeat, throttled by ETH_ALERT_EVERY_SEC (default 600).
 The scan's ETH_SCAN_BUDGET_SEC is split: eth_getLogs stops starting spans at
 75% of it, and the timestamp lookups for logs already fetched get their own
@@ -136,7 +137,7 @@ EXEC_PRUNE_BLOCKS = 50_400
 BLOCK_SEC = 12
 # config/sepolia-qc.json and config/sepolia-qc-v2.json. Deposits can land on
 # either bridge; the configured BRIDGE alone misses the other. A third
-# address is not scanned here (V3's Deposit topic differs; that scan is #29).
+# address is not scanned here (V3 has its own scan: scan_unminted_v3_deposits).
 QC_BRIDGE_V1 = "0xf8F1471643792eb1cD5d0C31061629777E55bc48"
 QC_BRIDGE_V2 = "0x811854827627024B38926Ea9DCc0f88ACd5fB23e"
 
@@ -1240,6 +1241,7 @@ def cmd_daemon() -> None:
             st = status()
             note_exec_head(st.get("eth_lc") or {})
             scan_unminted_deposits(st)
+            scan_unminted_v3_deposits(st)
         except Exception as e:
             print(f"WARN alert {e}", flush=True)
         try:
@@ -2328,8 +2330,8 @@ def scan_unminted_deposits(st: dict, now: float | None = None) -> list[str]:
     need no lookup, and timestamps are cached across cycles. If the
     timestamp pass is cut short, the cursor rewinds to the span of the first
     log it did not process and that pass is not marked finished, so a slow
-    RPC cannot visit every span and still never alert. V3 is not scanned
-    here; that unminted scan comes with #29.
+    RPC cannot visit every span and still never alert. V3 has its own
+    scan, scan_unminted_v3_deposits.
     """
     global _last_deposit_scan
     now = time.time() if now is None else now
@@ -2480,6 +2482,154 @@ def scan_unminted_deposits(st: dict, now: float | None = None) -> list[str]:
     lines = unminted_deposit_alerts(deposits, spent, now)
     for line in lines:
         print(line, flush=True)
+    return lines
+
+
+# V3 unminted scan. FalconQcBridgeV3.sol: event Deposit(bytes32 indexed depositId,
+# address indexed sender, bytes20 dest20, address token, uint256 amount,
+# uint64 timestamp). Same signature and topic0 as pl-eth-auto-mint.py.
+V3_DEPOSIT_SIG = b"Deposit(bytes32,address,bytes20,address,uint256,uint64)"
+V3_DEPOSIT_TOPIC0 = "e7783c72791736d4d8af95660d4367bed2f98d8331a095422373e557a4318728"
+# bridge.rs ETH_V3_DEPOSIT_EXPIRY_SECS: an unresolved V3 deposit can be refunded
+# after 3 days.
+V3_DEPOSIT_EXPIRY_SEC = 3 * 86400
+# Default 6 h: auto-mint normally resolves a V3 deposit within minutes once the
+# LC head covers its block (finality ~13 min plus relay polls), so 6 h is well
+# past any healthy delay and still leaves ~66 h of the 3-day window to mint
+# or refund by hand before expiry.
+UNMINTED_V3_DEFAULT_SEC = 6 * 3600
+_last_v3_scan = 0.0
+_v3_warned_no_res = False
+
+
+def unminted_v3_sec() -> int:
+    """ETH_UNMINTED_V3_DEPOSIT_SEC, default 6 h, clamped to 60..V3 expiry."""
+    raw = os.environ.get("ETH_UNMINTED_V3_DEPOSIT_SEC", str(UNMINTED_V3_DEFAULT_SEC)).strip()
+    try:
+        n = int(float(raw))
+    except ValueError:
+        _warn_env_once("ETH_UNMINTED_V3_DEPOSIT_SEC", raw, "not a number; using 21600")
+        return UNMINTED_V3_DEFAULT_SEC
+    if n < 60 or n > V3_DEPOSIT_EXPIRY_SEC:
+        _warn_env_once("ETH_UNMINTED_V3_DEPOSIT_SEC", raw, "outside 60..259200; clamping")
+        n = min(V3_DEPOSIT_EXPIRY_SEC, max(60, n))
+    return n
+
+
+def v3_deposit_topic() -> str:
+    t = keccak256(V3_DEPOSIT_SIG).hex()
+    if t != V3_DEPOSIT_TOPIC0:
+        raise RuntimeError(f"V3 Deposit topic mismatch {t}")
+    return "0x" + t
+
+
+def v3_bridge(st: dict) -> str:
+    """Node status eth_v3_bridge first (what consensus parses), else env."""
+    a = str(st.get("eth_v3_bridge") or os.environ.get("FPL_SEPOLIA_QC_V3_BRIDGE") or "").strip()
+    return a.lower()
+
+
+def _norm_id(s) -> str:
+    s = str(s or "").strip().lower()
+    return s[2:] if s.startswith("0x") else s
+
+
+def v3_resolved_ids(st: dict) -> set[str] | None:
+    """Deposit ids in body.eth_v3_resolutions (minted or refunded). None if absent."""
+    res = st.get("eth_v3_resolutions")
+    if not isinstance(res, list):
+        return None
+    return {_norm_id(r.get("deposit_id")) for r in res if isinstance(r, dict) and r.get("deposit_id")}
+
+
+def parse_v3_deposit_log(row: dict) -> dict | None:
+    topics = row.get("topics") or []
+    if len(topics) < 2 or _norm_id(topics[0]) != V3_DEPOSIT_TOPIC0:
+        return None
+    data = _norm_id(row.get("data"))
+    if len(data) < 64 * 4:
+        return None
+    return {
+        "id": _norm_id(topics[1]),
+        "timestamp": int(data[64 * 3: 64 * 4], 16),
+        "block": uhex(row.get("blockNumber") or "0x0"),
+    }
+
+
+def unminted_v3_alerts(deps: list[dict], resolved: set[str], now: float, threshold: int) -> list[str]:
+    lines = []
+    for d in deps:
+        age = int(now - d["timestamp"])
+        if d["id"] in resolved or age < threshold:
+            continue
+        lines.append(f"ALERT unminted V3 deposit {d['id']} age={age}s block={d['block']}")
+    return lines
+
+
+def scan_unminted_v3_deposits(st: dict, now: float | None = None) -> list[str]:
+    """V3 Deposit logs older than ETH_UNMINTED_V3_DEPOSIT_SEC whose id is not in
+    body.eth_v3_resolutions (neither minted nor refunded) print an ALERT.
+
+    Same ETH_ALERT_EVERY_SEC throttle as the V1/V2 scan, armed only after
+    eth_blockNumber succeeds. Window is deposit_scan_window_blocks() (>= the
+    50_400-block header window, longer than the 3-day expiry), chunked by
+    ETH_LOG_CHUNK and bounded by ETH_SCAN_BUDGET_SEC. Age comes from the event's
+    own timestamp, so no block lookups. Read-only: it never mints or refunds.
+    """
+    global _last_v3_scan, _v3_warned_no_res
+    now = time.time() if now is None else now
+    if now - _last_v3_scan < alert_every_sec():
+        return []
+    bridge = v3_bridge(st)
+    if not bridge:
+        return []
+    resolved = v3_resolved_ids(st)
+    if resolved is None:
+        if not _v3_warned_no_res:
+            print("WARN V3 scan: node status has no eth_v3_resolutions; skipping", flush=True)
+            _v3_warned_no_res = True
+        return []
+    try:
+        head_n = uhex(eth_rpc("eth_blockNumber", []))
+    except Exception as e:
+        print(f"WARN V3 deposit scan eth_blockNumber: {e}", flush=True)
+        return []
+    _last_v3_scan = now
+    topic = v3_deposit_topic()
+    start = max(0, head_n - deposit_scan_window_blocks())
+    deadline = time.monotonic() + scan_budget_sec()
+    deps: list[dict] = []
+    spans = 0
+    complete = True
+    for frm, to in _block_chunks(start, head_n, _log_chunk_blocks()):
+        if spans and time.monotonic() >= deadline:
+            complete = False
+            print(f"WARN V3 deposit scan stopped at budget after {spans} spans (block {frm})", flush=True)
+            break
+        spans += 1
+        try:
+            rows = eth_rpc(
+                "eth_getLogs",
+                [{"address": bridge, "topics": [topic], "fromBlock": hex(frm), "toBlock": hex(to)}],
+            ) or []
+        except Exception as e:
+            print(f"WARN V3 deposit scan {bridge} {frm}..{to}: {e}", flush=True)
+            complete = False
+            break
+        for row in rows if isinstance(rows, list) else [rows]:
+            d = parse_v3_deposit_log(row) if isinstance(row, dict) else None
+            if d:
+                deps.append(d)
+    threshold = unminted_v3_sec()
+    lines = unminted_v3_alerts(deps, resolved, now, threshold)
+    for line in lines:
+        print(line, flush=True)
+    print(
+        f"V3 deposit scan bridge={bridge} blocks={start}..{head_n} spans={spans} "
+        f"deposits={len(deps)} resolved={len(resolved)} unminted={len(lines)} "
+        f"threshold={threshold}s complete={complete}",
+        flush=True,
+    )
     return lines
 
 

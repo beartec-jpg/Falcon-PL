@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 BEARTEC. All rights reserved. See LICENSE.
-//! BitVM2 bridge operator registry + emissions reward (DESIGN, NOT ARMED).
+//! BitVM2 bridge operator registry + emissions reward (live on 2300 from the bridge height 692,000).
 //!
 //! Model (Scott, 2026-10-18): outside operators front BTC withdrawals with
 //! their own BTC and are reimbursed from the locked deposit through the
@@ -15,7 +15,7 @@
 //! root and snapshots are byte-identical until the first registration) and is
 //! driven by the `Operator*` tx bodies in `lib.rs`, all refused before the
 //! combined bridge height (`params_v2::TESTNET_2300_BRIDGE_FROM_HEIGHT`,
-//! `u64::MAX` today). Decided (Scott 2026-10-18): 5% off the top, bond 5k FPL,
+//! 692,000 on 2300). Decided (Scott 2026-10-18): 5% off the top, bond 5k FPL,
 //! 100% slash. Split/bounty numbers are preset B (see docs/bridge/OPERATOR_REWARDS.md).
 
 use serde::{Deserialize, Serialize};

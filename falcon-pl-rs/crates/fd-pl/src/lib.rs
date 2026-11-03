@@ -248,7 +248,8 @@
 //! - **v2.9.59 "weak seat keeps up":** local only — state root, wire format,
 //!   votes and certs byte-identical; no activation height.
 //!   (1) Packer pacing ([`Node::pace_wait`], `--min-block-interval-ms`,
-//!   default 2500; `--pace-mempool-txs`, default 128): the round-0 winner
+//!   default 2500; `--pace-mempool-txs`, 128 when shipped, now
+//!   [`Node::PACE_DEFAULT_MEMPOOL_TXS`] = 400): the round-0 winner
 //!   seals once the height has been open that long, or the mempool holds the
 //!   threshold or a full block. Capped by [`Node::pace_effective_ms`] at one
 //!   live pack window so pace + pack/seal/gossip stays inside peers' round-0
@@ -313,7 +314,8 @@
 //! - Stuck pending / dual proposals → **view-change soft QC** (height-local, not genesis wipe)
 //! - Tip advances only after **soft QC**; hard QC capped by |ONLINE|
 //! - Equivocation → jail/slash; uncommitted dual proposals use **QC-first** choice
-//! - Empty ledgers rejected
+//! - Empty ledgers rejected below `empty_block_from_height` (755,000 on 2300);
+//!   from there a packer may seal one only after evicting permanently failing txs
 //!
 //! See `docs/IDENTITY.md` and `docs/POC.md`.
 
@@ -12570,9 +12572,9 @@ impl Node {
     /// Matches one full ledger so a packer does not fire a 128-tx block
     /// while a larger dish is already available.
     pub const PACE_DEFAULT_MEMPOOL_TXS: usize = 400;
-    /// Keep a packer that already has transactions from sealing a short
-    /// ledger. Long enough for a slow seat to reach a full block, short
-    /// enough that a thin pool still seals.
+    /// Unused. Left from a removed 20 s full-block hold; [`Self::pace_wait`]
+    /// does not read it. The only round-0 hold is the min-block-interval
+    /// pacing in [`Self::pace_wait`] / [`Self::pace_effective_ms`].
     pub const FULL_BLOCK_HOLD_MS: u64 = 20_000;
 
     pub fn pack_as(&mut self, packer: &str) -> Result<Ledger, String> {
@@ -14046,10 +14048,11 @@ impl Node {
         self.pace_min_interval_ms.min(window).min(legacy)
     }
 
-    /// Hold the seal while this seat already has transactions but fewer than
-    /// a full block. A view-change does not release the hold. The wait ends
-    /// at [`Self::pace_mempool_txs`], at a full block, or after
-    /// [`Self::FULL_BLOCK_HOLD_MS`].
+    /// Round-0 pacing. Hold the seal while this seat has some transactions
+    /// but fewer than [`Self::pace_mempool_txs`] (and fewer than the per-ledger
+    /// cap), until [`Self::pace_effective_ms`] after `tip_advanced_ms` (this
+    /// seat's own commit of the previous block, not its `sealed_at`). No hold
+    /// with an empty mempool, after a skip, or in a view-change round > 0.
     pub fn pace_wait(&self) -> bool {
         if self.pace_min_interval_ms == 0 {
             return false;
