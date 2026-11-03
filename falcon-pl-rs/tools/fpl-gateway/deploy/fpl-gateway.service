@@ -1,0 +1,42 @@
+# Falcon Cloud RPC gateway (testnet). NOT installed or enabled by this repo.
+# See tools/fpl-gateway/deploy/INSTALL.md. Reload API keys: systemctl reload fpl-gateway
+[Unit]
+Description=Falcon Cloud RPC gateway (keyed, metered front for the local Falcon PL node; testnet)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=fpl-gateway
+Group=fpl-gateway
+ExecStart=/usr/local/bin/fpl-gatewayd serve --config /etc/fpl-gateway/gateway.toml
+ExecReload=/bin/kill -HUP $MAINPID
+# Optional, only when [billing].enabled = true. File holds FPL_GATEWAY_STRIPE_WEBHOOK_SECRET=...; 0600 root.
+EnvironmentFile=-/etc/fpl-gateway/billing.env
+Environment=RUST_LOG=info
+Restart=always
+RestartSec=5
+StateDirectory=fpl-gateway
+StateDirectoryMode=0750
+LimitNOFILE=65536
+MemoryMax=512M
+CPUQuota=100%
+# Hardening: no write access except its state dir; cannot touch the node's data.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+ReadOnlyPaths=/etc/fpl-gateway
+
+[Install]
+WantedBy=multi-user.target

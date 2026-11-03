@@ -1,0 +1,256 @@
+//! HTTP surface.
+//!
+//! Public listener:
+//!   POST /v1/rpc                       JSON-RPC 2.0 (single request), API key required
+//!   GET  /v1/usage                     caller's own month-to-date usage
+//!   GET  /v1/health                    gateway + upstream liveness (no key)
+//!   GET  /v1/tiers                     published tier table (no key)
+//!   POST /v1/billing/stripe/webhook    stub, 404 unless [billing].enabled
+//! Metrics listener (loopback): GET /metrics
+
+use crate::allowlist::{self, BuildErr};
+use crate::auth::{self, KeyStore};
+use crate::billing;
+use crate::config::{Config, Tier};
+use crate::limits::{now_unix, Deny, Limiter};
+use crate::metrics::Metrics;
+use crate::upstream;
+use axum::body::{Body, Bytes};
+use axum::extract::{DefaultBodyLimit, State};
+use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
+use axum::response::{IntoResponse, Response};
+use axum::routing::{get, post};
+use axum::Router;
+use parking_lot::RwLock;
+use serde_json::{json, Value};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+use tokio::sync::Semaphore;
+
+pub struct AppState {
+    pub cfg: Config,
+    pub keys: RwLock<KeyStore>,
+    pub limiter: Limiter,
+    pub metrics: Metrics,
+    pub upstream_slots: Semaphore,
+}
+
+impl AppState {
+    pub fn new(cfg: Config, keys: KeyStore, limiter: Limiter) -> Arc<Self> {
+        let slots = cfg.max_upstream_concurrency;
+        Arc::new(Self { cfg, keys: RwLock::new(keys), limiter, metrics: Metrics::default(), upstream_slots: Semaphore::new(slots) })
+    }
+}
+
+type S = State<Arc<AppState>>;
+
+pub fn router(st: Arc<AppState>) -> Router {
+    let cap = st.cfg.max_body_bytes;
+    Router::new()
+        .route("/v1/rpc", post(rpc).options(preflight))
+        .route("/v1/usage", get(usage).options(preflight))
+        .route("/v1/health", get(health))
+        .route("/v1/tiers", get(tiers))
+        .route("/v1/billing/stripe/webhook", post(stripe_webhook))
+        .layer(DefaultBodyLimit::max(cap))
+        .layer(axum::middleware::from_fn_with_state(st.clone(), cors))
+        .with_state(st)
+}
+
+pub fn metrics_router(st: Arc<AppState>) -> Router {
+    Router::new().route("/metrics", get(metrics)).with_state(st)
+}
+
+fn rpc_err(id: &Value, code: i64, msg: &str) -> Value {
+    json!({"jsonrpc":"2.0","id":id,"error":{"code":code,"message":msg}})
+}
+
+fn reply(status: StatusCode, v: Value) -> Response {
+    (status, axum::Json(v)).into_response()
+}
+
+async fn cors(State(st): S, req: axum::extract::Request, next: axum::middleware::Next) -> Response {
+    let origin = req.headers().get(header::ORIGIN).cloned();
+    let mut resp = next.run(req).await;
+    if let Some(o) = origin {
+        let allowed = st.cfg.cors_origins.iter().any(|a| a == "*" || o.to_str().map(|s| s == a).unwrap_or(false));
+        if allowed {
+            let h = resp.headers_mut();
+            let v = if st.cfg.cors_origins.iter().any(|a| a == "*") { HeaderValue::from_static("*") } else { o };
+            h.insert(header::ACCESS_CONTROL_ALLOW_ORIGIN, v);
+            h.insert(header::ACCESS_CONTROL_ALLOW_METHODS, HeaderValue::from_static("GET, POST, OPTIONS"));
+            h.insert(header::ACCESS_CONTROL_ALLOW_HEADERS, HeaderValue::from_static("authorization, content-type, x-api-key"));
+            h.insert(header::ACCESS_CONTROL_MAX_AGE, HeaderValue::from_static("600"));
+            h.insert(header::VARY, HeaderValue::from_static("Origin"));
+        }
+    }
+    resp
+}
+
+async fn preflight() -> StatusCode {
+    StatusCode::NO_CONTENT
+}
+
+async fn rpc(State(st): S, headers: HeaderMap, body: Bytes) -> Response {
+    let null = Value::Null;
+    let Ok(req) = serde_json::from_slice::<Value>(&body) else {
+        st.metrics.req("-", "-", "parse_error");
+        return reply(StatusCode::BAD_REQUEST, rpc_err(&null, -32700, "parse error"));
+    };
+    if req.is_array() {
+        return reply(StatusCode::BAD_REQUEST, rpc_err(&null, -32600, "batch requests are not supported"));
+    }
+    let id = req.get("id").cloned().unwrap_or(Value::Null);
+    let method_name = req.get("method").and_then(Value::as_str).unwrap_or("");
+
+    // 1. auth
+    let Some(presented) = auth::extract(&headers) else {
+        st.metrics.req("-", "-", "unauthorized");
+        return reply(StatusCode::UNAUTHORIZED, rpc_err(&id, -32001, "missing API key"));
+    };
+    let (key_id, tier) = match st.keys.read().authenticate(&presented) {
+        Some(r) => (r.id.clone(), r.tier),
+        None => {
+            st.metrics.req("-", "-", "unauthorized");
+            return reply(StatusCode::UNAUTHORIZED, rpc_err(&id, -32001, "invalid API key"));
+        }
+    };
+    let t = tier.as_str();
+
+    // 2. allowlist
+    let Some(m) = allowlist::lookup(method_name) else {
+        st.metrics.req(t, "-", "method_not_allowed");
+        return reply(StatusCode::OK, rpc_err(&id, -32601, "method not allowed"));
+    };
+    let wire = match allowlist::build_wire(m, req.get("params")) {
+        Ok(w) => w,
+        Err(BuildErr::BadParams(p)) => {
+            st.metrics.req(t, m.name, "bad_params");
+            return reply(StatusCode::OK, rpc_err(&id, -32602, &format!("invalid params: {p}")));
+        }
+        Err(BuildErr::UnknownMethod) => return reply(StatusCode::OK, rpc_err(&id, -32601, "method not allowed")),
+    };
+
+    // 3. rate + quota (metered on admit)
+    if let Err(d) = st.limiter.admit(&st.cfg, &key_id, tier, m.cost, m.is_tx_submit, Instant::now(), now_unix()) {
+        let (outcome, msg, retry) = match d {
+            Deny::RateLimited { retry_after } => ("rate_limited", "rate limit exceeded".to_string(), Some(retry_after)),
+            Deny::TxRateLimited { retry_after } => ("tx_rate_limited", "tx submit rate exceeded".to_string(), Some(retry_after)),
+            Deny::QuotaExhausted { quota } => ("quota_exhausted", format!("monthly quota of {quota} units used; resets 1st of the month 00:00 UTC"), None),
+        };
+        st.metrics.req(t, m.name, outcome);
+        let mut r = reply(StatusCode::TOO_MANY_REQUESTS, rpc_err(&id, -32005, &msg));
+        if let Some(s) = retry {
+            r.headers_mut().insert(header::RETRY_AFTER, HeaderValue::from(s));
+        }
+        return r;
+    }
+
+    // 4. forward
+    let Ok(_slot) = st.upstream_slots.try_acquire() else {
+        st.metrics.req(t, m.name, "busy");
+        return reply(StatusCode::SERVICE_UNAVAILABLE, rpc_err(&id, -32003, "gateway busy"));
+    };
+    let started = Instant::now();
+    let res = upstream::call(&st.cfg.upstream, &wire, Duration::from_millis(st.cfg.upstream_timeout_ms), st.cfg.upstream_max_reply_bytes).await;
+    st.metrics.latency(m.name, started.elapsed().as_millis() as u64);
+    match res {
+        Ok(v) => {
+            if v.get("type").and_then(Value::as_str) == Some("err") {
+                st.metrics.req(t, m.name, "node_err");
+                let msg = v.get("msg").and_then(Value::as_str).unwrap_or("node error");
+                return reply(StatusCode::OK, rpc_err(&id, -32000, msg));
+            }
+            st.metrics.req(t, m.name, "ok");
+            let result = v.get("body").cloned().or_else(|| v.get("msg").map(|m| json!({"msg": m}))).unwrap_or(v);
+            reply(StatusCode::OK, json!({"jsonrpc":"2.0","id":id,"result":result}))
+        }
+        Err(e) => {
+            st.metrics.upstream_err(match e {
+                upstream::UpstreamErr::Connect(_) => "connect",
+                upstream::UpstreamErr::Timeout => "timeout",
+                upstream::UpstreamErr::TooLarge => "too_large",
+                upstream::UpstreamErr::Protocol(_) => "protocol",
+            });
+            st.metrics.req(t, m.name, "upstream_error");
+            tracing::warn!(method = m.name, "{e}");
+            reply(StatusCode::BAD_GATEWAY, rpc_err(&id, -32002, "node unavailable"))
+        }
+    }
+}
+
+async fn usage(State(st): S, headers: HeaderMap) -> Response {
+    let Some(k) = auth::extract(&headers) else { return StatusCode::UNAUTHORIZED.into_response() };
+    let Some((id, tier)) = st.keys.read().authenticate(&k).map(|r| (r.id.clone(), r.tier)) else {
+        return StatusCode::UNAUTHORIZED.into_response();
+    };
+    let l = st.cfg.limits(tier);
+    let u = st.limiter.usage(&id).unwrap_or_default();
+    let cur = crate::limits::month_of(now_unix());
+    let used = if u.month == cur { u.units } else { 0 };
+    reply(StatusCode::OK, json!({"key_id": id, "tier": tier.as_str(), "month": cur, "units_used": used, "monthly_quota": l.monthly_quota, "rps": l.rps, "burst": l.burst, "tx_submit_per_min": l.tx_submit_per_min}))
+}
+
+async fn health(State(st): S) -> Response {
+    let probe = json!({"type":"health_req","warnings":0});
+    let r = upstream::call(&st.cfg.upstream, &probe, Duration::from_millis(st.cfg.upstream_timeout_ms.min(3000)), st.cfg.upstream_max_reply_bytes).await;
+    let up = matches!(&r, Ok(v) if v.get("type").and_then(Value::as_str) == Some("health"));
+    let code = if up { StatusCode::OK } else { StatusCode::SERVICE_UNAVAILABLE };
+    reply(code, json!({"service":"fpl-gateway","version":env!("CARGO_PKG_VERSION"),"network":"testnet","gateway":"ok","upstream": if up {"ok"} else {"down"}}))
+}
+
+async fn tiers(State(st): S) -> Response {
+    let rows: Vec<Value> = [Tier::Free, Tier::Builder, Tier::Scale]
+        .iter()
+        .map(|t| {
+            let l = st.cfg.limits(*t);
+            json!({"tier": t.as_str(), "price_gbp_per_month": l.price_gbp_pence as f64 / 100.0, "rps": l.rps, "burst": l.burst, "monthly_quota": l.monthly_quota, "tx_submit_per_min": l.tx_submit_per_min})
+        })
+        .collect();
+    reply(StatusCode::OK, json!({"currency":"GBP","network":"testnet","note":"Falcon PL testnet RPC access. FPL testnet tokens have no monetary value.","tiers":rows}))
+}
+
+async fn stripe_webhook(State(st): S, headers: HeaderMap, body: Bytes) -> Response {
+    let b = &st.cfg.billing;
+    if !b.enabled {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    let Ok(secret) = std::env::var(&b.webhook_secret_env) else {
+        tracing::error!("billing enabled but {} is unset", b.webhook_secret_env);
+        return StatusCode::SERVICE_UNAVAILABLE.into_response();
+    };
+    let sig = headers.get("stripe-signature").and_then(|v| v.to_str().ok()).unwrap_or("");
+    if let Err(e) = billing::verify_signature(sig, &body, &secret, now_unix(), b.tolerance_secs) {
+        tracing::warn!("stripe webhook rejected: {e:?}");
+        return StatusCode::BAD_REQUEST.into_response();
+    }
+    let Ok(ev) = serde_json::from_slice::<Value>(&body) else { return StatusCode::BAD_REQUEST.into_response() };
+    let typ = ev.get("type").and_then(Value::as_str).unwrap_or("");
+    if billing::HANDLED_EVENTS.contains(&typ) {
+        let price = ev.pointer("/data/object/items/data/0/price/id").and_then(Value::as_str);
+        let rec = json!({
+            "received": now_unix(),
+            "event_id": ev.get("id"),
+            "type": typ,
+            "customer": ev.pointer("/data/object/customer"),
+            "price": price,
+            "mapped_tier": price.and_then(|p| b.price_tiers.get(p)).map(|t| t.as_str()),
+            "applied": false
+        });
+        use std::io::Write;
+        let res = std::fs::OpenOptions::new().create(true).append(true).open(&b.events_path).and_then(|mut f| writeln!(f, "{rec}"));
+        if res.is_err() {
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    }
+    StatusCode::OK.into_response()
+}
+
+async fn metrics(State(st): S) -> Response {
+    let n = st.keys.read().len();
+    Response::builder()
+        .header(header::CONTENT_TYPE, "text/plain; version=0.0.4")
+        .body(Body::from(st.metrics.render(n)))
+        .unwrap()
+}
+

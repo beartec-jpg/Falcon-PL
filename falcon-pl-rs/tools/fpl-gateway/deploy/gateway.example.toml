@@ -1,0 +1,40 @@
+listen = "127.0.0.1:8545"
+metrics_listen = "127.0.0.1:9187"
+upstream = "127.0.0.1:19312"
+upstream_timeout_ms = 5000
+upstream_max_reply_bytes = 8388608
+max_body_bytes = 65536
+max_upstream_concurrency = 64
+cors_origins = ["*"]
+keys_path = "/etc/fpl-gateway/keys.json"
+usage_path = "/var/lib/fpl-gateway/usage.json"
+usage_flush_secs = 30
+
+[tiers.free]
+price_gbp_pence = 0
+rps = 5.0
+burst = 10
+monthly_quota = 300000
+tx_submit_per_min = 10
+
+[tiers.builder]
+price_gbp_pence = 2900
+rps = 25.0
+burst = 50
+monthly_quota = 5000000
+tx_submit_per_min = 120
+
+[tiers.scale]
+price_gbp_pence = 19900
+rps = 100.0
+burst = 200
+monthly_quota = 50000000
+tx_submit_per_min = 600
+
+[billing]
+enabled = false
+webhook_secret_env = "FPL_GATEWAY_STRIPE_WEBHOOK_SECRET"
+tolerance_secs = 300
+events_path = "/var/lib/fpl-gateway/billing-events.jsonl"
+
+[billing.price_tiers]
