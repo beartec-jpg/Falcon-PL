@@ -119,7 +119,7 @@ PY
         --validators "$VALS" --scheme "$SCHEME" --keys-dir "$KEYS" \
         --load-wallets 0 --bond 1000 --network-id "$NID" \
         --seal-interval-ms 200 --pack-budget-ms 1000 --progress-timeout-ms 3000 \
-        --max-txs 128 --max-mempool-txs 50000 \
+        --max-txs 0 --max-mempool-txs 50000 \
         --epoch-ms "$EPOCH_MS" --first-claim-epoch "$FIRST_CLAIM" \
         --unbond-cooldown-ms "$UNBOND_MS" \
         --snapshot-interval-ms 60000 --max-chain-ledgers 20000 \
@@ -144,7 +144,7 @@ PY
       --validators "$VALS" --scheme "$SCHEME" --keys-dir "$KEYS"
       --load-wallets 0 --bond 1000 --network-id "$NID"
       --seal-interval-ms 200 --pack-budget-ms 1000 --progress-timeout-ms 3000
-      --max-txs 128 --max-mempool-txs 50000
+      --max-txs 0 --max-mempool-txs 50000
       --epoch-ms "$EPOCH_MS" --first-claim-epoch "$FIRST_CLAIM"
       --unbond-cooldown-ms "$UNBOND_MS"
       --snapshot-interval-ms 60000 --max-chain-ledgers 20000
@@ -202,7 +202,7 @@ PY
         --validators $VALS --scheme $SCHEME --keys-dir '$KEYS' \
         --load-wallets 0 --bond 1000 --network-id $NID \
         --seal-interval-ms 200 --pack-budget-ms 1000 --progress-timeout-ms 3000 \
-        --max-txs 128 --max-mempool-txs 50000 \
+        --max-txs 0 --max-mempool-txs 50000 \
         --epoch-ms $EPOCH_MS --first-claim-epoch $FIRST_CLAIM \
         --unbond-cooldown-ms $UNBOND_MS \
         --snapshot-interval-ms 60000 --max-chain-ledgers 20000 \
