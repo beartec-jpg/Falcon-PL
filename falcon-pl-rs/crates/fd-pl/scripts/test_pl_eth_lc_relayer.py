@@ -24,6 +24,8 @@ _HERE = Path(__file__).resolve().parent
 _spec = importlib.util.spec_from_file_location("relayer", _HERE / "pl-eth-lc-relayer.py")
 rel = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(rel)
+# Live default paces getLogs 1 s per span; tests run unpaced.
+rel.ETH_SCAN_PACE_SEC = 0.0
 
 # Captured from encode_exec_header before the Amsterdam fields existed.
 # A pre-Amsterdam block must still produce these exact bytes.
@@ -1684,6 +1686,7 @@ class AutoMintAccount(unittest.TestCase):
 
 class ScanLimits(unittest.TestCase):
     def setUp(self):
+        rel._scan_failed_spans.clear()
         rel._scan_resume["addr"] = ""
         rel._scan_resume["from_block"] = -1
         rel._block_ts_cache.clear()
@@ -2149,59 +2152,120 @@ class TransientRetryAndBackfillTests(unittest.TestCase):
 class V3UnmintedAlerts(unittest.TestCase):
     def setUp(self):
         rel._last_v3_scan = 0.0
-        rel._v3_warned_no_res = False
+        rel._v3_seen.clear()
 
     @staticmethod
     def _log(dep_id: str, ts: int, block: int = 100) -> dict:
         data = "0x" + ("00" * 32) * 3 + format(ts, "064x")
-        return {"topics": ["0x" + rel.V3_DEPOSIT_TOPIC0, "0x" + dep_id, "0x" + "00" * 32],
-                "data": data, "blockNumber": hex(block)}
+        return {"topics": [rel.V3_DEPOSIT_TOPIC0, "0x" + dep_id, "0x" + "00" * 32],
+                "data": data, "blockNumber": hex(block), "transactionHash": "0x" + "ee" * 32}
 
     def test_topic_is_keccak_of_contract_event(self):
-        self.assertEqual(rel.v3_deposit_topic(), "0x" + rel.V3_DEPOSIT_TOPIC0)
+        self.assertEqual(rel.v3_deposit_topic(), rel.V3_DEPOSIT_TOPIC0)
+        with patch.object(rel, "V3_DEPOSIT_TOPIC0", "0x" + "00" * 32):
+            with self.assertRaises(RuntimeError):
+                rel.v3_deposit_topic()
 
-    def test_default_threshold_inside_refund_window(self):
-        with patch.dict(os.environ, {}, clear=False):
-            os.environ.pop("ETH_UNMINTED_V3_DEPOSIT_SEC", None)
-            self.assertEqual(rel.unminted_v3_sec(), 21600)
-        self.assertLess(rel.UNMINTED_V3_DEFAULT_SEC, rel.V3_DEPOSIT_EXPIRY_SEC)
-        with patch.dict(os.environ, {"ETH_UNMINTED_V3_DEPOSIT_SEC": "999999999"}):
-            self.assertEqual(rel.unminted_v3_sec(), rel.V3_DEPOSIT_EXPIRY_SEC)
+    def test_env_name_order(self):
+        def load(env):
+            with patch.dict(os.environ, env, clear=False):
+                for k in ("ETH_V3_UNMINTED_SEC", "ETH_UNMINTED_V3_DEPOSIT_SEC"):
+                    if k not in env:
+                        os.environ.pop(k, None)
+                spec = importlib.util.spec_from_file_location("rel_env", _HERE / "pl-eth-lc-relayer.py")
+                m = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(m)
+                return m.V3_UNMINTED_SEC
+        self.assertEqual(load({}), 1800)
+        self.assertEqual(load({"ETH_UNMINTED_V3_DEPOSIT_SEC": "21600"}), 21600)
+        self.assertEqual(load({"ETH_V3_UNMINTED_SEC": "900", "ETH_UNMINTED_V3_DEPOSIT_SEC": "21600"}), 900)
 
-    def test_scan_alerts_only_old_unresolved(self):
+    def test_scan_alerts_only_old_unresolved_and_prints_summary(self):
         now = 2_000_000
-        old = now - 21600
+        old = now - rel.V3_UNMINTED_SEC
         logs = [self._log("aa" * 32, old), self._log("bb" * 32, old), self._log("cc" * 32, now - 60)]
-        st = {"eth_v3_bridge": "0xABC", "eth_v3_resolutions": [{"deposit_id": "bb" * 32, "Mint": {}}]}
+        st = {"eth_v3_resolutions": [{"deposit_id": "bb" * 32, "Mint": {}}]}
         calls = []
 
         def fake_rpc(method, params):
             calls.append((method, params))
-            return hex(10_000) if method == "eth_blockNumber" else (logs if params[0]["fromBlock"] == hex(max(0, 10_000 - rel.deposit_scan_window_blocks())) else [])
+            if method == "eth_blockNumber":
+                return hex(10_000)
+            return logs if int(params[0]["toBlock"], 16) == 10_000 else []
 
         buf = io.StringIO()
         with patch.object(rel, "eth_rpc", fake_rpc), redirect_stdout(buf):
             lines = rel.scan_unminted_v3_deposits(st, now=now)
-        self.assertEqual(lines, [f"ALERT unminted V3 deposit {'aa' * 32} age=21600s block=100"])
-        self.assertTrue(all(p[0]["address"] == "0xabc" for m, p in calls if m == "eth_getLogs"))
-        self.assertTrue(all(p[0]["topics"] == ["0x" + rel.V3_DEPOSIT_TOPIC0] for m, p in calls if m == "eth_getLogs"))
-        self.assertIn("V3 deposit scan bridge=0xabc", buf.getvalue())
-        # Throttled by ETH_ALERT_EVERY_SEC.
+        self.assertEqual(len(lines), 1)
+        self.assertTrue(lines[0].startswith(f"ALERT unminted V3 deposit {'aa' * 32} age={rel.V3_UNMINTED_SEC}s (threshold "))
+        self.assertTrue(all(p[0]["topics"] == [rel.V3_DEPOSIT_TOPIC0] for m, p in calls if m == "eth_getLogs"))
+        out = buf.getvalue()
+        self.assertIn("V3 deposit scan bridge=", out)
+        self.assertIn("deposits=3 resolved=1 unminted=1", out)
+        self.assertIn("complete=True", out)
         with patch.object(rel, "eth_rpc", fake_rpc), redirect_stdout(io.StringIO()):
             self.assertEqual(rel.scan_unminted_v3_deposits(st, now=now + 1), [])
-            again = rel.scan_unminted_v3_deposits(st, now=now + rel.alert_every_sec())
-        self.assertEqual(len(again), 1)
 
-    def test_missing_resolutions_skips_without_alert(self):
+    def test_failed_span_summary_marks_incomplete(self):
+        def fake_rpc(method, params):
+            if method == "eth_blockNumber":
+                return hex(10_000)
+            raise RuntimeError("rpc down")
+
         buf = io.StringIO()
-        with patch.object(rel, "eth_rpc", lambda *a: self.fail("no rpc")), redirect_stdout(buf):
-            self.assertEqual(rel.scan_unminted_v3_deposits({"eth_v3_bridge": "0xabc"}, now=5_000_000), [])
-        self.assertIn("no eth_v3_resolutions", buf.getvalue())
+        with patch.object(rel, "eth_rpc", fake_rpc), redirect_stdout(buf):
+            self.assertEqual(rel.scan_unminted_v3_deposits({"eth_v3_resolutions": []}, now=3_000_000), [])
+        self.assertIn("WARN v3 deposit scan", buf.getvalue())
+        self.assertIn("complete=False", buf.getvalue())
 
     def test_refunded_id_with_0x_prefix_counts_as_resolved(self):
-        deps = [rel.parse_v3_deposit_log(self._log("dd" * 32, 0))]
+        seen = {"dd" * 32: {"timestamp": 1, "block": 1, "txid": "t"}}
         st = {"eth_v3_resolutions": [{"deposit_id": "0x" + "DD" * 32, "Refund": {}}]}
-        self.assertEqual(rel.unminted_v3_alerts(deps, rel.v3_resolved_ids(st), 10**9, 21600), [])
+        self.assertEqual(rel.v3_unminted_alerts(seen, rel.v3_resolved_ids(st), 10**9, 1800), [])
+
+
+class SharedSigner(unittest.TestCase):
+    def test_lock_excludes_a_second_holder(self):
+        import fcntl
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "signer.lock"
+            with patch.dict(os.environ, {"FPL_SIGNER_LOCK": str(path)}):
+                self.assertEqual(rel.signer_lock_path("watcher-eth-lc"), path)
+                with rel.SignerLock("watcher-eth-lc"):
+                    other = open(path, "a+")
+                    with self.assertRaises(BlockingIOError):
+                        fcntl.flock(other.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    other.close()
+                other = open(path, "a+")
+                fcntl.flock(other.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                fcntl.flock(other.fileno(), fcntl.LOCK_UN)
+                other.close()
+
+    def test_default_lock_path_is_per_account(self):
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("FPL_SIGNER_LOCK", None)
+            self.assertEqual(rel.signer_lock_path(" Watcher-ETH-LC "),
+                             rel.ROOT / "run" / "signer-watcher-eth-lc.lock")
+
+    def test_drain_waits_for_committed_floor(self):
+        seqs = iter([5, 6, 7])
+        with patch.object(rel, "_seq_floor", 7), patch.object(rel, "account_sequence", lambda: next(seqs)), \
+                patch.object(rel.time, "sleep", lambda s: None):
+            self.assertTrue(rel.drain_own_sequences(timeout=60))
+
+    def test_drain_gives_up_with_warning(self):
+        buf = io.StringIO()
+        with patch.object(rel, "_seq_floor", 9), patch.object(rel, "account_sequence", lambda: 3), \
+                patch.object(rel.time, "sleep", lambda s: None), redirect_stdout(buf):
+            self.assertFalse(rel.drain_own_sequences(timeout=0))
+        self.assertIn("signer lock released with sequences in flight", buf.getvalue())
+
+    def test_mint_on_relayer_account_needs_shared_signer(self):
+        with patch.object(rel, "ACCOUNT", "watcher-eth-lc"), patch.object(rel, "SHARED_SIGNER", False):
+            with self.assertRaises(SystemExit):
+                rel.assert_mint_account()
+        with patch.object(rel, "ACCOUNT", "watcher-eth-lc"), patch.object(rel, "SHARED_SIGNER", True):
+            rel.assert_mint_account()
 
 
 if __name__ == "__main__":

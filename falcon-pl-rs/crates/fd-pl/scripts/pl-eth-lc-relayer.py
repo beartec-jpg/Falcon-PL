@@ -49,9 +49,10 @@ head has not moved for ETH_LC_STALE_SEC (default 3600), and when a V1 or V2
 bridge Deposit inside the scan window is older than ETH_UNMINTED_DEPOSIT_SEC
 (default 86400) and is not in the ETH/USDC rail spent_deposits. The scan
 window defaults to the 50_400-block prune window (~7 days), not 7200, and
-is fetched in eth_getLogs chunks. V3 (FalconQcBridgeV3, its own Deposit topic) has a separate scan: a V3
-Deposit older than ETH_UNMINTED_V3_DEPOSIT_SEC (default 6 h) whose id is not
-in body.eth_v3_resolutions prints ALERT unminted V3 deposit <id> age=<s>.
+is fetched in eth_getLogs chunks. V3 (FalconQcBridgeV3, its own Deposit topic) has a separate scan,
+scan_unminted_v3_deposits: ALERT unminted V3 deposit <id> age=<s>s when a V3
+Deposit is older than ETH_V3_UNMINTED_SEC (default 1800) and its id is not in
+body.eth_v3_resolutions. Each V3 scan ends with a 'V3 deposit scan' summary line.
 Both alerts repeat, throttled by ETH_ALERT_EVERY_SEC (default 600).
 The scan's ETH_SCAN_BUDGET_SEC is split: eth_getLogs stops starting spans at
 75% of it, and the timestamp lookups for logs already fetched get their own
@@ -85,6 +86,7 @@ import hashlib
 import json
 import math
 import os
+import random
 import shutil
 import subprocess
 import sys
@@ -173,6 +175,64 @@ _seq_stuck_since: float | None = None
 _stuck_watch_committed: int | None = None
 _exec_watch = {"number": None, "since": None}
 _last_deposit_scan = 0.0
+_last_v3_scan = 0.0
+_v3_seen: dict[str, dict] = {}
+
+# Shared signer (host1 2026-10-20): auto-mint may also sign as this account
+# when both run with FPL_SHARED_SIGNER=1. Every sequence-consuming section
+# (LC update / bootstrap / header waves / backfill here; each mint there)
+# holds an exclusive flock on signer_lock_path(account), and a holder only
+# releases once the committed sequence covers everything it sent, so the
+# other process always starts from a clean committed sequence.
+SHARED_SIGNER = os.environ.get("FPL_SHARED_SIGNER", "").strip() == "1"
+
+
+def signer_lock_path(account: str) -> Path:
+    raw = os.environ.get("FPL_SIGNER_LOCK", "").strip()
+    return Path(raw) if raw else ROOT / "run" / f"signer-{account.strip().casefold()}.lock"
+
+
+class SignerLock:
+    def __init__(self, account: str):
+        self.path = signer_lock_path(account)
+        self.fd = None
+
+    def __enter__(self):
+        import fcntl
+
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.fd = open(self.path, "a+")
+        fcntl.flock(self.fd.fileno(), fcntl.LOCK_EX)
+        return self
+
+    def __exit__(self, *exc):
+        import fcntl
+
+        if self.fd:
+            fcntl.flock(self.fd.fileno(), fcntl.LOCK_UN)
+            self.fd.close()
+            self.fd = None
+
+
+def drain_own_sequences(timeout: float | None = None) -> bool:
+    """Before releasing the signer lock: wait until committed >= _seq_floor."""
+    deadline = time.time() + (SEQ_STUCK_SEC + 30 if timeout is None else timeout)
+    while True:
+        try:
+            committed = account_sequence()
+        except Exception as e:
+            print(f"WARN drain sequence read: {e}", flush=True)
+            committed = -1
+        if committed >= _seq_floor:
+            return True
+        if time.time() >= deadline:
+            print(
+                f"WARN signer lock released with sequences in flight "
+                f"(committed {committed} < floor {_seq_floor})",
+                flush=True,
+            )
+            return False
+        time.sleep(2)
 _last_stale_alert = 0.0
 # Unminted scan resumes here after a budget stop, so the next cycle does not
 # restart at the oldest V1 chunk and starve V2. addr "" means start at the top.
@@ -261,7 +321,7 @@ def assert_mint_account() -> None:
             "Manual mint defaults to watcher-eth. "
             "Unset FPL_WATCHER_ACCOUNT or set it to watcher-eth."
         )
-    if _acct_key(ACCOUNT) == "watcher-eth-lc":
+    if _acct_key(ACCOUNT) == "watcher-eth-lc" and not SHARED_SIGNER:
         raise AccountRefusal(
             "mint refuses watcher-eth-lc, the ETH LC relayer daemon. "
             "Manual mint defaults to watcher-eth. "
@@ -426,7 +486,24 @@ def http_get(url: str) -> object:
         return json.loads(r.read().decode())
 
 
-def eth_rpc(method: str, params: list) -> object:
+# 2026-11-02: the Sepolia RPC (tenderly public gateway) answers bursts with
+# HTTP 429. Retry 429 / 5xx / rate-limit JSON errors with exponential backoff
+# (honouring Retry-After), so one throttled call no longer fails a scan span.
+ETH_RPC_RETRIES = max(0, int(os.environ.get("ETH_RPC_RETRIES", "5")))
+ETH_RPC_BACKOFF_SEC = max(0.1, float(os.environ.get("ETH_RPC_BACKOFF_SEC", "2")))
+ETH_RPC_BACKOFF_MAX_SEC = max(1.0, float(os.environ.get("ETH_RPC_BACKOFF_MAX_SEC", "30")))
+# Pause between eth_getLogs calls in the unminted scans, so a 50k-block window
+# (~52 calls) is not fired as one burst.
+ETH_SCAN_PACE_SEC = max(0.0, float(os.environ.get("ETH_SCAN_PACE_SEC", "1.0")))
+_rpc_stats = {"retries": 0, "throttled": 0}
+
+
+def _rate_limited_error(err) -> bool:
+    t = str(err).lower()
+    return any(w in t for w in ("rate limit", "too many requests", "429", "exceeded", "capacity"))
+
+
+def _eth_rpc_once(method: str, params: list) -> object:
     body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": method, "params": params}).encode()
     req = urllib.request.Request(
         ETH_RPC,
@@ -442,6 +519,35 @@ def eth_rpc(method: str, params: list) -> object:
     if out.get("error"):
         raise RuntimeError(f"{method}: {out['error']}")
     return out.get("result")
+
+
+def eth_rpc(method: str, params: list) -> object:
+    attempt = 0
+    while True:
+        try:
+            return _eth_rpc_once(method, params)
+        except urllib.error.HTTPError as e:
+            retry = e.code == 429 or 500 <= e.code < 600
+            wait_hdr = e.headers.get("Retry-After") if e.headers else None
+            if e.code == 429:
+                _rpc_stats["throttled"] += 1
+            err = e
+        except RuntimeError as e:
+            retry = _rate_limited_error(e)
+            wait_hdr = None
+            err = e
+        if not retry or attempt >= ETH_RPC_RETRIES:
+            raise err
+        delay = min(ETH_RPC_BACKOFF_MAX_SEC, ETH_RPC_BACKOFF_SEC * (2 ** attempt))
+        try:
+            if wait_hdr:
+                delay = min(ETH_RPC_BACKOFF_MAX_SEC, max(delay, float(wait_hdr)))
+        except ValueError:
+            pass
+        delay *= 1.0 + random.random() * 0.25
+        attempt += 1
+        _rpc_stats["retries"] += 1
+        time.sleep(delay)
 
 
 # --- ctl ------------------------------------------------------------------
@@ -1220,30 +1326,42 @@ def cmd_daemon() -> None:
     poll = int(os.environ.get("POLL_SEC", "10"))
     poll_behind = int(os.environ.get("POLL_SEC_BEHIND", "5"))
     while True:
-        try:
-            st = status()
-            if not st.get("eth_lc"):
-                cmd_bootstrap()
-            else:
-                cmd_update(soft=True)
-        except Exception as e:
-            print(f"WARN {e}", flush=True)
-        except SystemExit as e:
-            # wait_lc() uses SystemExit; that must not kill the daemon.
-            print(f"WARN {e}", flush=True)
-        try:
-            backfill_exec_hole(status())
-        except Exception as e:
-            print(f"WARN backfill {e}", flush=True)
-        except SystemExit as e:
-            print(f"WARN backfill {e}", flush=True)
+        with SignerLock(ACCOUNT):
+            try:
+                st = status()
+                if not st.get("eth_lc"):
+                    cmd_bootstrap()
+                else:
+                    cmd_update(soft=True)
+            except Exception as e:
+                print(f"WARN {e}", flush=True)
+            except SystemExit as e:
+                # wait_lc() uses SystemExit; that must not kill the daemon.
+                print(f"WARN {e}", flush=True)
+            try:
+                backfill_exec_hole(status())
+            except Exception as e:
+                print(f"WARN backfill {e}", flush=True)
+            except SystemExit as e:
+                print(f"WARN backfill {e}", flush=True)
+            if SHARED_SIGNER:
+                drain_own_sequences()
+        # Fresh status every pass. A failed status() must not leave the V3
+        # scan holding an older st whose eth_v3_resolutions predate a mint
+        # (false "unminted V3 deposit" alerts after a node outage).
+        st = None
         try:
             st = status()
             note_exec_head(st.get("eth_lc") or {})
             scan_unminted_deposits(st)
-            scan_unminted_v3_deposits(st)
         except Exception as e:
             print(f"WARN alert {e}", flush=True)
+        try:
+            if st is None:
+                raise RuntimeError("no fresh node status; skipping V3 unminted check")
+            scan_unminted_v3_deposits(st)
+        except Exception as e:
+            print(f"WARN v3 alert {e}", flush=True)
         try:
             behind, fin, cur = lc_behind_beacon()
             if behind:
@@ -2168,7 +2286,7 @@ def deposit_bridges() -> list[str]:
     V1 is config/sepolia-qc.json, V2 is config/sepolia-qc-v2.json. Deposits on
     either can still be unminted. A configured BRIDGE that is neither is
     skipped: V3's Deposit(bytes32,address,bytes20,address,uint256,uint64)
-    topic is different, and the V3 unminted scan comes with #29.
+    topic is different; V3 is scanned by scan_unminted_v3_deposits.
     """
     allowed = {_norm_addr(QC_BRIDGE_V1), _norm_addr(QC_BRIDGE_V2)}
     out: list[str] = []
@@ -2296,6 +2414,18 @@ def _block_chunks(start: int, end: int, chunk: int):
         cur = nxt + 1
 
 
+# (bridge, from_block) spans whose eth_getLogs failed; retried every scan.
+_scan_failed_spans: set[tuple[str, int]] = set()
+
+
+def scan_retry_sec() -> float:
+    """Delay before re-running a scan that left a failed span. Default 60s."""
+    try:
+        return min(float(alert_every_sec()), max(10.0, float(os.environ.get("ETH_SCAN_RETRY_SEC", "60"))))
+    except ValueError:
+        return 60.0
+
+
 # Share of ETH_SCAN_BUDGET_SEC the eth_getLogs pass may use. The rest is the
 # timestamp pass's own allowance, so logs already in hand are not dropped
 # because getLogs spent the whole budget.
@@ -2330,8 +2460,8 @@ def scan_unminted_deposits(st: dict, now: float | None = None) -> list[str]:
     need no lookup, and timestamps are cached across cycles. If the
     timestamp pass is cut short, the cursor rewinds to the span of the first
     log it did not process and that pass is not marked finished, so a slow
-    RPC cannot visit every span and still never alert. V3 has its own
-    scan, scan_unminted_v3_deposits.
+    RPC cannot visit every span and still never alert. V3 is scanned
+    separately by scan_unminted_v3_deposits.
     """
     global _last_deposit_scan
     now = time.time() if now is None else now
@@ -2377,6 +2507,14 @@ def scan_unminted_deposits(st: dict, now: float | None = None) -> list[str]:
                     resume_at = i
                     break
     order = list(range(resume_at, len(spans))) + list(range(0, resume_at))
+    # Spans whose getLogs failed in an earlier cycle go first, so a range is
+    # retried until it succeeds and never silently skipped. The rotation
+    # cursor still moves on, so one failing bridge cannot starve the other.
+    # The span at the rotation cursor still goes first, then the retries, so a
+    # failing V1 cannot take V2's turn every cycle.
+    head = order[:1] if saved_addr else []
+    retry_idx = [i for i in order if (spans[i][0], spans[i][1]) in _scan_failed_spans and i not in head]
+    order = head + retry_idx + [i for i in order if i not in set(retry_idx) and i not in head]
     failed: set[str] = set()
     finished = True
     # (span index, rows) in visit order. Timestamps are resolved in this
@@ -2387,6 +2525,8 @@ def scan_unminted_deposits(st: dict, now: float | None = None) -> list[str]:
         # deadline check, so a stop lands the cursor on the next bridge and
         # not on the failed bridge's next span.
         if spans[i][0] in failed:
+            # Not visited this cycle: queue it so it is retried, not skipped.
+            _scan_failed_spans.add((spans[i][0], spans[i][1]))
             continue
         if step and time.monotonic() >= logs_deadline:
             addr, frm, _to = spans[i]
@@ -2415,12 +2555,31 @@ def scan_unminted_deposits(st: dict, now: float | None = None) -> list[str]:
             ) or []
         except Exception as e:
             print(f"WARN deposit scan {addr} {frm}..{to}: {e}", flush=True)
+            # Never skip a range: remember the failed span; the next scan
+            # (ETH_SCAN_RETRY_SEC later, not ETH_ALERT_EVERY_SEC) retries it first.
+            _scan_failed_spans.add((addr, frm))
             failed.add(addr)
             continue
+        finally:
+            if ETH_SCAN_PACE_SEC:
+                time.sleep(ETH_SCAN_PACE_SEC)
+        _scan_failed_spans.discard((addr, frm))
         if isinstance(rows, dict):
             rows = [rows]
         if isinstance(rows, list) and rows:
             fetched.append((i, rows))
+    for addr, frm in list(_scan_failed_spans):
+        if frm < start:
+            # Aged out of the window: nothing left to alert on there.
+            _scan_failed_spans.discard((addr, frm))
+    if _scan_failed_spans:
+        # Retry soon instead of waiting the whole alert interval.
+        _last_deposit_scan = now - every + scan_retry_sec()
+        print(
+            f"WARN deposit scan: {len(_scan_failed_spans)} failed span(s) queued for retry "
+            f"in {int(scan_retry_sec())}s",
+            flush=True,
+        )
     if finished:
         _scan_resume["addr"] = spans[0][0]
         _scan_resume["from_block"] = spans[0][1]
@@ -2485,149 +2644,120 @@ def scan_unminted_deposits(st: dict, now: float | None = None) -> list[str]:
     return lines
 
 
-# V3 unminted scan. FalconQcBridgeV3.sol: event Deposit(bytes32 indexed depositId,
-# address indexed sender, bytes20 dest20, address token, uint256 amount,
-# uint64 timestamp). Same signature and topic0 as pl-eth-auto-mint.py.
+V3_BRIDGE = os.environ.get(
+    "FPL_SEPOLIA_QC_V3_BRIDGE", "0xEd4eE497F21a9255a59e87535FF2A6097592Cfd4"
+).strip().lower()
+# keccak256("Deposit(bytes32,address,bytes20,address,uint256,uint64)")
+V3_DEPOSIT_TOPIC0 = "0xe7783c72791736d4d8af95660d4367bed2f98d8331a095422373e557a4318728"
 V3_DEPOSIT_SIG = b"Deposit(bytes32,address,bytes20,address,uint256,uint64)"
-V3_DEPOSIT_TOPIC0 = "e7783c72791736d4d8af95660d4367bed2f98d8331a095422373e557a4318728"
-# bridge.rs ETH_V3_DEPOSIT_EXPIRY_SECS: an unresolved V3 deposit can be refunded
-# after 3 days.
-V3_DEPOSIT_EXPIRY_SEC = 3 * 86400
-# Default 6 h: auto-mint normally resolves a V3 deposit within minutes once the
-# LC head covers its block (finality ~13 min plus relay polls), so 6 h is well
-# past any healthy delay and still leaves ~66 h of the 3-day window to mint
-# or refund by hand before expiry.
-UNMINTED_V3_DEFAULT_SEC = 6 * 3600
-_last_v3_scan = 0.0
-_v3_warned_no_res = False
-
-
-def unminted_v3_sec() -> int:
-    """ETH_UNMINTED_V3_DEPOSIT_SEC, default 6 h, clamped to 60..V3 expiry."""
-    raw = os.environ.get("ETH_UNMINTED_V3_DEPOSIT_SEC", str(UNMINTED_V3_DEFAULT_SEC)).strip()
-    try:
-        n = int(float(raw))
-    except ValueError:
-        _warn_env_once("ETH_UNMINTED_V3_DEPOSIT_SEC", raw, "not a number; using 21600")
-        return UNMINTED_V3_DEFAULT_SEC
-    if n < 60 or n > V3_DEPOSIT_EXPIRY_SEC:
-        _warn_env_once("ETH_UNMINTED_V3_DEPOSIT_SEC", raw, "outside 60..259200; clamping")
-        n = min(V3_DEPOSIT_EXPIRY_SEC, max(60, n))
-    return n
+# ETH_V3_UNMINTED_SEC first (the live falcon1 name), then
+# ETH_UNMINTED_V3_DEPOSIT_SEC (PR #15 alias), else 1800 s.
+V3_UNMINTED_SEC = int(
+    os.environ.get("ETH_V3_UNMINTED_SEC")
+    or os.environ.get("ETH_UNMINTED_V3_DEPOSIT_SEC")
+    or "1800"
+)
+V3_SCAN_BLOCKS = int(os.environ.get("ETH_V3_SCAN_BLOCKS", "21600"))  # ~3 days = V3 expiry
 
 
 def v3_deposit_topic() -> str:
-    t = keccak256(V3_DEPOSIT_SIG).hex()
+    """V3_DEPOSIT_TOPIC0, checked against keccak of the contract event signature."""
+    t = "0x" + keccak256(V3_DEPOSIT_SIG).hex()
     if t != V3_DEPOSIT_TOPIC0:
-        raise RuntimeError(f"V3 Deposit topic mismatch {t}")
-    return "0x" + t
+        raise RuntimeError(f"V3 Deposit topic mismatch {t} != {V3_DEPOSIT_TOPIC0}")
+    return t
 
 
-def v3_bridge(st: dict) -> str:
-    """Node status eth_v3_bridge first (what consensus parses), else env."""
-    a = str(st.get("eth_v3_bridge") or os.environ.get("FPL_SEPOLIA_QC_V3_BRIDGE") or "").strip()
-    return a.lower()
-
-
-def _norm_id(s) -> str:
-    s = str(s or "").strip().lower()
-    return s[2:] if s.startswith("0x") else s
-
-
-def v3_resolved_ids(st: dict) -> set[str] | None:
-    """Deposit ids in body.eth_v3_resolutions (minted or refunded). None if absent."""
-    res = st.get("eth_v3_resolutions")
-    if not isinstance(res, list):
-        return None
-    return {_norm_id(r.get("deposit_id")) for r in res if isinstance(r, dict) and r.get("deposit_id")}
-
-
-def parse_v3_deposit_log(row: dict) -> dict | None:
-    topics = row.get("topics") or []
-    if len(topics) < 2 or _norm_id(topics[0]) != V3_DEPOSIT_TOPIC0:
-        return None
-    data = _norm_id(row.get("data"))
-    if len(data) < 64 * 4:
-        return None
+def v3_resolved_ids(st: dict) -> set[str]:
     return {
-        "id": _norm_id(topics[1]),
-        "timestamp": int(data[64 * 3: 64 * 4], 16),
-        "block": uhex(row.get("blockNumber") or "0x0"),
+        str(r.get("deposit_id") or "").lower().removeprefix("0x")
+        for r in (st.get("eth_v3_resolutions") or [])
     }
 
 
-def unminted_v3_alerts(deps: list[dict], resolved: set[str], now: float, threshold: int) -> list[str]:
+def v3_unminted_alerts(seen: dict[str, dict], resolved: set[str], now: float, threshold: int) -> list[str]:
+    """ALERT lines for V3 deposits (by deposit_id) unresolved past the threshold."""
     lines = []
-    for d in deps:
-        age = int(now - d["timestamp"])
-        if d["id"] in resolved or age < threshold:
+    for did, d in sorted(seen.items(), key=lambda kv: kv[1].get("timestamp", 0)):
+        if did in resolved:
             continue
-        lines.append(f"ALERT unminted V3 deposit {d['id']} age={age}s block={d['block']}")
+        ts = int(d.get("timestamp") or 0)
+        if ts <= 0 or now - ts < threshold:
+            continue
+        lines.append(
+            f"ALERT unminted V3 deposit {did} age={int(now - ts)}s (threshold {threshold}s) "
+            f"block={d.get('block')} tx={d.get('txid')}"
+        )
     return lines
 
 
-def scan_unminted_v3_deposits(st: dict, now: float | None = None) -> list[str]:
-    """V3 Deposit logs older than ETH_UNMINTED_V3_DEPOSIT_SEC whose id is not in
-    body.eth_v3_resolutions (neither minted nor refunded) print an ALERT.
-
-    Same ETH_ALERT_EVERY_SEC throttle as the V1/V2 scan, armed only after
-    eth_blockNumber succeeds. Window is deposit_scan_window_blocks() (>= the
-    50_400-block header window, longer than the 3-day expiry), chunked by
-    ETH_LOG_CHUNK and bounded by ETH_SCAN_BUDGET_SEC. Age comes from the event's
-    own timestamp, so no block lookups. Read-only: it never mints or refunds.
-    """
-    global _last_v3_scan, _v3_warned_no_res
-    now = time.time() if now is None else now
-    if now - _last_v3_scan < alert_every_sec():
-        return []
-    bridge = v3_bridge(st)
-    if not bridge:
-        return []
-    resolved = v3_resolved_ids(st)
-    if resolved is None:
-        if not _v3_warned_no_res:
-            print("WARN V3 scan: node status has no eth_v3_resolutions; skipping", flush=True)
-            _v3_warned_no_res = True
-        return []
+def _v3_log_ts(lg: dict) -> int:
+    data = str(lg.get("data") or "").lower().removeprefix("0x")
+    if len(data) != 256:
+        return 0
     try:
-        head_n = uhex(eth_rpc("eth_blockNumber", []))
-    except Exception as e:
-        print(f"WARN V3 deposit scan eth_blockNumber: {e}", flush=True)
+        return int(data[192:256], 16)
+    except ValueError:
+        return 0
+
+
+def scan_unminted_v3_deposits(st: dict | None, now: float | None = None) -> list[str]:
+    """V3 Deposit logs, newest span first, so a pruned RPC tail never hides recent ones.
+
+    Seen deposits are kept in memory; resolved = status eth_v3_resolutions
+    (the full map). Throttled like the V1/V2 scan (ETH_ALERT_EVERY_SEC).
+    """
+    global _last_v3_scan
+    now = time.time() if now is None else now
+    if not V3_BRIDGE or now - _last_v3_scan < alert_every_sec():
         return []
-    _last_v3_scan = now
+    st = st or status()
     topic = v3_deposit_topic()
-    start = max(0, head_n - deposit_scan_window_blocks())
-    deadline = time.monotonic() + scan_budget_sec()
-    deps: list[dict] = []
+    head_n = uhex(eth_rpc("eth_blockNumber", []))
     spans = 0
     complete = True
-    for frm, to in _block_chunks(start, head_n, _log_chunk_blocks()):
-        if spans and time.monotonic() >= deadline:
-            complete = False
-            print(f"WARN V3 deposit scan stopped at budget after {spans} spans (block {frm})", flush=True)
-            break
-        spans += 1
+    _last_v3_scan = now
+    chunk = _log_chunk_blocks()
+    lo = max(0, head_n - V3_SCAN_BLOCKS)
+    to = head_n
+    while to >= lo:
+        frm = max(lo, to - chunk + 1)
         try:
             rows = eth_rpc(
                 "eth_getLogs",
-                [{"address": bridge, "topics": [topic], "fromBlock": hex(frm), "toBlock": hex(to)}],
+                [{"address": V3_BRIDGE, "topics": [topic], "fromBlock": hex(frm), "toBlock": hex(to)}],
             ) or []
+            spans += 1
         except Exception as e:
-            print(f"WARN V3 deposit scan {bridge} {frm}..{to}: {e}", flush=True)
+            print(f"WARN v3 deposit scan {frm}..{to}: {e}; retrying in {int(scan_retry_sec())}s", flush=True)
+            # Do not drop the older spans for a whole alert interval.
+            _last_v3_scan = now - alert_every_sec() + scan_retry_sec()
             complete = False
             break
-        for row in rows if isinstance(rows, list) else [rows]:
-            d = parse_v3_deposit_log(row) if isinstance(row, dict) else None
-            if d:
-                deps.append(d)
-    threshold = unminted_v3_sec()
-    lines = unminted_v3_alerts(deps, resolved, now, threshold)
+        finally:
+            if ETH_SCAN_PACE_SEC:
+                time.sleep(ETH_SCAN_PACE_SEC)
+        for lg in rows if isinstance(rows, list) else []:
+            topics = lg.get("topics") or []
+            if len(topics) != 3:
+                continue
+            did = str(topics[1]).lower().removeprefix("0x")
+            _v3_seen.setdefault(did, {
+                "timestamp": _v3_log_ts(lg),
+                "block": uhex(lg.get("blockNumber") or "0x0"),
+                "txid": str(lg.get("transactionHash") or ""),
+            })
+        to = frm - 1
+    for did in [d for d, v in _v3_seen.items() if v.get("block", 0) < lo]:
+        del _v3_seen[did]
+    resolved = v3_resolved_ids(st)
+    lines = v3_unminted_alerts(_v3_seen, resolved, now, V3_UNMINTED_SEC)
     for line in lines:
         print(line, flush=True)
     print(
-        f"V3 deposit scan bridge={bridge} blocks={start}..{head_n} spans={spans} "
-        f"deposits={len(deps)} resolved={len(resolved)} unminted={len(lines)} "
-        f"threshold={threshold}s complete={complete}",
+        f"V3 deposit scan bridge={V3_BRIDGE} blocks={lo}..{head_n} spans={spans} "
+        f"deposits={len(_v3_seen)} resolved={len(resolved)} unminted={len(lines)} "
+        f"threshold={V3_UNMINTED_SEC}s complete={complete}",
         flush=True,
     )
     return lines
