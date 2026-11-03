@@ -187,6 +187,12 @@ fn quote_of_ceil(base: u64, price: u64, scale: u128) -> u64 {
     ((n + scale - 1) / scale).min(u64::MAX as u128) as u64
 }
 
+/// A remainder worth less than [`MIN_ORDER_QUOTE`] is closed and refunded,
+/// never left resting (it could not fill: its FPL leg rounds to ~0).
+pub fn is_dust(remaining: u64, price: u64, scale: u128) -> bool {
+    remaining == 0 || quote_of(remaining, price, scale) < MIN_ORDER_QUOTE
+}
+
 pub fn isqrt(n: u128) -> u128 {
     if n < 2 {
         return n;
@@ -326,6 +332,9 @@ fn amm_buy_in(p: &AmmPool, asset: &str, target: u64, base_cap: u64, budget: u64)
     let scale = pair_scale(asset);
     let mut fpl_in = budget as u128;
     if target != u64::MAX {
+        // Pool fee (0.3%) is paid on top of the pool price: stop where the
+        // all-in price reaches `target`, so no fill is worse than the limit.
+        let target = ((target as u128 * 997) / 1000) as u64;
         if pool_spot(p, asset).map_or(true, |s| s >= target) {
             return 0;
         }
@@ -355,6 +364,7 @@ fn amm_sell_in(p: &AmmPool, asset: &str, target: u64, base_cap: u64) -> u64 {
     let scale = pair_scale(asset);
     let mut base_in = base_cap as u128;
     if target != 0 {
+        let target = ((target as u128 * 1000 + 996) / 997).min(u64::MAX as u128) as u64;
         if pool_spot(p, asset).map_or(true, |s| s <= target) {
             return 0;
         }
@@ -440,7 +450,7 @@ pub fn take_buy(
         let m = b.defi.orderbook.orders.get_mut(&o.id).unwrap();
         m.remaining -= f;
         m.escrow -= f; // sell escrow is base
-        let done = m.remaining == 0;
+        let done = is_dust(m.remaining, m.price, scale);
         let refund = if done { m.escrow } else { 0 };
         if done {
             b.defi.orderbook.orders.remove(&o.id);
@@ -526,7 +536,7 @@ pub fn take_sell(
         let pay = pay.min(m.escrow);
         m.remaining -= f;
         m.escrow -= pay;
-        let done = m.remaining == 0;
+        let done = is_dust(m.remaining, m.price, scale);
         let refund = if done { m.escrow } else { 0 };
         if done {
             b.defi.orderbook.orders.remove(&o.id);
@@ -606,7 +616,7 @@ pub fn place_limit(
             (amount - r.base, amount - r.base)
         }
     };
-    if remaining == 0 || (side == Side::Buy && quote_of(remaining, price, scale) == 0) {
+    if is_dust(remaining, price, scale) {
         b.credit(who, &escrow_asset, left);
         return Ok(None);
     }
@@ -740,8 +750,7 @@ pub fn ledger_hook(b: &mut Books, height: u64) {
                     Side::Sell => m.escrow -= base,
                 }
                 let scale = pair_scale(&asset);
-                let dust_left = side == Side::Buy && quote_of(m.remaining, m.price, scale) == 0;
-                let done = m.remaining == 0 || dust_left;
+                let done = is_dust(m.remaining, m.price, scale);
                 match side {
                     Side::Buy => b.credit(&o.owner, &asset, base),
                     Side::Sell => b.credit(&o.owner, QUOTE, quote),

@@ -617,6 +617,8 @@ fn account_tx_json(tx: &Tx, led: &Ledger) -> serde_json::Value {
             TxBody::Claim => "claim",
             TxBody::AssetPay { .. } => "asset_pay",
             TxBody::SetExternalAddrs { .. } => "set_external_addrs",
+            TxBody::PlaceLimitOrder { .. } => "place_limit_order",
+            TxBody::CancelOrder { .. } => "cancel_order",
             _ => "tx",
         },
         "account": tx.account,
@@ -3633,6 +3635,9 @@ pub struct Node {
     pub btc4_fork_fix_from_height: u64,
     /// v2.10.4 (TBD): [`crate::params_v2::btc4_lend_scale_from_height`]; runtime only.
     pub btc4_lend_scale_from_height: u64,
+    /// v2.10.4 (TBD): [`crate::params_v2::orderbook_from_height`] (= the single
+    /// 2.10.4 height); runtime only.
+    pub orderbook_from_height: u64,
     /// v2.10.3 (TBD): [`crate::params_v2::hello_min_release_from_height`]; runtime only.
     pub hello_min_release_from_height: u64,
     /// v2.10.3: last Hello `release_version` per peer id ("" = pre-2.10.3)
@@ -3760,6 +3765,7 @@ impl Node {
         let empty_block_from_height = crate::params_v2::empty_block_from_height(cfg.network_id);
         let btc4_fork_fix_from_height = crate::params_v2::btc4_fork_fix_from_height(cfg.network_id);
         let btc4_lend_scale_from_height = crate::params_v2::btc4_lend_scale_from_height(cfg.network_id);
+        let orderbook_from_height = crate::params_v2::orderbook_from_height(cfg.network_id);
         let hello_min_release_from_height = crate::params_v2::hello_min_release_from_height(cfg.network_id);
         let rewards_v2_from_height = params_v2::network_rewards_v2_from_height(cfg.network_id);
         let rewards_v2_epoch = params_v2::network_rewards_v2_epoch(cfg.network_id);
@@ -3896,6 +3902,7 @@ impl Node {
             empty_block_from_height,
             btc4_fork_fix_from_height,
             btc4_lend_scale_from_height,
+            orderbook_from_height,
             hello_min_release_from_height,
             peer_releases: BTreeMap::new(),
             rewards_v2_from_height,
@@ -4258,18 +4265,27 @@ impl Node {
 
     /// v2.10.4: order book (and hybrid swaps) apply in the ledger built now.
     pub fn orderbook_open(&self) -> bool {
-        self.tip_height.saturating_add(1) >= crate::params_v2::orderbook_from_height(self.cfg.network_id)
+        self.tip_height.saturating_add(1) >= self.orderbook_from_height
     }
 
     /// v2.10.4 per-ledger order-book hook (expiry + AMM-cross triggers) on a
     /// draft. Same call in pack, verify (`stage_drafts`) and commit, before
     /// txs: it settles what the previous ledger's final pool price crossed.
     pub(crate) fn orderbook_ledger_hook(&self, state: &mut WorldState, defi: &mut DefiState, height: u64) {
-        if height < crate::params_v2::orderbook_from_height(self.cfg.network_id) {
+        if height < self.orderbook_from_height {
             return;
         }
         let mut b = crate::orderbook::Books { state, defi };
         crate::orderbook::ledger_hook(&mut b, height);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn orderbook_ledger_hook_for_test(&mut self, height: u64) {
+        let mut st = std::mem::take(&mut self.state);
+        let mut df = std::mem::take(&mut self.defi);
+        self.orderbook_ledger_hook(&mut st, &mut df, height);
+        self.state = st;
+        self.defi = df;
     }
 
     pub fn external_addrs_tx_pre_activation(&self, tx: &Tx) -> bool {
@@ -24083,3 +24099,5 @@ mod v2_10_activation_tests;
 mod btc4_fork_fix_tests;
 #[cfg(test)]
 mod btc4_lend_scale_tests;
+#[cfg(test)]
+mod orderbook_tests;
