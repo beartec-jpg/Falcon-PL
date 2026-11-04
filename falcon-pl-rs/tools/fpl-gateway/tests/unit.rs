@@ -187,6 +187,55 @@ fn proposed_config_roundtrips_toml() {
     assert!(!back.billing.enabled);
 }
 
+#[test]
+fn cors_default_is_not_wildcard_and_old_configs_still_load() {
+    let c = Config::proposed_default();
+    assert!(!c.cors_origins.iter().any(|o| o == "*"));
+    assert_eq!(c.cors_origins, vec!["https://falcon-fpl.com".to_string(), "https://www.beartec.uk".to_string()]);
+    // A gateway.toml written before this change (no cors_origins, no [abuse]) parses with safe defaults.
+    let mut v: toml::Value = toml::from_str(&toml::to_string(&c).unwrap()).unwrap();
+    let t = v.as_table_mut().unwrap();
+    t.remove("cors_origins");
+    t.remove("abuse");
+    let back: Config = toml::from_str(&toml::to_string(&v).unwrap()).unwrap();
+    back.validate().unwrap();
+    assert_eq!(back.cors_origins, c.cors_origins);
+    assert_eq!(back.abuse, fpl_gateway::config::AbuseLimits::default());
+}
+
+#[test]
+fn deployed_example_config_parses() {
+    let c: Config = toml::from_str(include_str!("../deploy/gateway.example.toml")).unwrap();
+    c.validate().unwrap();
+    assert!(!c.cors_origins.iter().any(|o| o == "*"));
+}
+
+#[test]
+fn client_buckets_are_per_client_and_bounded() {
+    use fpl_gateway::limits::ClientBuckets;
+    let now = std::time::Instant::now();
+    let b = ClientBuckets::new(0.001, 1, 2);
+    assert!(b.take("a", now).is_ok());
+    assert!(b.take("a", now).is_err());
+    assert!(b.take("b", now).is_ok());
+    assert!(b.take("c", now).is_ok(), "map cleared at cap");
+    assert!(b.len() <= 2);
+}
+
+#[test]
+fn every_method_declares_reply_types() {
+    for m in fpl_gateway::allowlist::METHODS {
+        assert!(!m.reply_types.is_empty(), "{}", m.name);
+        for t in m.reply_types {
+            assert!(fpl_gateway::upstream::REPLY_TYPES.contains(t), "{} reply {t} not terminal", m.name);
+        }
+    }
+    let oo = fpl_gateway::allowlist::lookup("fpl_openOrders").unwrap();
+    assert!(oo.reply_types.contains(&"order_book"));
+    let f = fpl_gateway::allowlist::lookup("fpl_fills").unwrap();
+    assert!(f.reply_types.contains(&"order_book"));
+}
+
 // ---------- billing stub ----------
 #[test]
 fn stripe_signature() {

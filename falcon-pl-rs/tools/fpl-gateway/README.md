@@ -48,6 +48,29 @@ Other routes: `GET /v1/health` (gateway + node probe, no key), `GET /v1/tiers`,
 `GET /v1/usage` (caller's own month-to-date usage), `GET /metrics` on the metrics
 listener, `POST /v1/billing/stripe/webhook` (stub; 404 unless enabled).
 
+## Abuse limits (`[abuse]`, all optional)
+Unauthenticated surfaces are capped so they can't be used to hammer the node:
+
+| Key | Default | Meaning |
+|---|---|---|
+| `health_rps` / `health_burst` | 5 / 20 | gateway-wide bucket for `GET /v1/health` (429 + `Retry-After`) |
+| `health_max_concurrent` | 2 | node probes in flight; extra callers get the cached answer (503 if none) |
+| `health_cache_ms` | 1000 | health result cache; repeat calls inside it never reach the node |
+| `unauth_ip_rps` / `unauth_ip_burst` | 1 / 10 | missing/invalid key, per client IP (last `X-Forwarded-For` hop, set by Caddy) |
+| `unauth_global_rps` / `unauth_global_burst` | 20 / 50 | missing/invalid key, gateway-wide |
+| `max_tracked_ips` | 10000 | per-IP map is cleared when it grows past this |
+
+Over budget, a bad/missing key gets 429 (-32005) instead of 401. Valid keys are never
+affected by the unauthenticated budget.
+
+CORS: `cors_origins` defaults to `["https://falcon-fpl.com", "https://www.beartec.uk"]`
+(exact match, origin echoed). `"*"` still works but must be set explicitly and logs a warning.
+
+Node replies: `fpl_orderBook`, `fpl_openOrders` and `fpl_fills` all accept the node's
+`order_book` reply (what fd-pl v2.10.4 sends; checked against the live seed node);
+`open_orders` / `fills` are accepted for forward compatibility. A reply of any other
+type returns 502 "unexpected node reply" instead of being passed through.
+
 ## Keys and metering
 Keys are `fplk_` + 64 hex, shown once by `fpl-gatewayd new-key`, stored only as
 SHA-256 in `keys.json`, reloaded on SIGHUP. Usage per key/month is written atomically

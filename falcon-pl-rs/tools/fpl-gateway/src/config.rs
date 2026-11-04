@@ -97,7 +97,9 @@ pub struct Config {
     pub max_body_bytes: usize,
     /// Max concurrent upstream connections.
     pub max_upstream_concurrency: usize,
-    /// CORS allowed origins; `"*"` allows any.
+    /// CORS allowed origins (exact match). Defaults to the BEARTEC sites; `"*"`
+    /// still allows any origin but must now be set explicitly.
+    #[serde(default = "default_cors_origins")]
     pub cors_origins: Vec<String>,
     pub keys_path: PathBuf,
     pub usage_path: PathBuf,
@@ -105,6 +107,50 @@ pub struct Config {
     pub tiers: BTreeMap<Tier, TierLimits>,
     #[serde(default)]
     pub billing: BillingConfig,
+    /// Abuse limits for unauthenticated surfaces (health probe, bad/missing keys).
+    #[serde(default)]
+    pub abuse: AbuseLimits,
+}
+
+/// Explicit default CORS allowlist (matches the deployed gateway.toml).
+pub fn default_cors_origins() -> Vec<String> {
+    vec!["https://falcon-fpl.com".into(), "https://www.beartec.uk".into()]
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct AbuseLimits {
+    /// `GET /v1/health`: gateway-wide token bucket (requests/sec, burst).
+    pub health_rps: f64,
+    pub health_burst: u32,
+    /// Max concurrent upstream health probes; extra callers get the cached result.
+    pub health_max_concurrent: usize,
+    /// Health result cache (ms); probes within the window never touch the node.
+    pub health_cache_ms: u64,
+    /// Requests with a missing/invalid API key, per client IP (X-Forwarded-For from Caddy).
+    pub unauth_ip_rps: f64,
+    pub unauth_ip_burst: u32,
+    /// Requests with a missing/invalid API key, gateway-wide.
+    pub unauth_global_rps: f64,
+    pub unauth_global_burst: u32,
+    /// Cap on tracked client IPs (map is cleared when exceeded).
+    pub max_tracked_ips: usize,
+}
+
+impl Default for AbuseLimits {
+    fn default() -> Self {
+        Self {
+            health_rps: 5.0,
+            health_burst: 20,
+            health_max_concurrent: 2,
+            health_cache_ms: 1_000,
+            unauth_ip_rps: 1.0,
+            unauth_ip_burst: 10,
+            unauth_global_rps: 20.0,
+            unauth_global_burst: 50,
+            max_tracked_ips: 10_000,
+        }
+    }
 }
 
 impl Config {
@@ -121,6 +167,13 @@ impl Config {
             anyhow::ensure!(l.rps > 0.0 && l.burst > 0, "tier {} needs rps>0 and burst>0", t.as_str());
         }
         anyhow::ensure!(self.max_body_bytes > 0 && self.max_body_bytes <= 1 << 20, "max_body_bytes must be 1..=1MiB");
+        let a = &self.abuse;
+        anyhow::ensure!(a.health_rps > 0.0 && a.health_burst > 0 && a.health_max_concurrent > 0, "abuse.health_* must be > 0");
+        anyhow::ensure!(a.unauth_ip_rps > 0.0 && a.unauth_ip_burst > 0 && a.unauth_global_rps > 0.0 && a.unauth_global_burst > 0, "abuse.unauth_* must be > 0");
+        anyhow::ensure!(a.max_tracked_ips > 0, "abuse.max_tracked_ips must be > 0");
+        if self.cors_origins.iter().any(|o| o == "*") {
+            tracing::warn!("cors_origins contains \"*\": any website can call this gateway from a browser");
+        }
         Ok(())
     }
 
@@ -142,12 +195,13 @@ impl Config {
             upstream_max_reply_bytes: 8 << 20,
             max_body_bytes: 64 * 1024,
             max_upstream_concurrency: 64,
-            cors_origins: vec!["*".into()],
+            cors_origins: default_cors_origins(),
             keys_path: "/etc/fpl-gateway/keys.json".into(),
             usage_path: "/var/lib/fpl-gateway/usage.json".into(),
             usage_flush_secs: 30,
             tiers,
             billing: BillingConfig::default(),
+            abuse: AbuseLimits::default(),
         }
     }
 }

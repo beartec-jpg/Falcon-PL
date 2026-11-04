@@ -13,16 +13,21 @@ pub struct Method {
     /// Cost against the monthly quota.
     pub cost: u64,
     pub is_tx_submit: bool,
+    /// Node reply `type`s that answer this method (besides `err`). fd-pl
+    /// v2.10.4 answers all three order-book queries with `order_book`
+    /// (verified live 2026-11-04); `open_orders` / `fills` are accepted too in
+    /// case the node gains dedicated reply variants.
+    pub reply_types: &'static [&'static str],
 }
 
 pub const METHODS: &[Method] = &[
-    Method { name: "fpl_status", wire_type: "status_req", cost: 1, is_tx_submit: false },
-    Method { name: "fpl_health", wire_type: "health_req", cost: 1, is_tx_submit: false },
-    Method { name: "fpl_getAccount", wire_type: "account_query", cost: 1, is_tx_submit: false },
-    Method { name: "fpl_orderBook", wire_type: "order_book_query", cost: 1, is_tx_submit: false },
-    Method { name: "fpl_openOrders", wire_type: "open_orders_query", cost: 1, is_tx_submit: false },
-    Method { name: "fpl_fills", wire_type: "fills_query", cost: 1, is_tx_submit: false },
-    Method { name: "fpl_submitTx", wire_type: "submit_tx", cost: 5, is_tx_submit: true },
+    Method { name: "fpl_status", wire_type: "status_req", cost: 1, is_tx_submit: false, reply_types: &["status"] },
+    Method { name: "fpl_health", wire_type: "health_req", cost: 1, is_tx_submit: false, reply_types: &["health"] },
+    Method { name: "fpl_getAccount", wire_type: "account_query", cost: 1, is_tx_submit: false, reply_types: &["account"] },
+    Method { name: "fpl_orderBook", wire_type: "order_book_query", cost: 1, is_tx_submit: false, reply_types: &["order_book"] },
+    Method { name: "fpl_openOrders", wire_type: "open_orders_query", cost: 1, is_tx_submit: false, reply_types: &["order_book", "open_orders"] },
+    Method { name: "fpl_fills", wire_type: "fills_query", cost: 1, is_tx_submit: false, reply_types: &["order_book", "fills"] },
+    Method { name: "fpl_submitTx", wire_type: "submit_tx", cost: 5, is_tx_submit: true, reply_types: &["ok"] },
 ];
 
 /// Wire types the gateway must never send (mirrors `WireMsg::is_admin` plus

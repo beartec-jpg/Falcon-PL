@@ -12,7 +12,7 @@ use crate::allowlist::{self, BuildErr};
 use crate::auth::{self, KeyStore};
 use crate::billing;
 use crate::config::{Config, Tier};
-use crate::limits::{now_unix, Deny, Limiter};
+use crate::limits::{now_unix, ClientBuckets, Deny, Limiter, SharedBucket};
 use crate::metrics::Metrics;
 use crate::upstream;
 use axum::body::{Body, Bytes};
@@ -33,12 +33,32 @@ pub struct AppState {
     pub limiter: Limiter,
     pub metrics: Metrics,
     pub upstream_slots: Semaphore,
+    /// /v1/health: gateway-wide bucket, probe concurrency cap, short result cache.
+    pub health_bucket: SharedBucket,
+    pub health_slots: Semaphore,
+    pub health_cache: parking_lot::Mutex<Option<(Instant, bool)>>,
+    /// Missing/invalid API key: per-client and gateway-wide buckets.
+    pub unauth_ip: ClientBuckets,
+    pub unauth_global: SharedBucket,
 }
 
 impl AppState {
     pub fn new(cfg: Config, keys: KeyStore, limiter: Limiter) -> Arc<Self> {
         let slots = cfg.max_upstream_concurrency;
-        Arc::new(Self { cfg, keys: RwLock::new(keys), limiter, metrics: Metrics::default(), upstream_slots: Semaphore::new(slots) })
+        let a = cfg.abuse.clone();
+        let now = Instant::now();
+        Arc::new(Self {
+            cfg,
+            keys: RwLock::new(keys),
+            limiter,
+            metrics: Metrics::default(),
+            upstream_slots: Semaphore::new(slots),
+            health_bucket: SharedBucket::new(a.health_rps, a.health_burst, now),
+            health_slots: Semaphore::new(a.health_max_concurrent),
+            health_cache: parking_lot::Mutex::new(None),
+            unauth_ip: ClientBuckets::new(a.unauth_ip_rps, a.unauth_ip_burst, a.max_tracked_ips),
+            unauth_global: SharedBucket::new(a.unauth_global_rps, a.unauth_global_burst, now),
+        })
     }
 }
 
@@ -87,6 +107,39 @@ async fn cors(State(st): S, req: axum::extract::Request, next: axum::middleware:
     resp
 }
 
+/// Client identity for abuse limits. Caddy (the only public path) overwrites
+/// X-Forwarded-For with the real peer, so its last entry is the client.
+pub fn client_ip(headers: &HeaderMap) -> String {
+    headers
+        .get("x-forwarded-for")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.rsplit(',').next())
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty() && s.len() <= 64)
+        .unwrap_or("-")
+        .to_string()
+}
+
+/// Charge an auth failure. `Some(retry_after)` once the client (or the gateway
+/// as a whole) is over the bad-key budget: answer 429 instead of 401.
+fn unauth_throttle(st: &AppState, headers: &HeaderMap) -> Option<u64> {
+    let now = Instant::now();
+    let ip = st.unauth_ip.take(&client_ip(headers), now).err();
+    let global = st.unauth_global.take(now).err();
+    ip.max(global)
+}
+
+fn unauthorized(st: &AppState, headers: &HeaderMap, id: &Value, msg: &str) -> Response {
+    if let Some(retry) = unauth_throttle(st, headers) {
+        st.metrics.req("-", "-", "unauth_rate_limited");
+        let mut r = reply(StatusCode::TOO_MANY_REQUESTS, rpc_err(id, -32005, "too many requests with a missing or invalid API key"));
+        r.headers_mut().insert(header::RETRY_AFTER, HeaderValue::from(retry));
+        return r;
+    }
+    st.metrics.req("-", "-", "unauthorized");
+    reply(StatusCode::UNAUTHORIZED, rpc_err(id, -32001, msg))
+}
+
 async fn preflight() -> StatusCode {
     StatusCode::NO_CONTENT
 }
@@ -105,15 +158,11 @@ async fn rpc(State(st): S, headers: HeaderMap, body: Bytes) -> Response {
 
     // 1. auth
     let Some(presented) = auth::extract(&headers) else {
-        st.metrics.req("-", "-", "unauthorized");
-        return reply(StatusCode::UNAUTHORIZED, rpc_err(&id, -32001, "missing API key"));
+        return unauthorized(&st, &headers, &id, "missing API key");
     };
-    let (key_id, tier) = match st.keys.read().authenticate(&presented) {
-        Some(r) => (r.id.clone(), r.tier),
-        None => {
-            st.metrics.req("-", "-", "unauthorized");
-            return reply(StatusCode::UNAUTHORIZED, rpc_err(&id, -32001, "invalid API key"));
-        }
+    let found = st.keys.read().authenticate(&presented).map(|r| (r.id.clone(), r.tier));
+    let Some((key_id, tier)) = found else {
+        return unauthorized(&st, &headers, &id, "invalid API key");
     };
     let t = tier.as_str();
 
@@ -156,7 +205,14 @@ async fn rpc(State(st): S, headers: HeaderMap, body: Bytes) -> Response {
     st.metrics.latency(m.name, started.elapsed().as_millis() as u64);
     match res {
         Ok(v) => {
-            if v.get("type").and_then(Value::as_str) == Some("err") {
+            let rt = v.get("type").and_then(Value::as_str).unwrap_or("");
+            if rt != "err" && !m.reply_types.contains(&rt) {
+                st.metrics.upstream_err("unexpected_reply");
+                st.metrics.req(t, m.name, "upstream_error");
+                tracing::warn!(method = m.name, reply = rt, "unexpected node reply type");
+                return reply(StatusCode::BAD_GATEWAY, rpc_err(&id, -32002, "unexpected node reply"));
+            }
+            if rt == "err" {
                 st.metrics.req(t, m.name, "node_err");
                 let msg = v.get("msg").and_then(Value::as_str).unwrap_or("node error");
                 return reply(StatusCode::OK, rpc_err(&id, -32000, msg));
@@ -180,9 +236,9 @@ async fn rpc(State(st): S, headers: HeaderMap, body: Bytes) -> Response {
 }
 
 async fn usage(State(st): S, headers: HeaderMap) -> Response {
-    let Some(k) = auth::extract(&headers) else { return StatusCode::UNAUTHORIZED.into_response() };
-    let Some((id, tier)) = st.keys.read().authenticate(&k).map(|r| (r.id.clone(), r.tier)) else {
-        return StatusCode::UNAUTHORIZED.into_response();
+    let found = auth::extract(&headers).and_then(|k| st.keys.read().authenticate(&k).map(|r| (r.id.clone(), r.tier)));
+    let Some((id, tier)) = found else {
+        return unauthorized(&st, &headers, &Value::Null, "missing or invalid API key");
     };
     let l = st.cfg.limits(tier);
     let u = st.limiter.usage(&id).unwrap_or_default();
@@ -191,12 +247,41 @@ async fn usage(State(st): S, headers: HeaderMap) -> Response {
     reply(StatusCode::OK, json!({"key_id": id, "tier": tier.as_str(), "month": cur, "units_used": used, "monthly_quota": l.monthly_quota, "rps": l.rps, "burst": l.burst, "tx_submit_per_min": l.tx_submit_per_min}))
 }
 
+fn health_reply(up: bool) -> Response {
+    let code = if up { StatusCode::OK } else { StatusCode::SERVICE_UNAVAILABLE };
+    reply(code, json!({"service":"fpl-gateway","version":env!("CARGO_PKG_VERSION"),"network":"testnet","gateway":"ok","upstream": if up {"ok"} else {"down"}}))
+}
+
+/// Unauthenticated, so: gateway-wide rate limit, results cached for
+/// `health_cache_ms`, and at most `health_max_concurrent` probes in flight
+/// (callers beyond that get the last cached answer, or 503 if none).
 async fn health(State(st): S) -> Response {
+    let now = Instant::now();
+    if let Err(retry) = st.health_bucket.take(now) {
+        st.metrics.req("-", "health", "rate_limited");
+        let mut r = (StatusCode::TOO_MANY_REQUESTS, axum::Json(json!({"error":"rate limit exceeded"}))).into_response();
+        r.headers_mut().insert(header::RETRY_AFTER, HeaderValue::from(retry));
+        return r;
+    }
+    let ttl = Duration::from_millis(st.cfg.abuse.health_cache_ms);
+    let cached = *st.health_cache.lock();
+    if let Some((at, up)) = cached {
+        if now.saturating_duration_since(at) < ttl {
+            return health_reply(up);
+        }
+    }
+    let Ok(_slot) = st.health_slots.try_acquire() else {
+        st.metrics.req("-", "health", "busy");
+        return match cached {
+            Some((_, up)) => health_reply(up),
+            None => (StatusCode::SERVICE_UNAVAILABLE, axum::Json(json!({"error":"busy"}))).into_response(),
+        };
+    };
     let probe = json!({"type":"health_req","warnings":0});
     let r = upstream::call(&st.cfg.upstream, &probe, Duration::from_millis(st.cfg.upstream_timeout_ms.min(3000)), st.cfg.upstream_max_reply_bytes).await;
     let up = matches!(&r, Ok(v) if v.get("type").and_then(Value::as_str) == Some("health"));
-    let code = if up { StatusCode::OK } else { StatusCode::SERVICE_UNAVAILABLE };
-    reply(code, json!({"service":"fpl-gateway","version":env!("CARGO_PKG_VERSION"),"network":"testnet","gateway":"ok","upstream": if up {"ok"} else {"down"}}))
+    *st.health_cache.lock() = Some((Instant::now(), up));
+    health_reply(up)
 }
 
 async fn tiers(State(st): S) -> Response {

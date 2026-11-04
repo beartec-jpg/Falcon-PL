@@ -154,3 +154,42 @@ impl Limiter {
         std::fs::rename(tmp, path)
     }
 }
+
+/// Single shared token bucket (gateway-wide limits).
+pub struct SharedBucket(Mutex<Bucket>);
+
+impl SharedBucket {
+    pub fn new(rate: f64, burst: u32, now: Instant) -> Self {
+        Self(Mutex::new(Bucket::new(rate, burst as f64, now)))
+    }
+    pub fn take(&self, now: Instant) -> Result<(), u64> {
+        self.0.lock().take(now)
+    }
+}
+
+/// Per-client token buckets with a bounded map (cleared when it grows past `max`).
+pub struct ClientBuckets {
+    map: Mutex<HashMap<String, Bucket>>,
+    rate: f64,
+    burst: f64,
+    max: usize,
+}
+
+impl ClientBuckets {
+    pub fn new(rate: f64, burst: u32, max: usize) -> Self {
+        Self { map: Mutex::new(HashMap::new()), rate, burst: burst as f64, max }
+    }
+    pub fn take(&self, client: &str, now: Instant) -> Result<(), u64> {
+        let mut m = self.map.lock();
+        if !m.contains_key(client) && m.len() >= self.max {
+            m.clear();
+        }
+        m.entry(client.to_string()).or_insert_with(|| Bucket::new(self.rate, self.burst, now)).take(now)
+    }
+    pub fn len(&self) -> usize {
+        self.map.lock().len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+}
