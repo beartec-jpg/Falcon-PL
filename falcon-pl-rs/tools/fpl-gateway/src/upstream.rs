@@ -9,7 +9,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
 
 /// Reply types that end an RPC exchange.
-pub const REPLY_TYPES: &[&str] = &["status", "health", "account", "order_book", "ok", "err"];
+pub const REPLY_TYPES: &[&str] = &["status", "health", "account", "order_book", "open_orders", "fills", "ok", "err"];
 
 #[derive(Debug)]
 pub enum UpstreamErr {

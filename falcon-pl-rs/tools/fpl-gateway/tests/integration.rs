@@ -38,6 +38,12 @@ async fn mock_node() -> (String, Arc<Mutex<Vec<Value>>>) {
                     "account_query" if m["account"] == "nobody" => json!({"type":"err","msg":"unknown account"}),
                     "account_query" => json!({"type":"account","body":{"account":m["account"],"balance":"10"}}),
                     "submit_tx" => json!({"type":"ok","msg":"queued"}),
+                    // fd-pl v2.10.4 answers all three book queries with `order_book`
+                    // (shapes captured from the live seed node, 2026-11-04).
+                    "open_orders_query" if m["account"] == "weird" => json!({"type":"status","body":{}}),
+                    "open_orders_query" => json!({"type":"order_book","body":{"account":m["account"],"max_open":32,"orders":[]}}),
+                    "fills_query" if m["pair"] == "NEW-FPL" => json!({"type":"fills","body":{"fills":[{"px":1}]}}),
+                    "fills_query" => json!({"type":"order_book","body":{"fills":[]}}),
                     _ => json!({"type":"err","msg":"admin message rejected"}),
                 };
                 w.write_all(format!("{resp}\n").as_bytes()).await.unwrap();
@@ -68,7 +74,11 @@ async fn fixture(tweak: impl FnOnce(&mut Config)) -> Fx {
 }
 
 async fn call(app: &axum::Router, key: Option<&str>, body: Value) -> (StatusCode, Value, axum::http::HeaderMap) {
-    let mut rb = Request::post("/v1/rpc").header("content-type", "application/json").header("origin", "https://falcon-fpl.com");
+    call_from(app, key, body, "203.0.113.1").await
+}
+
+async fn call_from(app: &axum::Router, key: Option<&str>, body: Value, ip: &str) -> (StatusCode, Value, axum::http::HeaderMap) {
+    let mut rb = Request::post("/v1/rpc").header("content-type", "application/json").header("origin", "https://falcon-fpl.com").header("x-forwarded-for", ip);
     if let Some(k) = key {
         rb = rb.header("authorization", format!("Bearer {k}"));
     }
@@ -193,4 +203,116 @@ async fn upstream_down_is_502_and_health_503() {
     let m = server::metrics_router(AppState::new(Config::proposed_default(), KeyStore::default(), Limiter::new(HashMap::new())));
     let r = m.oneshot(Request::get("/metrics").body(Body::empty()).unwrap()).await.unwrap();
     assert_eq!(r.status(), StatusCode::OK);
+}
+
+async fn get_health(app: &axum::Router) -> StatusCode {
+    app.clone().oneshot(Request::get("/v1/health").body(Body::empty()).unwrap()).await.unwrap().status()
+}
+
+#[tokio::test]
+async fn open_orders_and_fills_accept_live_reply_types() {
+    let fx = fixture(|_| {}).await;
+    let (s, v, _) = call(&fx.app, Some(&fx.key_scale), rq("fpl_openOrders", json!({"account":"alice"}))).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(v["result"]["account"], "alice");
+    assert_eq!(v["result"]["max_open"], 32);
+    let (s, v, _) = call(&fx.app, Some(&fx.key_scale), rq("fpl_fills", json!({"limit":2}))).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert!(v["result"]["fills"].is_array());
+    // dedicated reply variant (future node) is accepted too
+    let (s, v, _) = call(&fx.app, Some(&fx.key_scale), rq("fpl_fills", json!({"pair":"NEW-FPL"}))).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(v["result"]["fills"][0]["px"], 1);
+    // a reply of the wrong kind is never passed through as a result
+    let (s, v, _) = call(&fx.app, Some(&fx.key_scale), rq("fpl_openOrders", json!({"account":"weird"}))).await;
+    assert_eq!(s, StatusCode::BAD_GATEWAY);
+    assert_eq!(v["error"]["code"], -32002);
+}
+
+#[tokio::test]
+async fn health_is_rate_limited_and_cached() {
+    let fx = fixture(|c| {
+        c.abuse.health_burst = 3;
+        c.abuse.health_rps = 0.001;
+        c.abuse.health_cache_ms = 60_000;
+    })
+    .await;
+    for _ in 0..3 {
+        assert_eq!(get_health(&fx.app).await, StatusCode::OK);
+    }
+    let r = fx.app.clone().oneshot(Request::get("/v1/health").body(Body::empty()).unwrap()).await.unwrap();
+    assert_eq!(r.status(), StatusCode::TOO_MANY_REQUESTS);
+    assert!(r.headers().contains_key("retry-after"));
+    let probes = fx.seen.lock().unwrap().iter().filter(|m| m["type"] == "health_req").count();
+    assert_eq!(probes, 1, "cached: 3 health calls -> 1 node probe");
+}
+
+#[tokio::test]
+async fn health_probe_concurrency_is_capped() {
+    let fx = fixture(|c| {
+        c.abuse.health_burst = 1000;
+        c.abuse.health_max_concurrent = 1;
+        c.abuse.health_cache_ms = 0;
+    })
+    .await;
+    let mut hs = Vec::new();
+    for _ in 0..20 {
+        let app = fx.app.clone();
+        hs.push(tokio::spawn(async move { get_health(&app).await }));
+    }
+    let mut ok = 0;
+    for h in hs {
+        let s = h.await.unwrap();
+        assert!(s == StatusCode::OK || s == StatusCode::SERVICE_UNAVAILABLE, "{s}");
+        ok += (s == StatusCode::OK) as u32;
+    }
+    assert!(ok >= 1);
+}
+
+#[tokio::test]
+async fn bad_or_missing_keys_are_rate_limited_per_client() {
+    let fx = fixture(|c| {
+        c.abuse.unauth_ip_burst = 2;
+        c.abuse.unauth_ip_rps = 0.001;
+    })
+    .await;
+    assert_eq!(call_from(&fx.app, None, rq("fpl_status", json!({})), "198.51.100.7").await.0, StatusCode::UNAUTHORIZED);
+    assert_eq!(call_from(&fx.app, Some("fplk_bad"), rq("fpl_status", json!({})), "198.51.100.7").await.0, StatusCode::UNAUTHORIZED);
+    let (s, v, h) = call_from(&fx.app, Some("fplk_bad"), rq("fpl_status", json!({})), "198.51.100.7").await;
+    assert_eq!(s, StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(v["error"]["code"], -32005);
+    assert!(h.contains_key("retry-after"));
+    // /v1/usage shares the budget
+    let r = fx.app.clone().oneshot(Request::get("/v1/usage").header("x-forwarded-for", "198.51.100.7").body(Body::empty()).unwrap()).await.unwrap();
+    assert_eq!(r.status(), StatusCode::TOO_MANY_REQUESTS);
+    // another client is unaffected; a valid key from the throttled client still works
+    assert_eq!(call_from(&fx.app, None, rq("fpl_status", json!({})), "198.51.100.8").await.0, StatusCode::UNAUTHORIZED);
+    assert_eq!(call_from(&fx.app, Some(&fx.key_scale), rq("fpl_status", json!({})), "198.51.100.7").await.0, StatusCode::OK);
+
+    // gateway-wide cap across many clients
+    let fx = fixture(|c| {
+        c.abuse.unauth_global_burst = 3;
+        c.abuse.unauth_global_rps = 0.001;
+    })
+    .await;
+    let mut codes = Vec::new();
+    for i in 0..5 {
+        codes.push(call_from(&fx.app, None, rq("fpl_status", json!({})), &format!("192.0.2.{i}")).await.0);
+    }
+    assert_eq!(codes.iter().filter(|c| **c == StatusCode::TOO_MANY_REQUESTS).count(), 2);
+}
+
+#[tokio::test]
+async fn cors_default_is_explicit_allowlist() {
+    let fx = fixture(|c| c.cors_origins = Config::proposed_default().cors_origins).await;
+    for (o, ok) in [("https://falcon-fpl.com", true), ("https://www.beartec.uk", true), ("https://evil.example", false), ("null", false)] {
+        let r = fx.app.clone().oneshot(Request::options("/v1/rpc").header("origin", o).body(Body::empty()).unwrap()).await.unwrap();
+        match r.headers().get("access-control-allow-origin") {
+            Some(v) => {
+                assert!(ok, "{o} must not be allowed");
+                assert_eq!(v, o, "echoes the origin, never *");
+            }
+            None => assert!(!ok, "{o} should be allowed"),
+        }
+    }
 }
