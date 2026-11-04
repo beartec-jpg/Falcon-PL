@@ -1,6 +1,11 @@
 # NOTICE — Falcon PL node
 
-Copyright (c) 2025-2026 BEARTEC. All rights reserved. See `LICENSE`.
+Copyright (c) 2026 BEARTEC LTD. All rights reserved. See `LICENSE`.
+
+The full licence texts for the Rust crates compiled into the Falcon PL
+binaries are in `THIRD-PARTY-NOTICES` (regenerate with
+`falcon-pl-rs/scripts/generate-third-party-notices.sh`), which must ship
+with every future release.
 
 Original code in this repository was written by or for BEARTEC (including
 AI-assisted commits made under the BEARTEC GitHub account `beartec-jpg`).

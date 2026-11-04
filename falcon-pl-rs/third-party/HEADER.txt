@@ -1,0 +1,31 @@
+THIRD-PARTY NOTICES: Falcon PL
+==============================
+
+Falcon PL is Copyright (c) 2026 BEARTEC LTD. All rights reserved. See LICENSE.
+
+The Falcon PL binaries (falcon-pl-node, falcon-pl-ctl, fpl-gateway, fpl-operator)
+are built from BEARTEC LTD code and the open-source components listed below.
+Each component is used under the licence shown and keeps its own copyright
+notice. Where a crate offers a choice of licences (for example "MIT OR
+Apache-2.0"), the licence shown is the one under which BEARTEC LTD uses it.
+
+This file is generated from the Cargo.lock files by
+falcon-pl-rs/scripts/generate-third-party-notices.sh (cargo-about). It must be
+included with every future Falcon PL release and operator kit. Releases that
+were already published have not been changed.
+
+Acknowledgements
+----------------
+BEARTEC LTD gratefully acknowledges the following projects and people, whose
+open-source work Falcon PL builds on:
+
+  * OpenZeppelin (https://github.com/OpenZeppelin)
+  * rukafe0x
+  * ZKNox
+
+Not covered by the generated list below:
+  * BitVM (https://github.com/BitVM/BitVM, MIT) is fetched at build time by
+    scripts/fetch-bitvm.sh and is not committed; tools/bitvm-c1b-export depends
+    on it. Its licence is kept at falcon-pl-rs/tools/fpl-bridge/patches/BitVM-LICENSE-MIT.
+  * pqcrypto-falcon bundles the PQClean Falcon reference implementation (MIT).
+  * The falcon-dag-rs git submodule is covered separately.
