@@ -418,6 +418,45 @@ enum Cmd {
         #[arg(long, default_value_t = NETWORK_ID_PRIVATE_V22)]
         network_id: u32,
     },
+    /// v2.10.4 order book: place a limit order (`--pair BTC4-FPL --side buy|sell`).
+    /// `price` = FPL raw per one whole coin; `amount` = base raw units.
+    PlaceOrder {
+        #[arg(long)]
+        who: String,
+        #[arg(long)]
+        pair: String,
+        #[arg(long)]
+        side: String,
+        #[arg(long)]
+        price: u64,
+        #[arg(long)]
+        amount: u64,
+        #[arg(long)]
+        expiry_height: Option<u64>,
+        #[arg(long, default_value_t = 2)]
+        fee: u64,
+        #[arg(long, default_value = "hmac")]
+        scheme: String,
+        #[arg(long, default_value = "")]
+        keys_dir: String,
+        #[arg(long, default_value_t = NETWORK_ID_PRIVATE_V22)]
+        network_id: u32,
+    },
+    /// v2.10.4 order book: cancel one of `who`'s open orders.
+    CancelOrder {
+        #[arg(long)]
+        who: String,
+        #[arg(long)]
+        order_id: u64,
+        #[arg(long, default_value_t = 2)]
+        fee: u64,
+        #[arg(long, default_value = "hmac")]
+        scheme: String,
+        #[arg(long, default_value = "")]
+        keys_dir: String,
+        #[arg(long, default_value_t = NETWORK_ID_PRIVATE_V22)]
+        network_id: u32,
+    },
     SwapRoute {
         #[arg(long)]
         who: String,
@@ -4457,6 +4496,57 @@ async fn run() -> Result<()> {
             .await?;
             println!("tx_id={} {}", tx.tx_id, serde_json::to_string_pretty(&r)?);
         }
+        Cmd::PlaceOrder {
+            who,
+            pair,
+            side,
+            price,
+            amount,
+            expiry_height,
+            fee,
+            scheme,
+            keys_dir,
+            network_id,
+        } => {
+            let (pair, side) = normalize_order_args(&pair, &side)?;
+            let (tx, r) = submit_body(
+                &args.addr,
+                &who,
+                "",
+                0,
+                fee,
+                0,
+                &scheme,
+                &keys_dir,
+                network_id,
+                TxBody::PlaceLimitOrder { pair, side, price, amount, expiry_height },
+            )
+            .await?;
+            println!("tx_id={} {}", tx.tx_id, serde_json::to_string_pretty(&r)?);
+        }
+        Cmd::CancelOrder {
+            who,
+            order_id,
+            fee,
+            scheme,
+            keys_dir,
+            network_id,
+        } => {
+            let (tx, r) = submit_body(
+                &args.addr,
+                &who,
+                "",
+                0,
+                fee,
+                0,
+                &scheme,
+                &keys_dir,
+                network_id,
+                TxBody::CancelOrder { order_id },
+            )
+            .await?;
+            println!("tx_id={} {}", tx.tx_id, serde_json::to_string_pretty(&r)?);
+        }
         Cmd::SwapRoute {
             who,
             token_in,
@@ -6179,5 +6269,32 @@ mod dash_claim_tests {
         let mut k = keys(b"bob\ryq");
         let out = claim_flow_for_test("127.0.0.1:1", &cfg("/nonexistent-keys"), &f, &mut k).await;
         assert!(out.starts_with("claim failed:"), "{out}");
+    }
+}
+
+/// Validate and normalise `--pair` / `--side` for PlaceOrder ("btc4/fpl" -> "BTC4-FPL").
+fn normalize_order_args(pair: &str, side: &str) -> anyhow::Result<(String, String)> {
+    let u = pair.trim().to_ascii_uppercase().replace(['/', '_'], "-");
+    let base = u.strip_suffix("-FPL").unwrap_or("");
+    if base.is_empty() || base == "FPL" || !base.chars().all(|c| c.is_ascii_alphanumeric()) {
+        anyhow::bail!("--pair must look like <ASSET>-FPL, got {pair:?}");
+    }
+    let s = side.trim().to_ascii_lowercase();
+    if s != "buy" && s != "sell" {
+        anyhow::bail!("--side must be buy or sell, got {side:?}");
+    }
+    Ok((format!("{base}-FPL"), s))
+}
+
+#[cfg(test)]
+mod order_arg_tests {
+    use super::normalize_order_args;
+    #[test]
+    fn normalises_pair_and_side() {
+        assert_eq!(normalize_order_args("btc4/fpl", "BUY").unwrap(), ("BTC4-FPL".into(), "buy".into()));
+        assert_eq!(normalize_order_args("USDC-FPL", "sell").unwrap(), ("USDC-FPL".into(), "sell".into()));
+        assert!(normalize_order_args("FPL-FPL", "buy").is_err());
+        assert!(normalize_order_args("BTC4", "buy").is_err());
+        assert!(normalize_order_args("BTC4-FPL", "hold").is_err());
     }
 }
