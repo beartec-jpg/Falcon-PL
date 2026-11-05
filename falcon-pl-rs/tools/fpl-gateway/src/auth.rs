@@ -29,6 +29,10 @@ pub struct KeyStore {
     by_hash: HashMap<String, KeyRecord>,
 }
 
+pub fn load_records(path: &std::path::Path) -> anyhow::Result<Vec<KeyRecord>> {
+    Ok(serde_json::from_str(&std::fs::read_to_string(path)?)?)
+}
+
 pub fn hash_key(key: &str) -> String {
     hex::encode(Sha256::digest(key.as_bytes()))
 }
@@ -62,8 +66,30 @@ impl KeyStore {
     }
 
     pub fn load(path: &std::path::Path) -> anyhow::Result<Self> {
-        let s = std::fs::read_to_string(path)?;
-        Self::from_records(serde_json::from_str(&s)?)
+        Self::from_records(load_records(path)?)
+    }
+
+    /// Merge local/ops keys (keys.json) with portal-sourced keys. Local always
+    /// wins: a portal record whose `id` or `sha256` matches a local record is
+    /// dropped. Portal records are validated individually; bad ones are skipped
+    /// (logged) so one bad row can't take down the whole portal set.
+    pub fn merged(local: Vec<KeyRecord>, portal: &[KeyRecord]) -> anyhow::Result<Self> {
+        let mut s = Self::from_records(local)?;
+        let local_ids: std::collections::HashSet<String> = s.by_hash.values().map(|r| r.id.clone()).collect();
+        let mut seen_ids = std::collections::HashSet::new();
+        for r in portal {
+            let h = r.sha256.to_lowercase();
+            if h.len() != 64 || hex::decode(&h).is_err() {
+                tracing::warn!(key = %r.id, "portal key has a bad sha256; skipped");
+                continue;
+            }
+            if local_ids.contains(&r.id) || s.by_hash.contains_key(&h) || !seen_ids.insert(r.id.clone()) {
+                tracing::debug!(key = %r.id, "portal key shadowed by local/duplicate; skipped");
+                continue;
+            }
+            s.by_hash.insert(h.clone(), KeyRecord { sha256: h, ..r.clone() });
+        }
+        Ok(s)
     }
 
     pub fn len(&self) -> usize {

@@ -5,5 +5,6 @@ pub mod billing;
 pub mod config;
 pub mod limits;
 pub mod metrics;
+pub mod portal;
 pub mod server;
 pub mod upstream;
