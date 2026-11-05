@@ -1,0 +1,14 @@
+[Unit]
+Description=Falcon PL testnet market-maker (order-book volume engine)
+After=network-online.target
+
+[Service]
+ExecStart=/usr/bin/python3 /var/lib/falcon-pl-mm/mm.py /etc/falcon-pl-mm/mm.env
+Restart=on-failure
+Nice=15
+IOSchedulingClass=idle
+CPUQuota=200%
+User=falcon-pl-mm
+
+[Install]
+WantedBy=multi-user.target
