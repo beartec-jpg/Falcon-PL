@@ -103,9 +103,12 @@ pub fn front_cutoff(status: &Value, open_height: u64) -> Option<u64> {
 }
 
 /// Ledger height at which a claim still AwaitingPegout is refunded to the user.
+/// Matches `bridge_finalize_rail`: window starts at open_height.max(from_height).
 pub fn refund_height(status: &Value, open_height: u64) -> Option<u64> {
-    let t = bo(status)["pegout_refund_ledgers"].as_u64()?;
-    Some(open_height.saturating_add(t))
+    let b = bo(status);
+    let t = b["pegout_refund_ledgers"].as_u64()?;
+    let from = b["from_height"].as_u64().unwrap_or(0);
+    Some(open_height.max(from).saturating_add(t))
 }
 
 /// DEPOSITOR / KIT REFUSAL RULE (bridge active): a deposit is acceptable only if
@@ -253,6 +256,14 @@ mod tests {
         let st = json!({"body": {"bridge_operators": {"graphs": {format!("{}:{}", "cd".repeat(32), "aa".repeat(32)): {}}}}});
         assert!(is_bound(&st, &"CD".repeat(32), &"aa".repeat(32)));
         assert!(!is_bound(&st, &"cd".repeat(32), &"bb".repeat(32)));
+    }
+
+    #[test]
+    fn refund_height_uses_activation() {
+        let st = json!({"body": {"bridge_operators": {"from_height": 1000, "pegout_refund_ledgers": 43200}}});
+        assert_eq!(refund_height(&st, 500), Some(1000 + 43200));
+        assert_eq!(refund_height(&st, 2000), Some(2000 + 43200));
+        assert_eq!(front_cutoff(&st, 500), Some(1000 + 21600));
     }
 
     #[test]

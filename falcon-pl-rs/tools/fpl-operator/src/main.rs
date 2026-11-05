@@ -203,6 +203,12 @@ impl Config {
         if self.attest_zkey.is_empty() || self.attest_vk_json.is_empty() {
             return Err("FPL_OP_ATTEST_ZKEY / FPL_OP_ATTEST_VK_JSON not set".into());
         }
+        for (label, path) in [("FPL_OP_ATTEST_ZKEY", &self.attest_zkey), ("FPL_OP_ATTEST_VK_JSON", &self.attest_vk_json)] {
+            let meta = std::fs::metadata(path).map_err(|e| format!("{label} {path}: {e}"))?;
+            if !meta.is_file() {
+                return Err(format!("{label} {path}: not a regular file"));
+            }
+        }
         self.check_withdraw_vk().map(|_| ())
     }
 
