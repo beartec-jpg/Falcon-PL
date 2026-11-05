@@ -76,6 +76,28 @@ Keys are `fplk_` + 64 hex, shown once by `fpl-gatewayd new-key`, stored only as
 SHA-256 in `keys.json`, reloaded on SIGHUP. Usage per key/month is written atomically
 to `/var/lib/fpl-gateway/usage.json` every 30 s and on shutdown.
 
+## Portal keys (`[portal]`, off by default)
+
+Self-serve keys bought via Stripe are minted by the Falcon Cloud portal
+(Falcon-faucet-wallet, Postgres `falcon_cloud_keys` = SSOT). With
+`[portal] enabled = true` the gateway polls the portal's internal export
+(hashes only, never plaintext) every `interval_secs` and merges it with
+`keys.json`:
+
+```toml
+[portal]
+enabled = true
+url = "https://www.beartec.uk/api/falcon-cloud/internal/keys"
+token_env = "FPL_GATEWAY_PORTAL_TOKEN"   # env var NAME; value = portal's FALCON_CLOUD_EXPORT_TOKEN
+interval_secs = 60
+timeout_ms = 5000
+```
+
+- `keys.json` (ops/local keys) always wins: a portal row with the same `id` or `sha256` is ignored.
+- `disabled = true` rows and rows with an unknown/null tier never authenticate.
+- Fetch failure keeps the last good portal snapshot (fail-static); restart starts with keys.json only until the first successful pull.
+- SIGHUP still reloads `keys.json` and re-merges the current portal snapshot.
+
 ## Tests
 ```bash
 scripts/test.sh     # cargo test --locked --all-targets: unit + mock-node integration

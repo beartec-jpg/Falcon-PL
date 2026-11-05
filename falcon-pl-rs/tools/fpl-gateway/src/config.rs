@@ -107,9 +107,32 @@ pub struct Config {
     pub tiers: BTreeMap<Tier, TierLimits>,
     #[serde(default)]
     pub billing: BillingConfig,
+    /// Optional pull of self-serve keys from the Falcon Cloud portal (off by default).
+    #[serde(default)]
+    pub portal: PortalConfig,
     /// Abuse limits for unauthenticated surfaces (health probe, bad/missing keys).
     #[serde(default)]
     pub abuse: AbuseLimits,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct PortalConfig {
+    /// Master switch. false => only keys.json is used.
+    pub enabled: bool,
+    /// Portal export endpoint, e.g. https://www.beartec.uk/api/falcon-cloud/internal/keys
+    pub url: String,
+    /// Name of the env var holding the shared bearer token (never the token itself).
+    pub token_env: String,
+    /// Poll interval.
+    pub interval_secs: u64,
+    pub timeout_ms: u64,
+}
+
+impl Default for PortalConfig {
+    fn default() -> Self {
+        Self { enabled: false, url: String::new(), token_env: "FPL_GATEWAY_PORTAL_TOKEN".into(), interval_secs: 60, timeout_ms: 5_000 }
+    }
 }
 
 /// Explicit default CORS allowlist (matches the deployed gateway.toml).
@@ -171,6 +194,10 @@ impl Config {
         anyhow::ensure!(a.health_rps > 0.0 && a.health_burst > 0 && a.health_max_concurrent > 0, "abuse.health_* must be > 0");
         anyhow::ensure!(a.unauth_ip_rps > 0.0 && a.unauth_ip_burst > 0 && a.unauth_global_rps > 0.0 && a.unauth_global_burst > 0, "abuse.unauth_* must be > 0");
         anyhow::ensure!(a.max_tracked_ips > 0, "abuse.max_tracked_ips must be > 0");
+        if self.portal.enabled {
+            anyhow::ensure!(self.portal.url.starts_with("https://") || self.portal.url.starts_with("http://127.0.0.1") || self.portal.url.starts_with("http://localhost"), "portal.url must be https (or loopback http)");
+            anyhow::ensure!(self.portal.interval_secs >= 10, "portal.interval_secs must be >= 10");
+        }
         if self.cors_origins.iter().any(|o| o == "*") {
             tracing::warn!("cors_origins contains \"*\": any website can call this gateway from a browser");
         }
@@ -201,6 +228,7 @@ impl Config {
             usage_flush_secs: 30,
             tiers,
             billing: BillingConfig::default(),
+            portal: PortalConfig::default(),
             abuse: AbuseLimits::default(),
         }
     }

@@ -5,7 +5,7 @@
 //!   fpl-gatewayd check-config --config PATH
 //! SIGHUP reloads keys.json.
 
-use fpl_gateway::{auth, config::{Config, Tier}, limits::Limiter, server};
+use fpl_gateway::{auth, portal, config::{Config, Tier}, limits::Limiter, server};
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -47,7 +47,8 @@ async fn main() -> anyhow::Result<()> {
 
 async fn serve(path: PathBuf) -> anyhow::Result<()> {
     let cfg = Config::load(&path)?;
-    let keys = auth::KeyStore::load(&cfg.keys_path)?;
+    let sources = std::sync::Arc::new(portal::Sources::new(cfg.keys_path.clone()));
+    let keys = sources.build()?;
     let limiter = Limiter::new(Limiter::load_usage(&cfg.usage_path));
     tracing::info!(keys = keys.len(), upstream = %cfg.upstream, "fpl-gateway starting (testnet)");
     let st = server::AppState::new(cfg.clone(), keys, limiter);
@@ -70,10 +71,11 @@ async fn serve(path: PathBuf) -> anyhow::Result<()> {
 
     // SIGHUP: reload keys
     let st3 = st.clone();
+    let src3 = sources.clone();
     tokio::spawn(async move {
         let Ok(mut hup) = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::hangup()) else { return };
         while hup.recv().await.is_some() {
-            match auth::KeyStore::load(&st3.cfg.keys_path) {
+            match src3.build() {
                 Ok(k) => {
                     tracing::info!(keys = k.len(), "keys reloaded");
                     *st3.keys.write() = k;
@@ -82,6 +84,26 @@ async fn serve(path: PathBuf) -> anyhow::Result<()> {
             }
         }
     });
+
+    // Portal key pull (off unless [portal] enabled = true).
+    if cfg.portal.enabled {
+        let token = std::env::var(&cfg.portal.token_env).map_err(|_| anyhow::anyhow!("portal.enabled but env {} is unset", cfg.portal.token_env))?;
+        let client = reqwest::Client::builder().timeout(Duration::from_millis(cfg.portal.timeout_ms)).build()?;
+        let (st5, src5) = (st.clone(), sources.clone());
+        tokio::spawn(async move {
+            let mut iv = tokio::time::interval(Duration::from_secs(st5.cfg.portal.interval_secs));
+            loop {
+                iv.tick().await;
+                match portal::fetch(&client, &st5.cfg.portal, &token).await.and_then(|r| src5.set_portal(r)) {
+                    Ok(k) => {
+                        tracing::debug!(keys = k.len(), portal = src5.portal_len(), "portal keys synced");
+                        *st5.keys.write() = k;
+                    }
+                    Err(e) => tracing::warn!("portal key sync failed, keeping last good set: {e}"),
+                }
+            }
+        });
+    }
 
     let st4 = st.clone();
     axum::serve(pub_l, server::router(st.clone()))
