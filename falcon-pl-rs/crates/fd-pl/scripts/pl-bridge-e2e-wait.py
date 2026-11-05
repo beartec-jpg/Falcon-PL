@@ -40,6 +40,13 @@ else:
 POLL = int(os.environ.get("FPL_E2E_WAIT_POLL", "60"))
 RETRY_SEC = int(os.environ.get("FPL_E2E_RETRY_SEC", "300"))
 CATCHUP_STALL = int(os.environ.get("FPL_E2E_CATCHUP_STALL", "5"))
+# Transient probe failures (node restart, `connect 127.0.0.1:19301`, RPC
+# timeouts) are retried with capped exponential backoff instead of killing the
+# supervisor (crashes 28 Oct, 29 Oct, 2 Nov 2026).
+PROBE_RETRIES = int(os.environ.get("FPL_E2E_PROBE_RETRIES", "6"))
+PROBE_BACKOFF = float(os.environ.get("FPL_E2E_PROBE_BACKOFF", "5"))
+PROBE_BACKOFF_MAX = float(os.environ.get("FPL_E2E_PROBE_BACKOFF_MAX", "300"))
+TRANSIENT = (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError, ValueError)
 
 
 def load_env() -> dict[str, str]:
@@ -61,34 +68,74 @@ def log(msg: str) -> None:
     print(msg, flush=True)
 
 
-def mesh_tip(rpc: str) -> int:
+def _short_err(e: BaseException) -> str:
+    if isinstance(e, subprocess.CalledProcessError):
+        tail = (e.output or "").strip().splitlines()[-1:] if isinstance(e.output, str) else []
+        return f"exit={e.returncode} cmd={e.cmd[:3]} {' '.join(tail)[:200]}"
+    if isinstance(e, subprocess.TimeoutExpired):
+        return f"timeout after {e.timeout}s cmd={list(e.cmd)[:3]}"
+    return f"{type(e).__name__}: {e}"[:300]
+
+
+def with_retry(what: str, fn, *args):
+    """Call fn(*args); retry transient failures with capped exponential backoff.
+
+    Raises the last error after PROBE_RETRIES attempts so callers can decide.
+    """
+    delay = PROBE_BACKOFF
+    for attempt in range(1, PROBE_RETRIES + 1):
+        try:
+            return fn(*args)
+        except TRANSIENT as e:
+            if attempt >= PROBE_RETRIES:
+                raise
+            log(f"{what} failed (attempt {attempt}/{PROBE_RETRIES}): {_short_err(e)}; retry in {delay:.0f}s")
+            time.sleep(delay)
+            delay = min(delay * 2, PROBE_BACKOFF_MAX)
+
+
+def _mesh_tip_once(rpc: str) -> int:
     import json
 
-    out = subprocess.check_output([str(CTL), "--addr", rpc, "status"], text=True, timeout=30)
+    out = subprocess.check_output(
+        [str(CTL), "--addr", rpc, "status"], text=True, timeout=30, stderr=subprocess.STDOUT
+    )
     body = json.loads(out[out.find("{") :]).get("body") or {}
     return int(body.get("tip_height") or 0)
 
 
-def eth_tip(bridge: str, rpc: str) -> int:
+def _eth_tip_once(bridge: str, rpc: str) -> int:
     out = subprocess.check_output(
         [str(CAST), "call", bridge, "fplTip()(uint64)", "--rpc-url", rpc],
         text=True,
         timeout=30,
+        stderr=subprocess.STDOUT,
     ).strip()
     return int(out.split()[0])
+
+
+def mesh_tip(rpc: str) -> int:
+    return with_retry("mesh_tip", _mesh_tip_once, rpc)
+
+
+def eth_tip(bridge: str, rpc: str) -> int:
+    return with_retry("eth_tip", _eth_tip_once, bridge, rpc)
 
 
 def trigger_catchup() -> None:
     if not CATCHUP.is_file():
         return
     log("trigger qc sig collect (lag stall)")
-    subprocess.run(
-        [sys.executable, str(CATCHUP), "collect"],
-        cwd=str(ROOT),
-        env={**os.environ, "PL_ROOT": str(ROOT)},
-        timeout=600,
-        check=False,
-    )
+    try:
+        subprocess.run(
+            [sys.executable, str(CATCHUP), "collect"],
+            cwd=str(ROOT),
+            env={**os.environ, "PL_ROOT": str(ROOT)},
+            timeout=600,
+            check=False,
+        )
+    except TRANSIENT as e:
+        log(f"qc sig collect failed: {_short_err(e)}")
 
 
 def wait_eth_ready(bridge: str, rpc: str, fpl_rpc: str) -> None:
@@ -96,8 +143,14 @@ def wait_eth_ready(bridge: str, rpc: str, fpl_rpc: str) -> None:
     stall = 0
     last_lag = -1
     while True:
-        eth = eth_tip(bridge, rpc)
-        mesh = mesh_tip(fpl_rpc)
+        try:
+            eth = eth_tip(bridge, rpc)
+            mesh = mesh_tip(fpl_rpc)
+        except TRANSIENT as e:
+            # Retries exhausted: keep the supervisor alive, try again next poll.
+            log(f"probe unavailable: {_short_err(e)}; next poll in {POLL}s")
+            time.sleep(POLL)
+            continue
         lag = max(0, mesh - eth)
         log(f"eth={eth} mesh={mesh} lag={lag}")
         if V2:
@@ -191,4 +244,11 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except KeyboardInterrupt:
+        sys.exit(130)
+    except TRANSIENT as e:
+        # Last resort: exit cleanly-logged so systemd (Restart=always) restarts us.
+        log(f"FATAL transient error escaped main: {_short_err(e)}")
+        sys.exit(1)

@@ -1,7 +1,7 @@
 [Unit]
 Description=Falcon PL production bridge e2e supervisor (ETH + BitVM2)
-After=network-online.target falcon-pl-node.service falcon-pl-falcon-qc-prover.service falcon-pl-eth-lc-relayer.service falcon-pl-btc-header-submitter.service falcon-pl-bitvm2-operator.service
-Wants=network-online.target
+After=network-online.target falcon-pl-v1.service falcon-pl-falcon-qc-prover.service falcon-pl-eth-lc-relayer.service falcon-pl-btc-header-submitter.service falcon-pl-bitvm2-operator.service
+Wants=network-online.target falcon-pl-v1.service
 
 [Service]
 Type=simple
