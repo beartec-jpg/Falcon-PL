@@ -1,0 +1,14 @@
+# Install: cp falcon-pl-bridge-e2e.logrotate /etc/logrotate.d/falcon-pl-bridge-e2e
+# The unit appends via StandardOutput=append:, so systemd holds the fd open:
+# use copytruncate (no restart / signal needed). Caps each log at 28M.
+/home/falcon/falcon-pl-public-testnet-2300/logs/e2e-all.log
+/home/falcon/falcon-pl-public-testnet-2300/logs/e2e-wait.log {
+    su falcon falcon
+    size 28M
+    rotate 5
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+}
