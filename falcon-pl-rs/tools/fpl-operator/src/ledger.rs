@@ -102,6 +102,12 @@ pub fn front_cutoff(status: &Value, open_height: u64) -> Option<u64> {
     Some(open_height.max(from).saturating_add(t / 2))
 }
 
+/// Ledger height at which a claim still AwaitingPegout is refunded to the user.
+pub fn refund_height(status: &Value, open_height: u64) -> Option<u64> {
+    let t = bo(status)["pegout_refund_ledgers"].as_u64()?;
+    Some(open_height.saturating_add(t))
+}
+
 /// DEPOSITOR / KIT REFUSAL RULE (bridge active): a deposit is acceptable only if
 /// final.json has at least one peg-out graph, all for the same peg-in confirm
 /// txid, and EVERY graph's operator is a registered Active operator whose
