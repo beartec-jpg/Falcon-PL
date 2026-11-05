@@ -29,6 +29,16 @@ V2 = os.environ.get("FALCON_QC_V2", "").lower() in ("1", "true", "yes")
 CATCHUP = ROOT / (
     "scripts/pl-falcon-qc-v2-catchup.py" if V2 else "scripts/pl-falcon-qc-catchup.py"
 )
+# Which Sepolia QC bridge the ETH wait reads fplTip() from:
+#   v3 (default) - live FalconQcBridgeV3 (FALCON_QC_V3_BRIDGE / FPL_SEPOLIA_QC_V3_BRIDGE)
+#   v2           - FALCON_QC_V2 sequential mode (legacy)
+#   v1           - FALCON_QC_BRIDGE (retired; its prover stopped ~15 Sep 2026)
+# Override with FPL_E2E_QC_MODE=v1|v2|v3; FALCON_QC_V2=1 still selects v2.
+DEFAULT_V3_BRIDGE = "0xEd4eE497F21a9255a59e87535FF2A6097592Cfd4"
+QC_MODE = (os.environ.get("FPL_E2E_QC_MODE") or ("v2" if V2 else "v3")).strip().lower()
+if QC_MODE not in ("v1", "v2", "v3"):
+    raise SystemExit(f"FPL_E2E_QC_MODE must be v1, v2 or v3 (got {QC_MODE!r})")
+V2 = QC_MODE == "v2"
 if V2:
     raw_gap = os.environ.get("FALCON_QC_SAMPLE_GAP")
     if raw_gap is not None and int(raw_gap or "0") not in (0, 1):
@@ -139,7 +149,7 @@ def trigger_catchup() -> None:
 
 
 def wait_eth_ready(bridge: str, rpc: str, fpl_rpc: str) -> None:
-    log(f"wait eth bridge={bridge} max_lag={MAX_LAG} v2={V2}")
+    log(f"wait eth mode={QC_MODE} bridge={bridge} max_lag={MAX_LAG}")
     stall = 0
     last_lag = -1
     while True:
@@ -195,6 +205,22 @@ def run_until_ok(name: str, ok_token: str, env: dict[str, str], *, once: bool) -
         trigger_catchup()
 
 
+def qc_bridge(cfg: dict[str, str]) -> str:
+    """Bridge address whose fplTip() gates the ETH e2e (process env wins over the env file)."""
+    def pick(*keys: str) -> str:
+        for k in keys:
+            v = os.environ.get(k) or cfg.get(k)
+            if v:
+                return v
+        return ""
+
+    if QC_MODE == "v3":
+        return pick("FPL_E2E_QC_BRIDGE", "FALCON_QC_V3_BRIDGE", "FPL_SEPOLIA_QC_V3_BRIDGE") or DEFAULT_V3_BRIDGE
+    if QC_MODE == "v2":
+        return pick("FPL_E2E_QC_BRIDGE", "FALCON_QC_V2_BRIDGE", "FPL_SEPOLIA_QC_V2_BRIDGE")
+    return pick("FPL_E2E_QC_BRIDGE", "FALCON_QC_BRIDGE")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--eth-only", action="store_true")
@@ -206,7 +232,7 @@ def main() -> int:
         args.all = True
 
     cfg = load_env()
-    bridge = cfg.get("FALCON_QC_BRIDGE", "")
+    bridge = qc_bridge(cfg)
     rpc = cfg.get("ETH_RPC", "")
     fpl_rpc = cfg.get("FPL_RPC", "127.0.0.1:19301")
     if not cfg:
