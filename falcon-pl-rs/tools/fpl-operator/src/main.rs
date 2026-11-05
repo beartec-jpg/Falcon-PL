@@ -89,6 +89,9 @@ struct Config {
     attest_zkey: String,
     attest_vk_json: String,
     attest_vk_hex: String,
+    /// FPL_OP_ALLOW_UNATTESTED_PEGOUT=1: front peg-outs even with no attest prover
+    /// (the ledger then refunds the claim after the window: double payout).
+    allow_unattested: bool,
     /// Groth16 proof set (vk.bin/proof.bin/public.bin) passed as FPL_PROOF_DIR.
     proof_dir: String,
     disprove_vk_sha256: String,
@@ -160,6 +163,7 @@ impl Config {
             attest_zkey: g("FPL_OP_ATTEST_ZKEY", ""),
             attest_vk_json: g("FPL_OP_ATTEST_VK_JSON", ""),
             attest_vk_hex: g("FPL_OP_ATTEST_VK_HEX", ""),
+            allow_unattested: g("FPL_OP_ALLOW_UNATTESTED_PEGOUT", "") == "1",
             proof_dir: g("FPL_OP_PROOF_DIR", ""),
             disprove_vk_sha256: g("FPL_OP_DISPROVE_VK_SHA256", ""),
             withdraw_vk_sha256: g("FPL_OP_WITHDRAW_VK_SHA256", ""),
@@ -192,6 +196,22 @@ impl Config {
     fn graphs(&self) -> PathBuf {
         self.home.join("graphs")
     }
+    /// Can this operator submit the M1 Bitvm2AttestV2 that records a completed
+    /// peg-out on the ledger? Without it the claim stays AwaitingPegout and the
+    /// ledger refunds the user after `pegout_refund_ledgers` (double payout).
+    fn attest_ready(&self) -> Result<(), String> {
+        if self.attest_zkey.is_empty() || self.attest_vk_json.is_empty() {
+            return Err("FPL_OP_ATTEST_ZKEY / FPL_OP_ATTEST_VK_JSON not set".into());
+        }
+        for (label, path) in [("FPL_OP_ATTEST_ZKEY", &self.attest_zkey), ("FPL_OP_ATTEST_VK_JSON", &self.attest_vk_json)] {
+            let meta = std::fs::metadata(path).map_err(|e| format!("{label} {path}: {e}"))?;
+            if !meta.is_file() {
+                return Err(format!("{label} {path}: not a regular file"));
+            }
+        }
+        self.check_withdraw_vk().map(|_| ())
+    }
+
     fn live(&self) -> bool {
         self.mode == "live"
     }
@@ -477,6 +497,16 @@ fn btc4_pegin_duty(n: &Node, st: &mut State, status: &serde_json::Value) {
     }
 }
 
+/// Refuse to front a peg-out the ledger can never see completed: with no
+/// attest prover the claim is refunded after the window and the user is paid twice.
+pub(crate) fn front_blocked(attest: Result<(), String>, allow_unattested: bool) -> Option<String> {
+    match attest {
+        Ok(()) => None,
+        Err(_) if allow_unattested => None,
+        Err(e) => Some(format!("not fronting: attest prover not ready ({e}); ledger would refund after the window (double payout). Set FPL_OP_ALLOW_UNATTESTED_PEGOUT=1 to override")),
+    }
+}
+
 /// M1: our claims with a mined PEG_OUT still awaiting attest on the ledger.
 pub(crate) fn attest_due(ledger: &[LedgerClaim], claims: &BTreeMap<String, (String, String)>) -> Vec<(String, String, String)> {
     claims
@@ -493,11 +523,19 @@ pub(crate) fn attest_due(ledger: &[LedgerClaim], claims: &BTreeMap<String, (Stri
 /// non-zero until the peg-out has the ledger's confirmations and a final checkpoint exists.
 fn attest_duties(n: &Node, st: &mut State, status: &serde_json::Value) {
     let cfg = &n.cfg;
-    if cfg.attest_zkey.is_empty() || cfg.attest_vk_json.is_empty() {
-        return; // no public-setup proving key configured yet
-    }
-    if let Err(e) = cfg.check_withdraw_vk() {
-        log(&format!("attest: refusing: {e}"));
+    if let Err(e) = cfg.attest_ready() {
+        // Loud, not silent: a mined peg-out we cannot attest will be refunded.
+        let (_, ledger) = parse_ledger(status);
+        for c in st.claims.iter().filter(|(_, c)| c.peg_out_txid.len() == 64) {
+            if let Some(lc) = ledger.iter().find(|l| &l.note_id == c.0 && matches!(l.status.as_str(), "AwaitingPegout" | "PegoutPosted")) {
+                let refund_at = ledger::refund_height(status, lc.open_height).unwrap_or(0);
+                let msg = format!("attest: cannot record peg-out {} for {} ({e}); ledger refunds it at height {refund_at}", c.1.peg_out_txid, c.0);
+                if st.ledger_last_error != msg {
+                    log(&msg);
+                    st.ledger_last_error = msg;
+                }
+            }
+        }
         return;
     }
     let (_, ledger) = parse_ledger(status);
@@ -1065,6 +1103,10 @@ fn operate(n: &Node, st: &mut State, ledger: &[LedgerClaim], h: &mut Health, sta
             continue;
         }
         let fronted = fronted_amount(&n.cfg, lc.amount);
+        if let Some(why) = front_blocked(n.cfg.attest_ready(), n.cfg.allow_unattested) {
+            st.claims.get_mut(&lc.note_id).unwrap().detail = why;
+            continue;
+        }
         if !n.cfg.live() {
             st.claims.get_mut(&lc.note_id).unwrap().detail = format!("dry-run: won; would fund PEG_OUT with {fronted} sats for {} using deposit {}", lc.dest, e.deposit_outpoint);
             continue;
@@ -1833,5 +1875,18 @@ mod tx_lookup_tests {
         let b = r#"{"txid":"eb18","vout":[{"value":49984,"scriptpubkey":"00205BB4"}],"status":{"confirmed":true,"block_height":157566}}"#;
         assert_eq!(parse_esplora_tx(b).unwrap(), (vec![(49984, "00205bb4".to_string())], 1));
         assert!(parse_esplora_tx("Transaction not found").is_err());
+    }
+}
+
+#[cfg(test)]
+mod front_guard_tests {
+    use super::front_blocked;
+
+    #[test]
+    fn blocks_without_attest_unless_overridden() {
+        assert!(front_blocked(Ok(()), false).is_none());
+        assert!(front_blocked(Err("x".into()), true).is_none());
+        let why = front_blocked(Err("no zkey".into()), false).unwrap();
+        assert!(why.contains("double payout") && why.contains("no zkey"));
     }
 }
