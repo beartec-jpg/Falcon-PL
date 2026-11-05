@@ -572,6 +572,70 @@ fn run_cmd_full(prog: &str, envs: &[(String, String)]) -> (i32, String, String) 
     }
 }
 
+/// Outcome of looking a txid up on Bitcoin for payout verification.
+#[derive(Debug, Clone, PartialEq)]
+enum TxLookup {
+    /// (outputs as (sats, spk_hex), confirmations)
+    Found(Vec<(u64, String)>, u64),
+    /// Genuinely absent: bitcoind returned RPC -5 with a synced txindex.
+    NotFound,
+    /// Could not tell (bitcoind down/erroring, index not synced, esplora unreachable): skip, retry later.
+    Unavailable(String),
+}
+
+/// True only for bitcoind's RPC -5 "No such mempool or blockchain transaction".
+fn is_rpc_tx_not_found(err: &str) -> bool {
+    err.contains("No such mempool or blockchain transaction") && (err.contains("code: -5") || err.contains("\"code\":-5"))
+}
+
+/// Pure resolution logic (unit-tested): a -5 counts as not-found only with a synced txindex;
+/// any other bitcoind error falls back to esplora; if esplora can't confirm presence either, Unavailable.
+fn resolve_tx_lookup(
+    rpc: Result<(Vec<(u64, String)>, u64), String>,
+    txindex_synced: impl FnOnce() -> bool,
+    esplora: impl FnOnce() -> Result<(Vec<(u64, String)>, u64), String>,
+) -> TxLookup {
+    match rpc {
+        Ok((o, c)) => TxLookup::Found(o, c),
+        Err(e) if is_rpc_tx_not_found(&e) && txindex_synced() => TxLookup::NotFound,
+        Err(e) => match esplora() {
+            Ok((o, c)) => TxLookup::Found(o, c),
+            Err(e2) => TxLookup::Unavailable(format!("bitcoind: {e}; esplora: {e2}")),
+        },
+    }
+}
+
+fn btc_txindex_synced(cfg: &Config) -> bool {
+    btc(cfg, false, &["getindexinfo", "txindex"])
+        .ok()
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+        .and_then(|v| v["txindex"]["synced"].as_bool())
+        .unwrap_or(false)
+}
+
+/// Parse an esplora `/tx/<txid>` JSON body into (outputs, confirmations-ish: 1 if confirmed else 0).
+fn parse_esplora_tx(body: &str) -> Result<(Vec<(u64, String)>, u64), String> {
+    let v: serde_json::Value = serde_json::from_str(body).map_err(|e| format!("esplora json: {e}"))?;
+    let vout = v["vout"].as_array().ok_or("esplora: no vout")?;
+    let outs = vout.iter()
+        .map(|o| (o["value"].as_u64().unwrap_or(0), o["scriptpubkey"].as_str().unwrap_or("").to_ascii_lowercase()))
+        .collect();
+    Ok((outs, if v["status"]["confirmed"].as_bool().unwrap_or(false) { 1 } else { 0 }))
+}
+
+fn esplora_tx_outputs(cfg: &Config, txid: &str) -> Result<(Vec<(u64, String)>, u64), String> {
+    if cfg.esplora.is_empty() {
+        return Err("no esplora configured".into());
+    }
+    let url = format!("{}/tx/{}", cfg.esplora.trim_end_matches('/'), txid);
+    let body = run_cmd("curl", &["-sSf".into(), "--max-time".into(), "20".into(), url], &[])?;
+    parse_esplora_tx(&body)
+}
+
+fn btc_tx_lookup(cfg: &Config, txid: &str) -> TxLookup {
+    resolve_tx_lookup(btc_tx_outputs(cfg, txid), || btc_txindex_synced(cfg), || esplora_tx_outputs(cfg, txid))
+}
+
 fn deposit_unspent(cfg: &Config, outpoint: &str) -> bool {
     let (txid, vout) = outpoint.split_once(':').unwrap_or((outpoint, "0"));
     btc(cfg, false, &["gettxout", txid, vout]).map(|s| !s.trim().is_empty()).unwrap_or(false)
@@ -1108,22 +1172,35 @@ fn watch(n: &Node, st: &mut State, ledger: &[LedgerClaim]) {
 fn check_payout(n: &Node, r: &Record, lc: &LedgerClaim, recs: &[Record]) -> Option<String> {
     let past_deadline = |ts: u64| now() > ts + n.cfg.payout_deadline_secs;
     let pegout_txid = |rec: &Record| rec.data.get("peg_out_txid").cloned().unwrap_or_default();
+    // Err("tx-not-found: ..") only for a genuine RPC -5 with synced txindex; Err("unavailable: ..")
+    // when bitcoind and esplora can't tell (never grounds for a challenge: skip and retry next poll).
     let verify = |txid: &str| -> Result<(), String> {
         let spk = payout::expected_payout_spk(&lc.dest, lc.open_height, &lc.note_id, &n.cfg.network)?;
         let min = payout::min_payout(lc.amount, n.cfg.max_peer_fee_bps, n.cfg.pegout_fee_allow_sats);
-        let (outs, _) = btc_tx_outputs(&n.cfg, txid).map_err(|e| format!("tx-not-found: {e}"))?;
+        let outs = match btc_tx_lookup(&n.cfg, txid) {
+            TxLookup::Found(outs, _) => outs,
+            TxLookup::NotFound => return Err(format!("tx-not-found: {txid}")),
+            TxLookup::Unavailable(e) => return Err(format!("unavailable: {e}")),
+        };
         payout::payout_matches(&outs, &spk, min).map(|_| ())
     };
     match r.kind.as_str() {
         "PegOut" => match verify(&pegout_txid(r)) {
             Ok(()) => None,
+            Err(e) if e.starts_with("unavailable") => {
+                eprintln!("check_payout: skip PEG_OUT {} this round ({e})", pegout_txid(r));
+                None
+            }
             Err(e) if e.starts_with("tx-not-found") => past_deadline(r.ts).then(|| format!("PEG_OUT {} not found on Bitcoin by the deadline", pegout_txid(r))),
             Err(e) => Some(e),
         },
         "Kickoff" => {
             let pegouts: Vec<&Record> = recs.iter().filter(|p| p.kind == "PegOut" && p.signer == r.signer && p.note_id == r.note_id && p.data.get("deposit") == r.data.get("deposit")).collect();
-            if pegouts.iter().any(|p| verify(&pegout_txid(p)).is_ok()) {
+            let results: Vec<Result<(), String>> = pegouts.iter().map(|p| verify(&pegout_txid(p))).collect();
+            if results.iter().any(|v| v.is_ok()) {
                 None
+            } else if results.iter().any(|v| matches!(v, Err(e) if e.starts_with("unavailable"))) {
+                None // can't verify right now: never challenge on our own outage
             } else if past_deadline(r.ts) {
                 Some(if pegouts.is_empty() { "kickoff without a PEG_OUT past the payout deadline".into() } else { "kickoff without a valid PEG_OUT past the payout deadline".into() })
             } else {
@@ -1718,5 +1795,43 @@ mod parse_ledger_body_tests {
         assert_eq!((c[0].note_id.as_str(), c[0].status.as_str()), ("n4", "AwaitingPegout"));
         assert_eq!(crate::ledger::btc4_rail(&v), Some((157_300, vec!["ab".to_string()])));
         assert_eq!(crate::ledger::account_sequence("x {\"type\":\"account\",\"body\":{\"sequence\":42,\"recent_txs\":[{\"sequence\":3}]}}"), Some(42));
+    }
+}
+
+#[cfg(test)]
+mod tx_lookup_tests {
+    use super::*;
+    const NF: &str = "bitcoin-cli exit exit status: 5: error code: -5\nerror message:\nNo such mempool or blockchain transaction. Use gettransaction for wallet transactions.";
+    fn outs() -> (Vec<(u64, String)>, u64) { (vec![(49984, "0020ab".into())], 3) }
+
+    #[test]
+    fn rpc_found() {
+        assert_eq!(resolve_tx_lookup(Ok(outs()), || panic!("no index check"), || panic!("no esplora")), TxLookup::Found(outs().0, 3));
+    }
+    #[test]
+    fn genuine_minus5_with_synced_index_is_not_found() {
+        assert!(is_rpc_tx_not_found(NF));
+        assert_eq!(resolve_tx_lookup(Err(NF.into()), || true, || panic!("no esplora")), TxLookup::NotFound);
+    }
+    #[test]
+    fn minus5_with_unsynced_index_falls_back_to_esplora() {
+        assert_eq!(resolve_tx_lookup(Err(NF.into()), || false, || Ok(outs())), TxLookup::Found(outs().0, 3));
+        assert!(matches!(resolve_tx_lookup(Err(NF.into()), || false, || Err("404".into())), TxLookup::Unavailable(_)));
+    }
+    #[test]
+    fn bitcoind_down_uses_esplora_then_unavailable() {
+        // 28 Oct 2026 falcon2 case: bitcoind crash-looping on a corrupt txindex
+        let down = "bitcoin-cli exit exit status: 1: error: Could not connect to the server 127.0.0.1:48342";
+        assert!(!is_rpc_tx_not_found(down));
+        assert_eq!(resolve_tx_lookup(Err(down.into()), || panic!("must not trust index"), || Ok(outs())), TxLookup::Found(outs().0, 3));
+        assert!(matches!(resolve_tx_lookup(Err(down.into()), || true, || Err("timeout".into())), TxLookup::Unavailable(_)));
+        let warm = "error code: -28\nerror message:\nLoading block index...";
+        assert!(matches!(resolve_tx_lookup(Err(warm.into()), || true, || Err("x".into())), TxLookup::Unavailable(_)));
+    }
+    #[test]
+    fn esplora_parse() {
+        let b = r#"{"txid":"eb18","vout":[{"value":49984,"scriptpubkey":"00205BB4"}],"status":{"confirmed":true,"block_height":157566}}"#;
+        assert_eq!(parse_esplora_tx(b).unwrap(), (vec![(49984, "00205bb4".to_string())], 1));
+        assert!(parse_esplora_tx("Transaction not found").is_err());
     }
 }
