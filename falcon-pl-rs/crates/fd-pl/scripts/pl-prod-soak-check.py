@@ -64,9 +64,9 @@ DEFAULT_CTL = os.environ.get(
 # Optional extra seats (Tailscale) — read-only, skipped if unreachable.
 DEFAULT_PEERS = os.environ.get(
     "PL_SOAK_PEERS",
-    # v1 v3 v6 v10 v11 v12 v13 (live 2300 seats, 2026-10-05)
+    # v1 v3 v6 v10 v12 v13 (live 2300 seats; v11 retired 2026-10-29)
     "100.64.0.1:19301,100.64.0.3:19303,100.64.0.6:19306,"
-    "100.64.0.7:19307,100.64.0.3:19311,100.64.0.2:19312,"
+    "100.64.0.7:19307,100.64.0.2:19312,"
     "100.64.0.4:19313",
 )
 
@@ -91,7 +91,7 @@ DISK_WARN_PCT = float(os.environ.get("PL_SOAK_DISK_WARN_PCT", "10"))
 DISK_CRIT_PCT = float(os.environ.get("PL_SOAK_DISK_CRIT_PCT", "5"))
 DEFAULT_DISK_HOSTS = os.environ.get(
     "PL_SOAK_DISK_HOSTS",
-    # host1 (v1) host2 (v3+v11) mhr (v6) hel1-6 (v10) hil (v12) fsn1 (v13)
+    # host1 (v1) host2 (v3) mhr (v6) hel1-6 (v10) hil (v12) fsn1 (v13)
     "falcon@host1,falcon@host2,root@seat-host-6,root@seat-host-7,"
     "root@seat-host-4,root@seat-host-5",
 )
