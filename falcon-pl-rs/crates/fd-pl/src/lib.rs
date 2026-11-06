@@ -8605,9 +8605,12 @@ impl Node {
         self.schedule_committee = self.draw_committee();
         if let Some(l) = self.chain.last() {
             if l.is_v4() && !l.next_committee.is_empty() {
+                // Membership must match; sealed next-6 order is authoritative
+                // (draw_committee Vec order can differ after snapshot load).
                 debug_assert_eq!(
-                    self.schedule_committee, l.next_committee,
-                    "v4 freeze must equal sealed next-6"
+                    self.schedule_committee.iter().collect::<BTreeSet<_>>(),
+                    l.next_committee.iter().collect::<BTreeSet<_>>(),
+                    "v4 freeze must equal sealed next-6 (as sets)"
                 );
                 self.schedule_committee = l.next_committee.clone();
             }
