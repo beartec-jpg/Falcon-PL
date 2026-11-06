@@ -134,7 +134,7 @@ for seq in range(1, 40):
 print("pays done")
 PY
 
-# Wait tip >= 40 so mesh non-archive stripped early bodies (mcl=16)
+# Wait tip >= 5 (empty-block growth may stall; snap path forced below)
 python3 - <<'PY'
 import json,subprocess,os,time
 ctl=os.environ["CTL"]; base=int(os.environ["PORT_BASE"]); art=os.environ["ART"]
@@ -151,7 +151,7 @@ while time.time()<deadline:
         if tip: hashes.add(b.get("tip_hash") or "")
     last=tips
     print("mesh",tips,"hashes",len(hashes))
-    if min(tips)>=40 and len(hashes)==1:
+    if min(tips)>=5 and len(hashes)==1:
         break
     time.sleep(2)
 else:
@@ -189,6 +189,53 @@ print(json.dumps({"tip":b.get("tip_height"),"hash":b.get("tip_hash")}))
 PY
 )
 echo "$MESH_TIP" | tee "$ART/mesh_tip_before_joiner.json"
+
+# Pause non-archive mesh so joiners cannot live-gossip/NeedLedgers past tip-0;
+# archive+hub remains the only snap source (forces NeedSnapshot attribution path).
+echo "pausing mesh v2-v6 (keep archive v1)" | tee -a "$ART/meta.txt"
+for id in v2 v3 v4 v5 v6; do
+  if [[ -f "$SCRATCH/$id/run/admin.sock" ]]; then
+    "$CTL" --admin-sock "$SCRATCH/$id/run/admin.sock" stop 2>/dev/null || true
+  fi
+done
+sleep 1
+# Kill by recorded pids for v2-v6 if still up (stop may be unimplemented)
+python3 - <<'PY2'
+import os,signal,time
+scratch=os.environ["SCRATCH"]
+# parse meta for pids
+meta=open(os.environ["ART"]+"/meta.txt").read().splitlines()
+keep=set()
+for line in meta:
+    if "mode=archive" in line and "pid=" in line:
+        keep.add(int(line.split("pid=")[1].split()[0]))
+# kill listeners 29402-29406
+import subprocess
+ss=subprocess.check_output(["bash","-lc","ss -lntp"],text=True)
+for line in ss.splitlines():
+    for port in range(29402,29407):
+        if f":{port}" in line and "falcon-pl-node" in line:
+            import re
+            m=re.search(r"pid=(\d+)", line)
+            if m:
+                pid=int(m.group(1))
+                if pid not in keep:
+                    try: os.kill(pid, signal.SIGTERM)
+                    except: pass
+time.sleep(0.5)
+for line in ss.splitlines():
+    for port in range(29402,29407):
+        if f":{port}" in line and "falcon-pl-node" in line:
+            m=re.search(r"pid=(\d+)", line)
+            if m:
+                pid=int(m.group(1))
+                if pid not in keep:
+                    try: os.kill(pid, signal.SIGKILL)
+                    except: pass
+print("mesh_paused")
+PY2
+# Refresh PIDS to archive-only + later joiners (cleanup still kills leftovers via port sweep)
+PIDS="$(pgrep -f 'falcon-pl-node.*29401' || true)"
 
 # Two concurrent joiners for identity isolation
 start_node 6 fresh_join
