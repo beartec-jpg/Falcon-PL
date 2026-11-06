@@ -187,6 +187,51 @@ ls -la "$SCRATCH/v6/snapshots" | tee -a "$ART/meta.txt"
 start_node 5
 sleep 3
 
+python3 - "$CTL" "$PORT_BASE" "$V6_PORT" "$ART" <<'PY'
+import json, subprocess, sys, time
+ctl, base, v6port, art = sys.argv[1], int(sys.argv[2]), int(sys.argv[3]), sys.argv[4]
+peer = json.load(open(art + "/peer_tip_before_restart.json"))
+deadline = time.time() + 90
+rows = []
+ok = False
+while time.time() < deadline:
+    try:
+        raw6 = subprocess.check_output([ctl, "--addr", f"127.0.0.1:{v6port}", "status"], text=True, timeout=25)
+        b6 = json.loads(raw6).get("body", {})
+        rawp = subprocess.check_output([ctl, "--addr", f"127.0.0.1:{base}", "status"], text=True, timeout=25)
+        bp = json.loads(rawp).get("body", {})
+        row = {
+            "v6_tip": b6.get("tip_height"),
+            "v6_hash": b6.get("tip_hash"),
+            "v6_utc": b6.get("tip_sealed_utc_ms"),
+            "v6_q": b6.get("tip_sealed_utc_quality"),
+            "peer_tip": bp.get("tip_height"),
+            "peer_hash": bp.get("tip_hash"),
+            "peer_utc": bp.get("tip_sealed_utc_ms"),
+        }
+        rows.append(row)
+        print("restart_replay", row)
+        # Snapshot replay: tip >= peer tip at kill (or current peer if advanced), same hash family
+        if (b6.get("tip_height") or 0) >= 1 and b6.get("tip_sealed_utc_ms") and b6.get("tip_hash"):
+            if b6.get("tip_hash") == bp.get("tip_hash") and b6.get("tip_sealed_utc_ms") == bp.get("tip_sealed_utc_ms"):
+                ok = True
+                break
+            # snap may be slightly behind live tip; accept match to pre-restart peer tip
+            if b6.get("tip_hash") == peer.get("hash") and b6.get("tip_sealed_utc_ms") == peer.get("utc"):
+                ok = True
+                break
+    except Exception as e:
+        rows.append({"error": str(e)})
+        print("restart_replay err", e)
+    time.sleep(2)
+open(art + "/catchup_trace.jsonl", "w").write("\n".join(json.dumps(r) for r in rows) + "\n")
+open(art + "/catchup_ok", "w").write("ok\n" if ok else "fail\n")
+open(art + "/catchup_result.json", "w").write(json.dumps({"ok": ok, "peer_at_kill": peer, "final": rows[-1] if rows else {}}, indent=2))
+sys.exit(0 if ok else 2)
+PY
+
+export SCRATCH_V1_LOG="$SCRATCH/v1/logs/node.log"
+
 # Keep chain advancing a bit so restarted node stays live
 python3 - <<'PY'
 import subprocess,os,time
