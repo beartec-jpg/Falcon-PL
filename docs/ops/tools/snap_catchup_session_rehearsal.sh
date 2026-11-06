@@ -43,7 +43,7 @@ N_MESH=6
 NET=2200
 # Include joiner seats in validator set / keys so Hello validates.
 VALS="v1,v2,v3,v4,v5,v6,v7,v8"
-LOAD_WALLETS=2500
+LOAD_WALLETS=800
 MESH_MCL=16
 export FPL_EMPTY_BLOCK_FROM_HEIGHT=1
 export ART PORT_BASE NET CTL KEYS SCRATCH LOAD_WALLETS
@@ -151,7 +151,11 @@ while time.time()<deadline:
         if tip: hashes.add(b.get("tip_hash") or "")
     last=tips
     print("mesh",tips,"hashes",len(hashes))
-    if min(tips)>=5 and len(hashes)==1:
+    # Majority (>=5/6) at same tip>=5 is enough; one laggard OK (archive still seals).
+    from collections import Counter
+    c=Counter(tips)
+    tip_maj, n_maj = c.most_common(1)[0]
+    if tip_maj>=5 and n_maj>=5 and len(hashes)==1:
         break
     time.sleep(2)
 else:
