@@ -366,6 +366,19 @@ pub fn utc_peer_capability_gap(
 /// implied by shipping the capability advertisement.
 pub const UTC_HELLO_ENFORCE_FROM_HEIGHT_DISABLED: u64 = u64::MAX;
 
+/// Env for non-2300 rehearsal only. Ignored on public testnet 2300 (always disabled).
+pub const ENV_UTC_HELLO_ENFORCE_FROM_HEIGHT: &str = "FPL_UTC_HELLO_ENFORCE_FROM_HEIGHT";
+
+/// Hard Hello capability enforce height. **2300 always disabled.** Other nets
+/// may set `FPL_UTC_HELLO_ENFORCE_FROM_HEIGHT` for isolated rehearsal.
+pub fn network_utc_hello_enforce_from_height(network_id: u32) -> u64 {
+    if network_id == NETWORK_ID_PUBLIC_TESTNET_2300 {
+        return UTC_HELLO_ENFORCE_FROM_HEIGHT_DISABLED;
+    }
+    env_u64(ENV_UTC_HELLO_ENFORCE_FROM_HEIGHT).unwrap_or(UTC_HELLO_ENFORCE_FROM_HEIGHT_DISABLED)
+}
+
+
 thread_local! {
     /// Test / rehearsal only: override OS wall for deterministic pack + live skew.
     static WALL_OVERRIDE_MS: std::cell::Cell<Option<u64>> = std::cell::Cell::new(None);

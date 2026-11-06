@@ -25,6 +25,10 @@ use crate::utc_header::{
 const NET: u32 = 2200;
 const H_UTC: u64 = 100;
 
+fn users() -> Vec<(String, u64)> {
+    vec![("alice".into(), 1_000_000), ("bob".into(), 1_000_000)]
+}
+
 struct UtcOverrides;
 impl Drop for UtcOverrides {
     fn drop(&mut self) {
@@ -222,3 +226,141 @@ fn rehearsal_seed_v2_changes_when_utc_mutated_post_activation() {
     assert_ne!(a.seed_v2(), b.seed_v2(), "seed_v2 must bind utc when V5");
     assert_ne!(a.ledger_hash, b.ledger_hash);
 }
+
+/// In-process **multi-node** Network (6 seats): arm UTC + v4, seal past H_utc,
+/// assert every seat agrees on tip hash and committed sealed_utc_ms.
+/// This is still one process — see docs/ops/tools/utc_multinode_rehearsal.sh
+/// for OS multi-process loopback rehearsal.
+#[test]
+fn rehearsal_multinode_network_utc_qc_agreement() {
+    let _g = arm_rehearsal();
+    set_wall_unix_ms_override(Some(1_700_000_000_000));
+    let cfg = ChainConfig {
+        network_id: NET,
+        pack_budget_ms: 0,
+        max_txs_per_ledger: 8,
+        soft_ok_votes: 3,
+        ..Default::default()
+    };
+    let mut net = Network::bootstrap(
+        &["v1", "v2", "v3", "v4", "v5", "v6"],
+        1000,
+        &users(),
+        cfg,
+    );
+    for n in net.nodes.values_mut() {
+        n.qc_header_version = 4;
+        n.qc_start_height = 1;
+    }
+    net.pong_all();
+    // Pre-activation heights: sealed_utc_ms must stay 0
+    for h in 1..H_UTC {
+        for _ in 0..2 {
+            net.payment("alice", "bob", 1, 1).unwrap();
+        }
+        net.seal_next_height().unwrap();
+        assert_eq!(net.tip_height(), h);
+        for n in net.nodes.values() {
+            let tip = n.chain.last().unwrap();
+            assert!(tip.is_v4(), "h={h} expected v4");
+            assert_eq!(tip.sealed_utc_ms, 0, "pre-H utc must be 0 at h={h}");
+            assert!(tip.verify_packer(&n.keys), "pre-H verify h={h}");
+        }
+    }
+    // Cross activation: wall fixed so all packers stamp same UTC
+    let wall = 1_700_000_100_000u64;
+    set_wall_unix_ms_override(Some(wall));
+    for _ in 0..2 {
+        net.payment("alice", "bob", 1, 1).unwrap();
+    }
+    net.seal_next_height().unwrap();
+    assert_eq!(net.tip_height(), H_UTC);
+    let mut hashes = std::collections::BTreeSet::new();
+    let mut utcs = std::collections::BTreeSet::new();
+    for n in net.nodes.values() {
+        let tip = n.chain.last().unwrap();
+        assert!(tip.is_v4());
+        assert_eq!(tip.sealed_utc_ms, wall, "post-H utc must equal wall override");
+        assert!(tip.verify_packer(&n.keys));
+        hashes.insert(tip.ledger_hash.clone());
+        utcs.insert(tip.sealed_utc_ms);
+        assert!(n.certs.contains_key(&H_UTC), "QC cert present at H_utc");
+    }
+    assert_eq!(hashes.len(), 1, "all seats must agree tip hash: {hashes:?}");
+    assert_eq!(utcs.len(), 1);
+
+    // Mutated utc fails verify on every seat's keyring
+    let mut forged = net.nodes["v1"].chain.last().unwrap().clone();
+    forged.sealed_utc_ms = wall + 1;
+    for n in net.nodes.values() {
+        assert!(!forged.verify_packer(&n.keys));
+    }
+
+    // Serde restart/replay of tip ledger
+    let tip = net.nodes["v1"].chain.last().unwrap().clone();
+    let bytes = serde_json::to_vec(&tip).unwrap();
+    let restored: Ledger = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(restored.sealed_utc_ms, wall);
+    assert!(restored.verify_packer(&net.nodes["v1"].keys));
+    // Historical path accepts; live skew with wall jumped rejects
+    let b = UtcSkewBounds::default();
+    check_utc_historical(H_UTC, H_UTC, wall, 0, &b).unwrap();
+    set_wall_unix_ms_override(Some(wall + b.max_behind_ms + 1));
+    assert!(check_utc_live_admission(
+        H_UTC,
+        H_UTC,
+        wall,
+        0,
+        utc_header::wall_unix_ms(),
+        &b
+    )
+    .is_err());
+}
+
+#[test]
+fn rehearsal_multinode_unarmed_stays_zero_utc_across_seats() {
+    // No arm_rehearsal — production-like disabled from_height
+    set_utc_from_height_override(NET, None);
+    set_wall_unix_ms_override(None);
+    let cfg = ChainConfig {
+        network_id: NET,
+        pack_budget_ms: 0,
+        max_txs_per_ledger: 8,
+        ..Default::default()
+    };
+    let mut net = Network::bootstrap(&["v1", "v2", "v3", "v4", "v5", "v6"], 1000, &users(), cfg);
+    for n in net.nodes.values_mut() {
+        n.qc_header_version = 4;
+        n.qc_start_height = 1;
+    }
+    net.pong_all();
+    for _ in 0..2 {
+        net.payment("alice", "bob", 1, 1).unwrap();
+    }
+    net.seal_next_height().unwrap();
+    for n in net.nodes.values() {
+        let tip = n.chain.last().unwrap();
+        assert_eq!(tip.sealed_utc_ms, 0);
+        assert!(tip.verify_packer(&n.keys));
+    }
+}
+
+#[test]
+fn rehearsal_hello_enforce_env_ignored_on_2300() {
+    // Safety: even if env is set, 2300 stays disabled.
+    std::env::set_var(utc_header::ENV_UTC_HELLO_ENFORCE_FROM_HEIGHT, "1");
+    assert_eq!(
+        utc_header::network_utc_hello_enforce_from_height(NETWORK_ID_PUBLIC_TESTNET_2300),
+        UTC_HELLO_ENFORCE_FROM_HEIGHT_DISABLED
+    );
+    std::env::remove_var(utc_header::ENV_UTC_HELLO_ENFORCE_FROM_HEIGHT);
+    // Non-2300 honours env when set
+    std::env::set_var(utc_header::ENV_UTC_HELLO_ENFORCE_FROM_HEIGHT, "42");
+    assert_eq!(utc_header::network_utc_hello_enforce_from_height(NET), 42);
+    std::env::remove_var(utc_header::ENV_UTC_HELLO_ENFORCE_FROM_HEIGHT);
+    assert_eq!(
+        utc_header::network_utc_hello_enforce_from_height(NET),
+        UTC_HELLO_ENFORCE_FROM_HEIGHT_DISABLED
+    );
+}
+

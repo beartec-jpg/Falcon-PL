@@ -87,3 +87,14 @@ Added (still draft / unarmed on 2300):
 
 Still unfinished: real multi-node isolated process soak, injectable Node pack
 clock beyond thread override, QC wording pass, P0 explorer, P2 fill IDs, H_utc.
+
+
+## Milestone t284u — multi-node rehearsal
+
+- `docs/ops/tools/utc_multinode_rehearsal.sh`: real multi-process loopback nodes on
+  `127.0.0.1:29101+`, network_id=2200, hmac-dev, scratch `/tmp/falcon-utc-mn-*`.
+  Status UTC metadata + Hello `utc-header-v5` + old-peer Hello vs private-net
+  `FPL_UTC_HELLO_ENFORCE_FROM_HEIGHT` (2300 still ignores env).
+- In-process `rehearsal_multinode_network_utc_qc_agreement`: 6-seat Network seals
+  across H_utc with agreed tip hash + sealed_utc_ms + QC.
+- Production H_utc / Hello enforce on 2300 remain `u64::MAX`.

@@ -3960,7 +3960,7 @@ impl Node {
             btc4_lend_scale_from_height,
             orderbook_from_height,
             hello_min_release_from_height,
-            utc_hello_enforce_from_height: utc_header::UTC_HELLO_ENFORCE_FROM_HEIGHT_DISABLED,
+            utc_hello_enforce_from_height: utc_header::network_utc_hello_enforce_from_height(cfg.network_id),
             peer_releases: BTreeMap::new(),
             rewards_v2_from_height,
             rewards_v2_epoch,
