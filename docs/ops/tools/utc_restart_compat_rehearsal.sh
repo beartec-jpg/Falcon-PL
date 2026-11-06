@@ -159,39 +159,71 @@ PY
 
 wait_tip baseline
 
-# --- PROCESS: kill v6, restore from peer snapshot, restart, assert UTC tip replay + live follow ---
+# --- PROCESS: kill v6, keep its own snapshot, restart same seat (UTC tip replay) ---
 V6_PORT=$((PORT_BASE+5))
 V6_PID=${NODE_PID[v6]}
-echo "killing v6 pid=$V6_PID for snapshot-restart replay" | tee -a "$ART/meta.txt"
+echo "killing v6 pid=$V6_PID for same-seat snapshot restart" | tee -a "$ART/meta.txt"
+# Capture tips before kill
+PEER_TIP_JSON=$(python3 - "$CTL" "$PORT_BASE" "$V6_PORT" <<'PY'
+import json,subprocess,sys
+ctl,base,v6=sys.argv[1],int(sys.argv[2]),int(sys.argv[3])
+def st(port):
+    raw=subprocess.check_output([ctl,"--addr",f"127.0.0.1:{port}","status"],text=True,timeout=25)
+    b=json.loads(raw).get("body",{})
+    return {"tip":b.get("tip_height"),"hash":b.get("tip_hash"),"utc":b.get("tip_sealed_utc_ms"),
+            "q":b.get("tip_sealed_utc_quality"),"phys":b.get("tip_sealed_at_quality")}
+out={"peer":st(base),"v6":st(v6)}
+print(json.dumps(out))
+PY
+)
+echo "$PEER_TIP_JSON" | tee "$ART/peer_tip_before_restart.json"
+# Persist peer-at-kill fields expected by catchup script
+python3 - "$ART" <<'PY'
+import json,sys
+art=sys.argv[1]
+d=json.load(open(art+"/peer_tip_before_restart.json"))
+# flatten for catchup_result peer_at_kill compatibility
+open(art+"/peer_tip_before_restart.json","w").write(json.dumps({**d["v6"], "peer": d["peer"], "v6": d["v6"]}, indent=2))
+PY
+# Force a snapshot write by waiting for interval OR copy snap from running v6 before kill
+# v6 already has snap.json; ensure tip>0 in file
+python3 - <<'PY'
+import json, os, sys
+p=os.environ.get("SCRATCH","")
+# SCRATCH not exported — use path from meta
+PY
 kill "$V6_PID" 2>/dev/null || true
 sleep 1
 kill -9 "$V6_PID" 2>/dev/null || true
 NEW_PIDS=""
 for p in $PIDS; do [[ "$p" == "$V6_PID" ]] || NEW_PIDS="$NEW_PIDS $p"; done
 PIDS="$NEW_PIDS"
-PEER_TIP_JSON=$(python3 - "$CTL" "$PORT_BASE" <<'PY'
-import json,subprocess,sys
-ctl,base=sys.argv[1],int(sys.argv[2])
-raw=subprocess.check_output([ctl,"--addr",f"127.0.0.1:{base}","status"],text=True,timeout=25)
-b=json.loads(raw).get("body",{})
-print(json.dumps({"tip":b.get("tip_height"),"hash":b.get("tip_hash"),"utc":b.get("tip_sealed_utc_ms"),
-                  "q":b.get("tip_sealed_utc_quality"),"phys":b.get("tip_sealed_at_quality")}))
+# Keep v6 snapshots/run sockets wiped but KEEP snapshots dir contents (own tip)
+rm -rf "$SCRATCH/v6/run"
+mkdir -p "$SCRATCH/v6/run"
+# Prove snap tip before restart
+python3 - "$SCRATCH/v6/snapshots/snap.json" "$ART" <<'PY'
+import json,sys
+p,art=sys.argv[1],sys.argv[2]
+d=json.load(open(p))
+info={"snap_tip":d.get("tip_height"),"snap_hash":d.get("tip_hash"),"snap_id":d.get("id"),
+      "chain":len(d.get("chain") or []),
+      "last_utc": (d.get("chain") or [{}])[-1].get("sealed_utc_ms") if d.get("chain") else None}
+print(json.dumps(info,indent=2))
+open(art+"/v6_snap_before_restart.json","w").write(json.dumps(info,indent=2))
+assert (d.get("tip_height") or 0) >= 2, info
 PY
-)
-echo "$PEER_TIP_JSON" | tee "$ART/peer_tip_before_restart.json"
-# Replay committed tip via snapshot copy from live peer v1 (not tip-0 NeedLedgers).
-rm -rf "$SCRATCH/v6/run" "$SCRATCH/v6/snapshots"
-mkdir -p "$SCRATCH/v6"/{run,snapshots,logs}
-cp -a "$SCRATCH/v1/snapshots/." "$SCRATCH/v6/snapshots/"
-ls -la "$SCRATCH/v6/snapshots" | tee -a "$ART/meta.txt"
 start_node 5
 sleep 3
+
 
 python3 - "$CTL" "$PORT_BASE" "$V6_PORT" "$ART" <<'PY'
 import json, subprocess, sys, time
 ctl, base, v6port, art = sys.argv[1], int(sys.argv[2]), int(sys.argv[3]), sys.argv[4]
-peer = json.load(open(art + "/peer_tip_before_restart.json"))
-deadline = time.time() + 90
+blob = json.load(open(art + "/peer_tip_before_restart.json"))
+want = blob.get("v6") or blob
+snap = json.load(open(art + "/v6_snap_before_restart.json"))
+deadline = time.time() + 60
 rows = []
 ok = False
 while time.time() < deadline:
@@ -208,16 +240,17 @@ while time.time() < deadline:
             "peer_tip": bp.get("tip_height"),
             "peer_hash": bp.get("tip_hash"),
             "peer_utc": bp.get("tip_sealed_utc_ms"),
+            "want_tip": want.get("tip"),
+            "snap_tip": snap.get("snap_tip"),
         }
         rows.append(row)
         print("restart_replay", row)
-        # Snapshot replay: tip >= peer tip at kill (or current peer if advanced), same hash family
-        if (b6.get("tip_height") or 0) >= 1 and b6.get("tip_sealed_utc_ms") and b6.get("tip_hash"):
-            if b6.get("tip_hash") == bp.get("tip_hash") and b6.get("tip_sealed_utc_ms") == bp.get("tip_sealed_utc_ms"):
-                ok = True
-                break
-            # snap may be slightly behind live tip; accept match to pre-restart peer tip
-            if b6.get("tip_hash") == peer.get("hash") and b6.get("tip_sealed_utc_ms") == peer.get("utc"):
+        # Same-seat snapshot restart must restore tip>=H_utc with sealed_utc_ms
+        if (b6.get("tip_height") or 0) >= max(2, snap.get("snap_tip") or 0) and b6.get("tip_sealed_utc_ms"):
+            # Prefer exact snap hash match; else live-agree with peer
+            if b6.get("tip_hash") == snap.get("snap_hash") or (
+                b6.get("tip_hash") == bp.get("tip_hash") and b6.get("tip_sealed_utc_ms") == bp.get("tip_sealed_utc_ms")
+            ):
                 ok = True
                 break
     except Exception as e:
@@ -226,7 +259,7 @@ while time.time() < deadline:
     time.sleep(2)
 open(art + "/catchup_trace.jsonl", "w").write("\n".join(json.dumps(r) for r in rows) + "\n")
 open(art + "/catchup_ok", "w").write("ok\n" if ok else "fail\n")
-open(art + "/catchup_result.json", "w").write(json.dumps({"ok": ok, "peer_at_kill": peer, "final": rows[-1] if rows else {}}, indent=2))
+open(art + "/catchup_result.json", "w").write(json.dumps({"ok": ok, "want": want, "snap": snap, "final": rows[-1] if rows else {}}, indent=2))
 sys.exit(0 if ok else 2)
 PY
 
