@@ -4,19 +4,25 @@
 
 use std::collections::HashMap;
 
-/// Leave headroom on the catch-up reply lane for Offer / SnapshotNo / hole-fill.
+/// Leave headroom on large catch-up reply lanes for Offer / SnapshotNo / hole-fill.
 pub const SNAP_PUSH_RESERVE_SLOTS: usize = 32;
 /// Conservative: 256 KiB chunk → ~512 KiB hex JSON, PIECE_THRESHOLD 64 KiB → ≥8 pieces; pad to 12.
 pub const SNAP_EST_PIECES_PER_CHUNK: usize = 12;
 
 /// How many SnapshotChunk messages to bulk-push after Offer given free lane slots.
+///
+/// Outbound catch lanes are only [`CATCH_QUEUE_CAP`]=32. A flat reserve of 32
+/// made `usable==0` on every fresh session, so NeedSnapshot sent Offer with
+/// zero chunks and joiners stalled. Reserve shrinks on small lanes so at least
+/// one chunk can ship when the lane can hold its pieces.
 pub fn snap_push_budget(free_slots: usize, max_push: u32) -> u32 {
-    if max_push == 0 {
+    if max_push == 0 || free_slots == 0 {
         return 0;
     }
-    let usable = free_slots.saturating_sub(SNAP_PUSH_RESERVE_SLOTS);
+    let reserve = SNAP_PUSH_RESERVE_SLOTS.min(free_slots.saturating_sub(SNAP_EST_PIECES_PER_CHUNK));
+    let usable = free_slots.saturating_sub(reserve);
     if usable < SNAP_EST_PIECES_PER_CHUNK {
-        return 0;
+        return u32::from(free_slots >= SNAP_EST_PIECES_PER_CHUNK);
     }
     let by_cap = usable / SNAP_EST_PIECES_PER_CHUNK;
     (by_cap as u32).min(max_push)
@@ -61,11 +67,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn push_budget_zero_when_lane_tight() {
-        assert_eq!(snap_push_budget(10, 48), 0);
-        assert_eq!(snap_push_budget(32, 48), 0);
-        assert_eq!(snap_push_budget(33, 48), 0); // 1 usable < 12
-        assert_eq!(snap_push_budget(44, 48), 1); // 12 usable
+    fn push_budget_small_outbound_lane_allows_one_chunk() {
+        // CATCH_QUEUE_CAP=32: must not reserve the entire lane.
+        assert_eq!(snap_push_budget(10, 48), 0); // cannot fit one chunk's pieces
+        assert_eq!(snap_push_budget(12, 48), 1);
+        assert_eq!(snap_push_budget(32, 48), 1);
+        assert_eq!(snap_push_budget(44, 48), 1); // reserve shrinks; usable=12
         assert_eq!(snap_push_budget(32 + 12 * 48, 48), 48);
         assert_eq!(snap_push_budget(10_000, 48), 48);
     }

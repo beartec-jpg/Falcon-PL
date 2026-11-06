@@ -5224,6 +5224,9 @@ fn dispatch_wire(
                 } else if m.contains_key(&key) {
                     // Recent push to this requester+sha: Offer only; joiner hole-fills.
                     None
+                } else if push_budget == 0 {
+                    // Offer only; do not mark pushed so a later pull can ship chunks.
+                    None
                 } else {
                     m.insert(key, now);
                     Some((sha256.clone(), *chunks))
