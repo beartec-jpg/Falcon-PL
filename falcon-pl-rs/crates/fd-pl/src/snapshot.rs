@@ -1164,4 +1164,50 @@ mod snap_assembler_tests {
         // 50/100 in 60 s -> 120 s projected
         assert!(!a.too_slow(60_000, 45_000, 480_000));
     }
+
+    #[test]
+    fn resume_108_of_470_requests_tail_after_quiet() {
+        let mut a = SnapAssembler::new("pin".into(), 100, "h".into(), 470, 256 * 1024, 470 * 256 * 1024, 0);
+        for i in 0..108u32 {
+            assert_eq!(a.insert(i, vec![0u8; 8], i as u64).unwrap(), SnapInsert::Progress);
+        }
+        assert_eq!(a.got(), 108);
+        // Contiguous: no holes below hi → empty until tail_after.
+        assert!(a.retry_indices(16, 100, 1_500).is_empty());
+        let tail = a.retry_indices(16, 100 + 1_500, 1_500);
+        assert_eq!(tail, (108..124).collect::<Vec<_>>());
+        a.resume(10_000, "v1".into());
+        assert_eq!(a.got_at_start, 108);
+        assert_eq!(a.source_peer, "v1");
+        assert_eq!(a.got(), 108);
+    }
+
+    #[test]
+    fn resume_208_of_470_keeps_chunks_across_sources() {
+        let mut a = SnapAssembler::new("pin2".into(), 200, "h".into(), 470, 256 * 1024, 470 * 256 * 1024, 0);
+        for i in 0..208u32 {
+            a.insert(i, vec![1u8; 4], 1).unwrap();
+        }
+        let mut stash = SnapStash::new(2);
+        stash.put(a);
+        let mut b = stash.take("pin2").expect("stashed");
+        b.resume(50_000, "v3".into());
+        assert_eq!(b.got(), 208);
+        assert_eq!(b.source_peer, "v3");
+        let tail = b.retry_indices(16, 50_000 + 2_000, 1_500);
+        assert_eq!(tail.first().copied(), Some(208));
+    }
+
+    #[test]
+    fn resume_with_holes_prefers_hole_fill_not_tail() {
+        let mut a = SnapAssembler::new("pin3".into(), 1, "h".into(), 470, 8, 470 * 8, 0);
+        for i in 0..108u32 {
+            if i == 50 {
+                continue; // hole
+            }
+            a.insert(i, vec![0u8; 8], 1).unwrap();
+        }
+        let holes = a.retry_indices(16, 10, 1_500);
+        assert_eq!(holes, vec![50]);
+    }
 }

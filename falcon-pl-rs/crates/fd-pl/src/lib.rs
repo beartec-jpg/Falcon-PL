@@ -352,6 +352,8 @@ pub mod health_web;
 pub mod metrics;
 pub mod names;
 pub mod snapshot;
+mod snap_serve;
+pub use snap_serve::{snap_push_budget, snap_skip_ids, all_slow_forget_nonserve_only, is_snap_skipped, SNAP_PUSH_RESERVE_SLOTS, SNAP_EST_PIECES_PER_CHUNK};
 pub mod vault;
 pub mod consensus_rounds;
 pub mod params_v2;
