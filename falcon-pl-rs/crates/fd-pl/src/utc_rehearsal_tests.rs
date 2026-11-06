@@ -393,8 +393,18 @@ fn rehearsal_malformed_and_skew_admission_matrix() {
 
 #[test]
 fn rehearsal_network_snapshot_restart_preserves_utc_tip() {
-    let _g = arm_rehearsal();
+    // Short private-net activation (not H_UTC=100) to keep QC committee freeze stable.
+    let h_act = 3u64;
+    set_utc_from_height_override(NET, Some(h_act));
     set_wall_unix_ms_override(Some(1_700_000_200_000));
+    struct Guard;
+    impl Drop for Guard {
+        fn drop(&mut self) {
+            set_utc_from_height_override(NET, None);
+            set_wall_unix_ms_override(None);
+        }
+    }
+    let _g = Guard;
     let cfg = ChainConfig {
         network_id: NET,
         pack_budget_ms: 0,
@@ -408,16 +418,16 @@ fn rehearsal_network_snapshot_restart_preserves_utc_tip() {
         n.qc_start_height = 1;
     }
     net.pong_all();
-    for h in 1..=H_UTC {
+    for h in 1..=h_act {
         set_wall_unix_ms_override(Some(1_700_000_200_000 + h * 1_000));
         for _ in 0..2 {
             net.payment("alice", "bob", 1, 1).unwrap();
         }
         net.seal_next_height().unwrap();
+        assert_eq!(net.tip_height(), h);
     }
-    assert_eq!(net.tip_height(), H_UTC);
     let tip = net.nodes["v1"].chain.last().unwrap().clone();
-    assert!(tip.sealed_utc_ms > 0);
+    assert!(tip.sealed_utc_ms > 0, "post-activation tip must carry utc");
     let path = std::env::temp_dir().join(format!(
         "falcon-utc-snap-rehearsal-{}-{}.json",
         std::process::id(),
@@ -430,18 +440,17 @@ fn rehearsal_network_snapshot_restart_preserves_utc_tip() {
     let keys = net.nodes["v1"].keys.clone();
     let loaded = Node::load_snapshot(&path, keys).unwrap();
     let _ = std::fs::remove_file(&path);
-    assert_eq!(loaded.tip_height, H_UTC);
+    assert_eq!(loaded.tip_height, h_act);
     let restored = loaded.chain.last().unwrap();
     assert_eq!(restored.sealed_utc_ms, tip.sealed_utc_ms);
     assert_eq!(restored.ledger_hash, tip.ledger_hash);
     assert!(restored.verify_packer(&loaded.keys));
-    // Historical apply path still accepts after wall jumps far ahead
     let b = UtcSkewBounds::default();
     set_wall_unix_ms_override(Some(tip.sealed_utc_ms + b.max_behind_ms + 50_000));
-    check_utc_historical(H_UTC, H_UTC, tip.sealed_utc_ms, 0, &b).unwrap();
+    check_utc_historical(h_act, h_act, tip.sealed_utc_ms, 0, &b).unwrap();
     assert!(check_utc_live_admission(
-        H_UTC,
-        H_UTC,
+        h_act,
+        h_act,
         tip.sealed_utc_ms,
         0,
         utc_header::wall_unix_ms(),
