@@ -5144,11 +5144,11 @@ fn dispatch_wire(
     fanout: Option<&Arc<Vec<PeerOut>>>,
     relay_state: bool,
     from_admin: bool,
-    /// Validated Hello id for this TCP session (immutable for the call). Empty
-    /// until Hello; never read from shared `wire_from` for attribution.
+    // Validated Hello id for this TCP session (immutable for the call). Empty
+    // until Hello; never read from shared `wire_from` for attribution.
     session_peer: &str,
-    /// Max SnapshotChunk to bulk-push after Offer (0 = Offer only). Caller
-    /// derives this from catch-up lane free capacity.
+    // Max SnapshotChunk to bulk-push after Offer (0 = Offer only). Caller
+    // derives this from catch-up lane free capacity.
     push_budget: u32,
 ) -> Vec<WireMsg> {
     let push = matches!(msg, WireMsg::NeedSnapshot {});
