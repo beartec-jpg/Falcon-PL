@@ -1375,9 +1375,48 @@ impl Shared {
                             return;
                         }
                     }
+                    // Offer may have arrived on an inbound archive session.
+                    for s in self.inbound.lock().iter() {
+                        if s.id == src
+                            && !s.close.load(std::sync::atomic::Ordering::Relaxed)
+                            && s.tx.try_send(line.clone(), ConsClass::Other)
+                        {
+                            return;
+                        }
+                    }
                 }
             }
             let mut sent = false;
+            // Higher-id seats never dial a lower-id archive (dial rule): the archive
+            // session is inbound-only. NeedLedgers already prefers inbound archives;
+            // NeedSnapshot must too or tip-0 joiners pull forever with no Offer.
+            {
+                let archives = {
+                    let n = self.node.lock();
+                    n.archive_seats()
+                };
+                if !archives.is_empty() {
+                    let sinks: Vec<_> = self.inbound.lock().iter().cloned().collect();
+                    for s in &sinks {
+                        if !archives.iter().any(|a| a == &s.id) {
+                            continue;
+                        }
+                        if s.close.load(std::sync::atomic::Ordering::Relaxed) {
+                            continue;
+                        }
+                        if s.tx.try_send(line.clone(), ConsClass::Other) {
+                            sent = true;
+                            info!("NeedSnapshot → inbound archive {}", s.id);
+                            if !ask_all {
+                                return;
+                            }
+                        }
+                    }
+                }
+            }
+            if sent && !ask_all {
+                return;
+            }
             // Stalled archives/hubs (slow_snap_src) and non-servers (snap_nonserve)
             // are separate. All-slow clears only nonserve — never stalled cooldown.
             let slow: Vec<String> = {
@@ -1467,6 +1506,23 @@ impl Shared {
                         sent = true;
                         if !ask_all {
                             info!("NeedSnapshot → seed (no archive or hub tag)");
+                            return;
+                        }
+                    }
+                }
+                // And inbound sessions (higher-id joiner ↔ lower-id archive).
+                let sinks: Vec<_> = self.inbound.lock().iter().cloned().collect();
+                for s in &sinks {
+                    if slow.contains(&s.id) {
+                        continue;
+                    }
+                    if s.close.load(std::sync::atomic::Ordering::Relaxed) {
+                        continue;
+                    }
+                    if s.tx.try_send(line.clone(), ConsClass::Other) {
+                        sent = true;
+                        info!("NeedSnapshot → inbound {}", s.id);
+                        if !ask_all {
                             return;
                         }
                     }
