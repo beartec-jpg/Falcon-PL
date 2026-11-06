@@ -1169,12 +1169,13 @@ mod snap_assembler_tests {
     fn resume_108_of_470_requests_tail_after_quiet() {
         let mut a = SnapAssembler::new("pin".into(), 100, "h".into(), 470, 256 * 1024, 470 * 256 * 1024, 0);
         for i in 0..108u32 {
-            assert_eq!(a.insert(i, vec![0u8; 8], i as u64).unwrap(), SnapInsert::Progress);
+            // Same progress stamp so tail_after is measured from last insert.
+            assert_eq!(a.insert(i, vec![0u8; 8], 1_000).unwrap(), SnapInsert::Progress);
         }
         assert_eq!(a.got(), 108);
         // Contiguous: no holes below hi → empty until tail_after.
-        assert!(a.retry_indices(16, 100, 1_500).is_empty());
-        let tail = a.retry_indices(16, 100 + 1_500, 1_500);
+        assert!(a.retry_indices(16, 1_000 + 1_499, 1_500).is_empty());
+        let tail = a.retry_indices(16, 1_000 + 1_500, 1_500);
         assert_eq!(tail, (108..124).collect::<Vec<_>>());
         a.resume(10_000, "v1".into());
         assert_eq!(a.got_at_start, 108);
