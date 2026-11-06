@@ -3823,6 +3823,7 @@ impl Node {
         let btc4_lend_scale_from_height = crate::params_v2::btc4_lend_scale_from_height(cfg.network_id);
         let orderbook_from_height = crate::params_v2::orderbook_from_height(cfg.network_id);
         let hello_min_release_from_height = crate::params_v2::hello_min_release_from_height(cfg.network_id);
+        let network_id_for_utc_hello = cfg.network_id;
         let rewards_v2_from_height = params_v2::network_rewards_v2_from_height(cfg.network_id);
         let rewards_v2_epoch = params_v2::network_rewards_v2_epoch(cfg.network_id);
         let presence_from_height = params_v2::network_presence_from_height(cfg.network_id);
@@ -3960,7 +3961,7 @@ impl Node {
             btc4_lend_scale_from_height,
             orderbook_from_height,
             hello_min_release_from_height,
-            utc_hello_enforce_from_height: utc_header::network_utc_hello_enforce_from_height(cfg.network_id),
+            utc_hello_enforce_from_height: utc_header::network_utc_hello_enforce_from_height(network_id_for_utc_hello),
             peer_releases: BTreeMap::new(),
             rewards_v2_from_height,
             rewards_v2_epoch,
