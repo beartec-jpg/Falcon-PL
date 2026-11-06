@@ -58,7 +58,7 @@ cat > "$ART/BODY_AVAILABILITY.md" <<'MD'
 ## Non-archive RAM window (this rehearsal Mode A)
 - Seats run **without** `--archive`. Bodies live in RAM until `max_body_ledgers` (default 64) strips them.
 - `NeedLedgers from=1` succeeds **only while** every height in `[1..tip]` still has a full body on at least one peer (`ledgers_from` stops at the first hole).
-- Tip-0 joiners prefer `NeedSnapshot` when archive/hub snap sources advertise; with **no** archive/hub flags, `snap_sources_available()==false` so residual NeedLedgers is the path.
+- Tip-0 joiners prefer `NeedSnapshot` when archive/hub snap sources advertise (`wants_snapshot`). Mode A deliberately omits `--hub`/`--archive` so `snap_sources_available()==false` and residual **NeedLedgers** is the path under test.
 - This rehearsal keeps tip well below 64 so bodies exist. We do **not** claim bodies exist after strip / on long chains without an archive.
 
 ## Archive body store (Mode B, optional)
@@ -132,8 +132,8 @@ start_node() {
 }
 
 # --- Mode A mesh (non-archive) ---
-start_node 0 hub
-for i in $(seq 1 $((N_MESH-1))); do start_node "$i"; done
+# Mode A: NO --hub/--archive so tip0 uses NeedLedgers (not NeedSnapshot).
+for i in $(seq 0 $((N_MESH-1))); do start_node "$i"; done
 sleep 4
 
 python3 - <<'PY'
