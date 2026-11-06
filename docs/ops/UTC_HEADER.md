@@ -98,3 +98,8 @@ clock beyond thread override, QC wording pass, P0 explorer, P2 fill IDs, H_utc.
 - In-process `rehearsal_multinode_network_utc_qc_agreement`: 6-seat Network seals
   across H_utc with agreed tip hash + sealed_utc_ms + QC.
 - Production H_utc / Hello enforce on 2300 remain `u64::MAX`.
+
+## Milestone t286u — restart / compat
+
+- `docs/ops/tools/utc_restart_compat_rehearsal.sh` + `utc_hello_compat_probe.py`: process-level kill/wipe/restart catch-up, Hello old-peer Close, wrong-network reject. Skew/malformed matrices remain in `utc_rehearsal_tests` / `utc_header` unit filters.
+- Production H_utc / Hello enforce on 2300 remain `u64::MAX`.

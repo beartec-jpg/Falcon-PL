@@ -364,3 +364,88 @@ fn rehearsal_hello_enforce_env_ignored_on_2300() {
     );
 }
 
+
+
+#[test]
+fn rehearsal_malformed_and_skew_admission_matrix() {
+    let _g = arm_rehearsal();
+    let b = UtcSkewBounds {
+        max_ahead_ms: 5_000,
+        max_behind_ms: 60_000,
+        require_monotonic: true,
+    };
+    let now = 1_700_000_050_000u64;
+    // Malformed: nonzero UTC before activation
+    assert!(check_utc_historical(H_UTC - 1, H_UTC, 1, 0, &b).is_err());
+    // Malformed: missing UTC after activation
+    assert!(check_utc_historical(H_UTC, H_UTC, 0, 0, &b).is_err());
+    // Backward vs parent (historical + live)
+    assert!(check_utc_historical(H_UTC + 1, H_UTC, now - 1, now, &b).is_err());
+    assert!(check_utc_live_admission(H_UTC + 1, H_UTC, now - 1, now, now, &b).is_err());
+    // Future: too far ahead of wall (live only)
+    assert!(check_utc_live_admission(H_UTC, H_UTC, now + 10_000, 0, now, &b).is_err());
+    assert!(check_utc_live_admission(H_UTC, H_UTC, now + 4_000, 0, now, &b).is_ok());
+    // Historical accepts stamp that would fail live skew (outside behind window)
+    let old = now - b.max_behind_ms - 1;
+    assert!(check_utc_historical(H_UTC, H_UTC, old, 0, &b).is_ok());
+    assert!(check_utc_live_admission(H_UTC, H_UTC, old, 0, now, &b).is_err());
+}
+
+#[test]
+fn rehearsal_network_snapshot_restart_preserves_utc_tip() {
+    let _g = arm_rehearsal();
+    set_wall_unix_ms_override(Some(1_700_000_200_000));
+    let cfg = ChainConfig {
+        network_id: NET,
+        pack_budget_ms: 0,
+        max_txs_per_ledger: 8,
+        soft_ok_votes: 3,
+        ..Default::default()
+    };
+    let mut net = Network::bootstrap(&["v1", "v2", "v3", "v4", "v5", "v6"], 1000, &users(), cfg);
+    for n in net.nodes.values_mut() {
+        n.qc_header_version = 4;
+        n.qc_start_height = 1;
+    }
+    net.pong_all();
+    for h in 1..=H_UTC {
+        set_wall_unix_ms_override(Some(1_700_000_200_000 + h * 1_000));
+        for _ in 0..2 {
+            net.payment("alice", "bob", 1, 1).unwrap();
+        }
+        net.seal_next_height().unwrap();
+    }
+    assert_eq!(net.tip_height(), H_UTC);
+    let tip = net.nodes["v1"].chain.last().unwrap().clone();
+    assert!(tip.sealed_utc_ms > 0);
+    let path = std::env::temp_dir().join(format!(
+        "falcon-utc-snap-rehearsal-{}-{}.json",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    net.nodes["v1"].save_snapshot(&path).unwrap();
+    let keys = net.nodes["v1"].keys.clone();
+    let loaded = Node::load_snapshot(&path, keys).unwrap();
+    let _ = std::fs::remove_file(&path);
+    assert_eq!(loaded.tip_height, H_UTC);
+    let restored = loaded.chain.last().unwrap();
+    assert_eq!(restored.sealed_utc_ms, tip.sealed_utc_ms);
+    assert_eq!(restored.ledger_hash, tip.ledger_hash);
+    assert!(restored.verify_packer(&loaded.keys));
+    // Historical apply path still accepts after wall jumps far ahead
+    let b = UtcSkewBounds::default();
+    set_wall_unix_ms_override(Some(tip.sealed_utc_ms + b.max_behind_ms + 50_000));
+    check_utc_historical(H_UTC, H_UTC, tip.sealed_utc_ms, 0, &b).unwrap();
+    assert!(check_utc_live_admission(
+        H_UTC,
+        H_UTC,
+        tip.sealed_utc_ms,
+        0,
+        utc_header::wall_unix_ms(),
+        &b
+    )
+    .is_err());
+}
