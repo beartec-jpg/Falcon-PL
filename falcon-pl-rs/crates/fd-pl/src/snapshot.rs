@@ -720,6 +720,8 @@ pub struct SnapAssembler {
     /// v2.9.74: every source was already judged too slow once; keep this
     /// download running (only the stall abort can drop it).
     pub keep_slow: bool,
+    /// One past the highest index requested or received (pull pipeline).
+    pub next_req: u32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -753,6 +755,7 @@ impl SnapAssembler {
             started_ms: now_ms,
             got_at_start: 0,
             keep_slow: false,
+            next_req: 0,
         }
     }
 
@@ -765,6 +768,42 @@ impl SnapAssembler {
         self.started_ms = now_ms;
         self.got_at_start = self.got();
         self.keep_slow = false;
+        self.next_req = 0;
+    }
+
+    /// Record indices just requested (offer window / retry tick).
+    pub fn note_requested(&mut self, idx: &[u32]) {
+        if let Some(&hi) = idx.iter().max() {
+            self.next_req = self.next_req.max(hi.saturating_add(1)).min(self.total);
+        }
+    }
+
+    /// Pull pipeline: after chunk `index` arrives, return the next indices to
+    /// request so up to `window` stay outstanding. Without this a pull-only
+    /// download (push budget spent / lane full) asked for one window and then
+    /// sat until the 1.5 s tail retry: ~16 chunks per ~2 s (163 chunks took
+    /// 17.8 s on loopback). Indices below `push_horizon` are left to the
+    /// archive push + hole-fill retry so in-flight pushes are not duplicated.
+    pub fn pipeline_refill(&mut self, index: u32, window: u32, push_horizon: u32) -> Vec<u32> {
+        if index >= self.next_req {
+            // The push (or an earlier request) ran ahead of us.
+            self.next_req = index.saturating_add(1).min(self.total);
+        }
+        if self.next_req < push_horizon.min(self.total) {
+            return Vec::new();
+        }
+        let window = window.max(1) as usize;
+        let mut outstanding = (0..self.next_req).filter(|i| !self.parts.contains_key(i)).count();
+        let mut out = Vec::new();
+        while outstanding < window && self.next_req < self.total {
+            let i = self.next_req;
+            self.next_req += 1;
+            if !self.parts.contains_key(&i) {
+                out.push(i);
+                outstanding += 1;
+            }
+        }
+        out
     }
 
     /// v2.9.68: a source this slow would take longer than `budget_ms` for the
@@ -940,6 +979,60 @@ impl SnapSlowJudge {
 
     pub fn reset(&mut self) {
         self.judged.clear();
+    }
+}
+
+#[cfg(test)]
+mod snap_pipeline_tests {
+    use super::*;
+
+    #[test]
+    fn pull_only_keeps_window_full_without_tail_wait() {
+        let mut a = SnapAssembler::new("p".into(), 9, "h".into(), 100, 1, 100, 0);
+        let w = a.request_window(16);
+        a.note_requested(&w);
+        assert_eq!(a.next_req, 16);
+        // Push horizon 0 (pull-only): each arrival tops the window back up.
+        a.insert(0, vec![0], 1).unwrap();
+        assert_eq!(a.pipeline_refill(0, 16, 0), vec![16]);
+        a.insert(1, vec![1], 2).unwrap();
+        assert_eq!(a.pipeline_refill(1, 16, 0), vec![17]);
+        // Never more than `window` outstanding.
+        let outstanding = (0..a.next_req).filter(|i| !a.has(*i)).count();
+        assert_eq!(outstanding, 16);
+    }
+
+    #[test]
+    fn push_region_not_duplicated() {
+        let mut a = SnapAssembler::new("p".into(), 9, "h".into(), 470, 1, 470, 0);
+        let w = a.request_window(16);
+        a.note_requested(&w);
+        // Pushed chunks 0..40 arrive in order: no pipeline requests below horizon 48.
+        for i in 0..40u32 {
+            a.insert(i, vec![1], 1).unwrap();
+            assert!(a.pipeline_refill(i, 16, 48).is_empty(), "dup request at {i}");
+        }
+        assert_eq!(a.next_req, 40);
+        // Retry tick asks 40..56; from then on arrivals pipeline.
+        let r: Vec<u32> = (40..56).collect();
+        a.note_requested(&r);
+        a.insert(40, vec![1], 2).unwrap();
+        assert_eq!(a.pipeline_refill(40, 16, 48), vec![56]);
+    }
+
+    #[test]
+    fn resume_restarts_pipeline_from_holes() {
+        let mut a = SnapAssembler::new("p".into(), 9, "h".into(), 50, 1, 50, 0);
+        for i in 0..20u32 {
+            a.insert(i, vec![1], 1).unwrap();
+        }
+        a.next_req = 40;
+        a.resume(5, "v1".into());
+        assert_eq!(a.next_req, 0);
+        let w = a.request_window(16);
+        assert_eq!(w.first(), Some(&20));
+        a.note_requested(&w);
+        assert_eq!(a.next_req, 36);
     }
 }
 
