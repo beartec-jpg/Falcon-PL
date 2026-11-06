@@ -89,6 +89,7 @@ start_node() {
     --pack-budget-ms 500 \
     --progress-timeout-ms 4000 \
     --max-chain-ledgers 128 \
+    --snapshot-interval-ms 5000 \
     --lock-public-wire \
     >"$dat/logs/node.log" 2>&1 &
   local pid=$!
@@ -162,56 +163,67 @@ wait_tip baseline
 # --- PROCESS: kill v6, keep its own snapshot, restart same seat (UTC tip replay) ---
 V6_PORT=$((PORT_BASE+5))
 V6_PID=${NODE_PID[v6]}
-echo "killing v6 pid=$V6_PID for same-seat snapshot restart" | tee -a "$ART/meta.txt"
-# Capture tips before kill
-PEER_TIP_JSON=$(python3 - "$CTL" "$PORT_BASE" "$V6_PORT" <<'PY'
+V6_ADMIN="$SCRATCH/v6/run/admin.sock"
+V6_SNAP="$SCRATCH/v6/snapshots/snap.json"
+echo "forcing v6 SnapshotSave before kill pid=$V6_PID" | tee -a "$ART/meta.txt"
+# Capture live tips before save/kill
+python3 - "$CTL" "$PORT_BASE" "$V6_PORT" "$ART" <<'PY'
 import json,subprocess,sys
-ctl,base,v6=sys.argv[1],int(sys.argv[2]),int(sys.argv[3])
+ctl,base,v6,art=sys.argv[1],int(sys.argv[2]),int(sys.argv[3]),sys.argv[4]
 def st(port):
     raw=subprocess.check_output([ctl,"--addr",f"127.0.0.1:{port}","status"],text=True,timeout=25)
     b=json.loads(raw).get("body",{})
     return {"tip":b.get("tip_height"),"hash":b.get("tip_hash"),"utc":b.get("tip_sealed_utc_ms"),
             "q":b.get("tip_sealed_utc_quality"),"phys":b.get("tip_sealed_at_quality")}
 out={"peer":st(base),"v6":st(v6)}
+open(art+"/peer_tip_before_restart.json","w").write(json.dumps({**out["v6"], "peer": out["peer"], "v6": out["v6"]}, indent=2))
 print(json.dumps(out))
+assert (out["v6"]["tip"] or 0) >= 2, out
 PY
-)
-echo "$PEER_TIP_JSON" | tee "$ART/peer_tip_before_restart.json"
-# Persist peer-at-kill fields expected by catchup script
-python3 - "$ART" <<'PY'
-import json,sys
-art=sys.argv[1]
-d=json.load(open(art+"/peer_tip_before_restart.json"))
-# flatten for catchup_result peer_at_kill compatibility
-open(art+"/peer_tip_before_restart.json","w").write(json.dumps({**d["v6"], "peer": d["peer"], "v6": d["v6"]}, indent=2))
+# Operator SnapshotSave so snap.json carries tip/hash/utc (interval alone may still be tip-0)
+"$CTL" --admin-sock "$V6_ADMIN" snapshot-save --path "$V6_SNAP" | tee -a "$ART/meta.txt"
+# Poll snap tip (also covers interval write)
+python3 - "$V6_SNAP" "$ART" "$H_UTC" <<'PY'
+import json,sys,time,os
+path,art,h=sys.argv[1],sys.argv[2],int(sys.argv[3])
+deadline=time.time()+30
+last=None
+while time.time()<deadline:
+    if os.path.exists(path):
+        d=json.load(open(path))
+        info={"snap_tip":d.get("tip_height"),"snap_hash":d.get("tip_hash"),"snap_id":d.get("id"),
+              "chain":len(d.get("chain") or []),
+              "last_utc": (d.get("chain") or [{}])[-1].get("sealed_utc_ms") if d.get("chain") else None}
+        last=info
+        print("snap_poll", info)
+        if (info["snap_tip"] or 0) >= h and info.get("last_utc"):
+            open(art+"/v6_snap_before_restart.json","w").write(json.dumps(info,indent=2))
+            break
+    time.sleep(1)
+else:
+    open(art+"/v6_snap_before_restart.json","w").write(json.dumps(last or {},indent=2))
+    raise SystemExit(f"snap tip < H_utc before kill: {last}")
 PY
-# Force a snapshot write by waiting for interval OR copy snap from running v6 before kill
-# v6 already has snap.json; ensure tip>0 in file
-python3 - <<'PY'
-import json, os, sys
-p=os.environ.get("SCRATCH","")
-# SCRATCH not exported — use path from meta
-PY
+echo "killing v6 pid=$V6_PID for same-seat snapshot restart" | tee -a "$ART/meta.txt"
 kill "$V6_PID" 2>/dev/null || true
 sleep 1
 kill -9 "$V6_PID" 2>/dev/null || true
 NEW_PIDS=""
 for p in $PIDS; do [[ "$p" == "$V6_PID" ]] || NEW_PIDS="$NEW_PIDS $p"; done
 PIDS="$NEW_PIDS"
-# Keep v6 snapshots/run sockets wiped but KEEP snapshots dir contents (own tip)
 rm -rf "$SCRATCH/v6/run"
 mkdir -p "$SCRATCH/v6/run"
-# Prove snap tip before restart
-python3 - "$SCRATCH/v6/snapshots/snap.json" "$ART" <<'PY'
+# Re-verify snap still tip>=H after kill (no overwrite race)
+python3 - "$V6_SNAP" "$ART" <<'PY'
 import json,sys
 p,art=sys.argv[1],sys.argv[2]
 d=json.load(open(p))
 info={"snap_tip":d.get("tip_height"),"snap_hash":d.get("tip_hash"),"snap_id":d.get("id"),
       "chain":len(d.get("chain") or []),
       "last_utc": (d.get("chain") or [{}])[-1].get("sealed_utc_ms") if d.get("chain") else None}
-print(json.dumps(info,indent=2))
-open(art+"/v6_snap_before_restart.json","w").write(json.dumps(info,indent=2))
-assert (d.get("tip_height") or 0) >= 2, info
+print("snap_at_kill", json.dumps(info))
+open(art+"/v6_snap_at_kill.json","w").write(json.dumps(info,indent=2))
+assert (d.get("tip_height") or 0) >= 2 and d.get("id")=="v6", info
 PY
 start_node 5
 sleep 3
