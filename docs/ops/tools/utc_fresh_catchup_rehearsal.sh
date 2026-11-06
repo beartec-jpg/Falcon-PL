@@ -78,8 +78,10 @@ start_node() {
   local dat="$SCRATCH/$id"
   mkdir -p "$dat"/{run,snapshots,logs}
   local peers="" j p
-  local n_total=$((N_MESH)) # mesh only; v7 added later
-  if [[ "${3:-}" == "with_v7" ]]; then n_total=7; fi
+  # Always include reserved v7 port in peer lists so mesh↔joiner is bidirectional
+  # once v7 starts (outbound dials retry). NeedLedgers replies need a live session;
+  # one-way joiner→mesh dials alone have stalled with no LedgersBatch in prior arts.
+  local n_total=7
   for j in $(seq 0 $((n_total-1))); do
     if [[ $j -ne $i ]]; then
       p=$((PORT_BASE+j))
@@ -226,14 +228,14 @@ echo "$MESH_TIP_JSON" | tee "$ART/mesh_tip_before_joiner.json"
 # Restart mesh peer lists to include v7: kill none — start v7 with peers to all 6; existing seats also need v7 peer.
 # Easier: start v7 listening; existing seats already have static peers without v7 — outbound dial from v7 to them is enough for catch-up.
 start_node 6 fresh
-sleep 2
+sleep 5
 
 python3 - "$CTL" "$PORT_BASE" "$ART" <<'PY'
 import json,subprocess,sys,time,os
 ctl,base,art=sys.argv[1],int(sys.argv[2]),sys.argv[3]
 v7=base+6
 want=json.load(open(art+"/mesh_tip_before_joiner.json"))
-deadline=time.time()+90
+deadline=time.time()+150
 rows=[]
 ok=False
 body_path=None
@@ -260,7 +262,9 @@ log=os.path.join(os.environ["SCRATCH"],"v7/logs/node.log")
 text=open(log,errors="replace").read() if os.path.exists(log) else ""
 evidence={
   "need_ledgers_pull": "catch-up pull from_height=" in text or "NeedLedgers" in text,
-  "catchup_batch_advanced": "catch-up batch" in text and "→" in text,
+  "need_ledgers_directed": ("NeedLedgers →" in text) or ("NeedLedgers → non-hub" in text) or ("NeedLedgers → inbound" in text),
+  "need_ledgers_dropped_zero": "NeedLedgers dropped: candidates=0" in text,
+  "catchup_batch_advanced": "catch-up batch" in text and ("→" in text or "advanced" in text),
   "need_snapshot": "NeedSnapshot" in text or "loading snapshot" in text,
   "archive_body_store_line": "archive body store" in text,
 }

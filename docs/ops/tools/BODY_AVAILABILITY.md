@@ -17,3 +17,6 @@
 - Mode A (default): non-archive mesh with one `--hub`; records `peer_body_inventory.json` before joiner.
 - Optional archive Mode B: peer with `--archive` (body store) — only when explicitly requested.
 - Artifacts under `$ART`: RESULT, BODY_HOLE (if any), logs. Failure with NeedLedgers pull but tip stuck is an **unmet** catch-up proof, not release-ready.
+
+## Process harness root cause (t287u evidence)
+Prior Mode A FAIL (`/tmp/falcon-utc-fresh-artifacts` on brain): joiner logged `catch-up pull from_height=1` with `best_peer=2` but never `catch-up batch …→…`. Mesh logs: **`refuse inbound from v7: we dial them`** every ~500ms. Dial rule is lower seat id dials higher; mesh had no v7 in `--peers`, so nobody dialed v7 and inbound from v7 was refused. Tip was learned from the brief Hello before refuse — not a durable catch-up session. Fix: reserve v7 in all peer lists from start (bidirectional dial when joiner listens).
