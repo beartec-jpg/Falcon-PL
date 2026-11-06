@@ -1077,7 +1077,7 @@ mod snap_resume_tests {
 
 #[cfg(test)]
 mod snap_assembler_tests {
-    use super::{SnapAssembler, SnapInsert};
+    use super::{SnapAssembler, SnapInsert, SnapStash};
     use crate::crypto::sha256_hex;
 
     /// Regression (WAN observer, 9 Oct 2026): a slow in-order push must not
