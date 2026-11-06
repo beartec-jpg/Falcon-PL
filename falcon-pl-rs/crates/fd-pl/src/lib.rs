@@ -12986,6 +12986,15 @@ impl Node {
                 &draft.vals,
             )?
         } else {
+            // UTC header binds only on the v4/v5 pack path. Refuse non-v4 pack
+            // once FPL_UTC_FROM_HEIGHT (or override) is armed for this net —
+            // packing with sealed_utc_ms=0 would fail live admission anyway.
+            let utc_from = utc_header::network_utc_from_height(self.cfg.network_id);
+            if utc_header::utc_active(height, utc_from) {
+                return Err(format!(
+                    "UTC active at h={height} (from={utc_from}) but qc_v4 not armed — refuse non-v4 pack"
+                ));
+            }
             Ledger::seal_with_skips(
                 height,
                 self.tip_hash.clone(),

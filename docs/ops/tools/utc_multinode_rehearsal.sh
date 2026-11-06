@@ -2,6 +2,9 @@
 # Isolated multi-PROCESS UTC Hello/status rehearsal on loopback.
 # NOT a production soak. Does not touch live seats/ports/keys/Tailscale.
 #
+# Requires QC v4 (UTC binds on v5/v4 pack path) ⇒ 6 bonded seats (v4 committee).
+# Private net 2200 only; FPL_* env ignored on 2300.
+#
 # Usage (on beartec-brain, low priority):
 #   nice -n19 ionice -c3 bash docs/ops/tools/utc_multinode_rehearsal.sh \
 #     /path/to/falcon-pl-rs [/path/to/artifact-dir]
@@ -35,20 +38,21 @@ test -x "$BIN" && test -x "$CTL"
 sha256sum "$BIN" | tee "$ART/binary.sha256"
 
 PORT_BASE=29101
-N=3
+N=6
 NET=2200
 H_UTC=2
-# Private-net rehearsal only. 2300 ignores these envs.
+VALS="v1,v2,v3,v4,v5,v6"
 export FPL_UTC_FROM_HEIGHT="$H_UTC"
 export FPL_UTC_HELLO_ENFORCE_FROM_HEIGHT="$H_UTC"
-# Allow empty seals so tip can cross H_utc without a wallet soak.
 export FPL_EMPTY_BLOCK_FROM_HEIGHT=1
 export ART PORT_BASE
 
 KEYS="$SCRATCH/keys"
-mkdir -p "$KEYS"
+mkdir -p "$KEYS/lc"
 "$BIN" --gen-keys-only --keys-dir "$KEYS" --scheme hmac --allow-dev-crypto \
-  --validators v1,v2,v3 --id v1 >/dev/null
+  --validators "$VALS" --id v1 >/dev/null
+# QC v4 from height 1 — UTC seal path is seal_v4_ledger (v5 domain when armed).
+printf '%s\n' '{"qc_header_version":4,"qc_start_height":1,"network_id":2200,"start_height":1}' >"$KEYS/lc/bridge.json"
 
 for i in $(seq 0 $((N-1))); do
   id="v$((i+1))"
@@ -69,7 +73,7 @@ for i in $(seq 0 $((N-1))); do
     --peers "$peers" \
     --keys-dir "$KEYS" \
     --scheme hmac --allow-dev-crypto \
-    --validators v1,v2,v3 \
+    --validators "$VALS" \
     --bond 1000 \
     --network-id "$NET" \
     --online-epoch-heights 0 \
@@ -88,14 +92,13 @@ for i in $(seq 0 $((N-1))); do
   echo "started $id :$port pid=$!" | tee -a "$ART/meta.txt"
 done
 
-sleep 3
+sleep 4
 
-# Drive tip with signed pays (alice→bob) in addition to empty-block path.
 export KEYS CTL PORT_BASE NET
 python3 - <<'PY'
 import subprocess, os, time
 ctl=os.environ["CTL"]; keys=os.environ["KEYS"]; net=os.environ["NET"]; base=int(os.environ["PORT_BASE"])
-for seq in range(1, 9):
+for seq in range(1, 12):
     cmd=[ctl,"--addr",f"127.0.0.1:{base}","pay",
          "--from","alice","--to","bob","--amount","1","--fee","1",
          "--sequence",str(seq),"--scheme","hmac","--keys-dir",keys,
@@ -105,7 +108,7 @@ for seq in range(1, 9):
         print("pay seq",seq, out.splitlines()[0] if out else "ok")
     except Exception as e:
         print("pay seq",seq,"err",e)
-    time.sleep(0.2)
+    time.sleep(0.15)
 PY
 
 python3 - "$CTL" "$PORT_BASE" "$N" "$H_UTC" "$ART" <<'PY'
@@ -126,8 +129,9 @@ def poll():
             row={"port":port,"tip":tip,"hash":(b.get("tip_hash") or "")[:16],
                  "utc_from_height":b.get("utc_from_height"),"utc_active_next":b.get("utc_active_next"),
                  "tip_sealed_utc_ms":b.get("tip_sealed_utc_ms"),"tip_sealed_utc_quality":b.get("tip_sealed_utc_quality"),
-                 "tip_sealed_at_quality":b.get("tip_sealed_at_quality"),"stall":b.get("consensus_stall"),
-                 "ver":b.get("product_version")}
+                 "tip_sealed_at_quality":b.get("tip_sealed_at_quality"),
+                 "qc_header_version":b.get("qc_header_version"),"qc_start_height":b.get("qc_start_height"),
+                 "stall":b.get("consensus_stall"),"ver":b.get("product_version")}
             if row["utc_from_height"]!=h_utc:
                 ok=False; row["fail"]="utc_from_height"
             tips.append(tip)
@@ -140,13 +144,14 @@ def poll():
         rows.append(row)
     return rows, ok, tips, hashes, utcs
 
-deadline=time.time()+120
+deadline=time.time()+150
 last=None
 while True:
     rows, ok, tips, hashes, utcs = poll()
     last=(rows, ok, tips, hashes, utcs)
     print("poll tips=%s hashes=%d utcs=%d ok=%s" % (tips, len(hashes), len(utcs), ok))
-    if ok and min(tips)>=h_utc and len(hashes)==1:
+    # Require tip past H_utc, single tip hash, and non-zero sealed_utc on at least one seat
+    if ok and min(tips)>=h_utc and len(hashes)==1 and len(utcs)==1:
         break
     if time.time()>=deadline:
         break
@@ -154,7 +159,7 @@ while True:
 
 rows, ok, tips, hashes, utcs = last
 open(art+"/status_round1.jsonl","w").write("\n".join(json.dumps(r) for r in rows)+"\n")
-agree = ok and min(tips)>=h_utc and len(hashes)==1
+agree = ok and min(tips)>=h_utc and len(hashes)==1 and len(utcs)==1
 open(art+"/status_round1_ok","w").write("ok\n" if agree else "fail\n")
 open(art+"/tip_agreement.json","w").write(json.dumps({"tips":tips,"hashes":list(hashes),"utcs":list(utcs),"agree":agree},indent=2))
 for r in rows: print(json.dumps(r,separators=(",",":")))
@@ -195,8 +200,7 @@ try: s.close()
 except Exception: pass
 caps=(peer or {}).get("capabilities") or []
 out={"node_hello_type":(peer or {}).get("type"),"node_hello_caps":caps,
-     "old_peer_response":resp.decode(errors="replace")[:600],
-     "note":"Hard Close for missing utc-header-v5 only when tip>=FPL_UTC_HELLO_ENFORCE_FROM_HEIGHT; advertise always."}
+     "old_peer_response":resp.decode(errors="replace")[:600]}
 print(json.dumps(out,indent=2))
 open(art+"/hello_gate.json","w").write(json.dumps(out,indent=2))
 if "utc-header-v5" not in caps:
@@ -205,9 +209,9 @@ open(art+"/hello_gate_ok","w").write("ok\n")
 print("hello_gate_ok")
 PY
 
-(ss -lntp 2>/dev/null || true) | grep -E ':2910[1-3]\b' | tee "$ART/listeners.txt" || true
+(ss -lntp 2>/dev/null || true) | grep -E ':2910[1-6]\b' | tee "$ART/listeners.txt" || true
 if grep -E '0\.0\.0\.0:2910|\*:2910' "$ART/listeners.txt" >/dev/null 2>&1; then
   echo "FAIL non-loopback bind" | tee -a "$ART/meta.txt"; exit 3
 fi
-echo "ISOLATION_OK loopback:29101+ network_id=2200 scratch=$SCRATCH empty_block_from=1" | tee -a "$ART/meta.txt"
+echo "ISOLATION_OK loopback:29101-29106 network_id=2200 qc_v4 scratch=$SCRATCH" | tee -a "$ART/meta.txt"
 echo PASS | tee "$ART/RESULT.txt"
