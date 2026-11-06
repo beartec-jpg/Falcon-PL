@@ -1099,6 +1099,7 @@ fn is_snap_control(m: &WireMsg) -> bool {
     matches!(m, WireMsg::SnapshotOffer { .. } | WireMsg::SnapshotNo { .. })
 }
 
+#[allow(dead_code)]
 fn is_snap_data(m: &WireMsg) -> bool {
     matches!(m, WireMsg::SnapshotChunk { .. })
 }
