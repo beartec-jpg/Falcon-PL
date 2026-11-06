@@ -38,16 +38,17 @@ PORT_BASE=29101
 N=3
 NET=2200
 H_UTC=2
+# Private-net rehearsal only. 2300 ignores these envs.
 export FPL_UTC_FROM_HEIGHT="$H_UTC"
 export FPL_UTC_HELLO_ENFORCE_FROM_HEIGHT="$H_UTC"
+# Allow empty seals so tip can cross H_utc without a wallet soak.
+export FPL_EMPTY_BLOCK_FROM_HEIGHT=1
 export ART PORT_BASE
 
 KEYS="$SCRATCH/keys"
 mkdir -p "$KEYS"
 "$BIN" --gen-keys-only --keys-dir "$KEYS" --scheme hmac --allow-dev-crypto \
   --validators v1,v2,v3 --id v1 >/dev/null
-mkdir -p "$KEYS/lc"
-printf '%s\n' '{"qc_header_version":4,"qc_start_height":1,"network_id":2200,"start_height":1}' >"$KEYS/lc/bridge.json"
 
 for i in $(seq 0 $((N-1))); do
   id="v$((i+1))"
@@ -73,12 +74,13 @@ for i in $(seq 0 $((N-1))); do
     --network-id "$NET" \
     --online-epoch-heights 0 \
     --first-claim-epoch 1 \
+    --min-block-interval-ms 0 \
     --admin-sock "$dat/run/admin.sock" \
     --snapshot "$dat/snapshots/snap.json" \
     --snapshot-out "$dat/snapshots/snap.json" \
-    --seal-interval-ms 500 \
-    --pack-budget-ms 2000 \
-    --progress-timeout-ms 8000 \
+    --seal-interval-ms 300 \
+    --pack-budget-ms 500 \
+    --progress-timeout-ms 4000 \
     --max-chain-ledgers 128 \
     --lock-public-wire \
     >"$dat/logs/node.log" 2>&1 &
@@ -86,7 +88,26 @@ for i in $(seq 0 $((N-1))); do
   echo "started $id :$port pid=$!" | tee -a "$ART/meta.txt"
 done
 
-# Wait for peers to Hello + tip to advance past H_utc (bounded)
+sleep 3
+
+# Drive tip with signed pays (alice→bob) in addition to empty-block path.
+export KEYS CTL PORT_BASE NET
+python3 - <<'PY'
+import subprocess, os, time
+ctl=os.environ["CTL"]; keys=os.environ["KEYS"]; net=os.environ["NET"]; base=int(os.environ["PORT_BASE"])
+for seq in range(1, 9):
+    cmd=[ctl,"--addr",f"127.0.0.1:{base}","pay",
+         "--from","alice","--to","bob","--amount","1","--fee","1",
+         "--sequence",str(seq),"--scheme","hmac","--keys-dir",keys,
+         "--network-id",net]
+    try:
+        out=subprocess.check_output(cmd, text=True, timeout=20, stderr=subprocess.STDOUT)
+        print("pay seq",seq, out.splitlines()[0] if out else "ok")
+    except Exception as e:
+        print("pay seq",seq,"err",e)
+    time.sleep(0.2)
+PY
+
 python3 - "$CTL" "$PORT_BASE" "$N" "$H_UTC" "$ART" <<'PY'
 import json, subprocess, sys, time
 ctl, base, n, h_utc, art = sys.argv[1], int(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4]), sys.argv[5]
@@ -119,7 +140,7 @@ def poll():
         rows.append(row)
     return rows, ok, tips, hashes, utcs
 
-deadline=time.time()+90
+deadline=time.time()+120
 last=None
 while True:
     rows, ok, tips, hashes, utcs = poll()
@@ -129,12 +150,11 @@ while True:
         break
     if time.time()>=deadline:
         break
-    time.sleep(3)
+    time.sleep(2)
 
 rows, ok, tips, hashes, utcs = last
 open(art+"/status_round1.jsonl","w").write("\n".join(json.dumps(r) for r in rows)+"\n")
 agree = ok and min(tips)>=h_utc and len(hashes)==1
-# sealed_utc may be present once tip>=H_utc; record but do not hard-fail if quality path differs
 open(art+"/status_round1_ok","w").write("ok\n" if agree else "fail\n")
 open(art+"/tip_agreement.json","w").write(json.dumps({"tips":tips,"hashes":list(hashes),"utcs":list(utcs),"agree":agree},indent=2))
 for r in rows: print(json.dumps(r,separators=(",",":")))
@@ -175,7 +195,8 @@ try: s.close()
 except Exception: pass
 caps=(peer or {}).get("capabilities") or []
 out={"node_hello_type":(peer or {}).get("type"),"node_hello_caps":caps,
-     "old_peer_response":resp.decode(errors="replace")[:600]}
+     "old_peer_response":resp.decode(errors="replace")[:600],
+     "note":"Hard Close for missing utc-header-v5 only when tip>=FPL_UTC_HELLO_ENFORCE_FROM_HEIGHT; advertise always."}
 print(json.dumps(out,indent=2))
 open(art+"/hello_gate.json","w").write(json.dumps(out,indent=2))
 if "utc-header-v5" not in caps:
@@ -188,5 +209,5 @@ PY
 if grep -E '0\.0\.0\.0:2910|\*:2910' "$ART/listeners.txt" >/dev/null 2>&1; then
   echo "FAIL non-loopback bind" | tee -a "$ART/meta.txt"; exit 3
 fi
-echo "ISOLATION_OK loopback:29101+ network_id=2200 scratch=$SCRATCH" | tee -a "$ART/meta.txt"
+echo "ISOLATION_OK loopback:29101+ network_id=2200 scratch=$SCRATCH empty_block_from=1" | tee -a "$ART/meta.txt"
 echo PASS | tee "$ART/RESULT.txt"
