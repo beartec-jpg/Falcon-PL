@@ -264,7 +264,9 @@ evidence={
   "need_ledgers_pull": "catch-up pull from_height=" in text or "NeedLedgers" in text,
   "need_ledgers_directed": ("NeedLedgers →" in text) or ("NeedLedgers → non-hub" in text) or ("NeedLedgers → inbound" in text),
   "need_ledgers_dropped_zero": "NeedLedgers dropped: candidates=0" in text,
-  "catchup_batch_advanced": "catch-up batch" in text and ("→" in text or "advanced" in text),
+  "catchup_batch_advanced": ("catch-up batch" in text and "→" in text),
+  "catchup_serve_directed": "catch-up serve directed" in text,
+  "live_gossip_commit": ("committed h=" in text and "catchup=false" in text),
   "need_snapshot": "NeedSnapshot" in text or "loading snapshot" in text,
   "archive_body_store_line": "archive body store" in text,
 }
@@ -275,6 +277,10 @@ open(art+"/fresh_catchup_ok","w").write("ok\n" if ok else "fail\n")
 path="unknown"
 if ok and evidence["catchup_batch_advanced"] and not evidence["archive_body_store_line"]:
     path="need_ledgers_ram_window"
+elif ok and evidence.get("live_gossip_commit") and evidence.get("need_ledgers_directed") and not evidence.get("need_snapshot"):
+    # Live ProposeLedger soft-QC closed the tip-0 gap while NeedLedgers also
+    # directed/served; LedgersBatch apply may race behind. Honest classification.
+    path="live_gossip_with_need_ledgers_wire"
 elif ok and evidence.get("need_snapshot"):
     path="join_snapshot"
 open(art+"/catchup_path.json","w").write(json.dumps({"path":path,"evidence":evidence},indent=2))
