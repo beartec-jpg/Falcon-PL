@@ -392,7 +392,7 @@ fn rehearsal_malformed_and_skew_admission_matrix() {
 }
 
 
-/// Snapshot save/load UTC tip preservation is covered by process-level
-/// `utc_restart_compat_rehearsal.sh` (kill/wipe/restart catch-up) plus
-/// `rehearsal_serde_restart_roundtrip_preserves_utc_commitment`. A full
-/// Network::seal loop here races v4 next-committee freeze under --test-threads>1.
+// Snapshot save/load UTC tip preservation is covered by process-level
+// utc_restart_compat_rehearsal.sh (kill/wipe/restart catch-up) plus
+// rehearsal_serde_restart_roundtrip_preserves_utc_commitment. A full
+// Network::seal loop here races v4 next-committee freeze under --test-threads>1.
