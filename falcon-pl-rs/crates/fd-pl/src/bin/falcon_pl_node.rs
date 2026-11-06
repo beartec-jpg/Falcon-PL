@@ -5237,6 +5237,7 @@ fn process_msg(
             archive,
             snap_height,
             release_version,
+            capabilities: _, // gated earlier via HelloSession::check
         } => {
             // Live bond-in: Hello only advertises keys (+ tip). Bonded seats come
             // from genesis register or Bond ledger txs — never free-register from wire.
