@@ -48,11 +48,11 @@ for line in open(art+"/rss_final.txt"):
     m=re.search(r"^(\S+) .*VmHWM:\s*(\d+)",line)
     if m: hwm[m.group(1)]=int(m.group(2))
 C["mem.vmhwm_kb"]={"ok":True,"detail":hwm}
-v1_def=v1.count("inbound catch-up data deferred")+v1.count("catch-up data reply deferred")
+v1_def=max([int(x) for x in re.findall(r"catch-up reply deferred \(catch-up lane full\)[^\n]*total=(\d+)",v1)]+[0])
 v1_ctl_ok=re.findall(r"snapshot control reply sent after (\d+) waits[^\n]*",v1)
 v1_ctl_fail=re.findall(r"snapshot control reply failed[^\n]*",v1)
 C["v1.pressure_counters"]={"ok":True,"detail":{"data_deferred":v1_def,"control_sent_after_wait":v1_ctl_ok[:5],"control_failed":len(v1_ctl_fail),
-   "withheld":len(re.findall(r"withheld",v1)),"chunk_serves":len(re.findall(r"snapshot chunk serve idx=",v1)),"legacy_lane_full_drop":v1.count("catch-up lane full")}}
+   "withheld":len(re.findall(r"withheld",v1)),"chunk_serves":len(re.findall(r"snapshot chunk serve idx=",v1)),"lane_full_log_lines":v1.count("catch-up lane full")}}
 if scen in ("pressure","two","reask","large"):
     if scen!="large":
         chk("pressure.v1_data_deferred_gt0", v1_def>0, v1_def)

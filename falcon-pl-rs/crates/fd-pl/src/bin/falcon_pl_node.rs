@@ -1105,7 +1105,9 @@ fn is_snap_data(m: &WireMsg) -> bool {
 }
 
 /// Max wait for lane room for a snapshot control reply (Offer / SnapshotNo).
-const SNAP_CONTROL_WAIT: std::time::Duration = std::time::Duration::from_secs(2);
+/// Bounded: the session read loop (votes included) waits behind it, so keep
+/// it well under the 6.6 s round-0 silence timeout.
+const SNAP_CONTROL_WAIT: std::time::Duration = std::time::Duration::from_secs(1);
 
 /// Offer / SnapshotNo onto a catch-up lane, waiting (async, bounded) for room.
 /// Data chunks are deferred under pressure, but a lost Offer leaves the joiner
@@ -1127,6 +1129,25 @@ async fn reply_send_control_wait(
         }
         polls += 1;
         tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+    }
+}
+
+static CATCH_DEFER_LAST_MS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static CATCH_DEFER_SUPPRESSED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static CATCH_DEFER_TOTAL: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// A catch-up data reply (SnapshotChunk / LedgersBatch) did not fit the lane.
+/// Kept at WARN (rate-limited, with a running total) so operators still see
+/// lane pressure; the joiner re-requests the chunk / range.
+fn note_catch_defer(dir: &str, r: &WireMsg, peer: &str) {
+    let total = CATCH_DEFER_TOTAL.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+    if let Some(sup) = should_log_reply_dropped(unix_ms(), &CATCH_DEFER_LAST_MS, &CATCH_DEFER_SUPPRESSED) {
+        let kind = match r {
+            WireMsg::SnapshotChunk { .. } => "SnapshotChunk",
+            WireMsg::LedgersBatch { .. } => "LedgersBatch",
+            _ => "other",
+        };
+        warn!("{dir} catch-up reply deferred (catch-up lane full) kind={kind} to={peer} total={total} (+{sup} suppressed)");
     }
 }
 
@@ -3501,7 +3522,12 @@ async fn main() -> Result<()> {
                             // v2.9.70: a stalled source is skipped like a slow
                             // one, so NeedSnapshot reaches the hubs next round.
                             if !p.source_peer.is_empty() {
-                                info!("snapshot source {} stalled — skip it for {}s", p.source_peer, SNAP_SLOW_SKIP_MS / 1000);
+                                info!(
+                                    "snapshot source {} stalled — skip it for up to {}s ({}s if it is the only source)",
+                                    p.source_peer,
+                                    SNAP_SLOW_SKIP_MS / 1000,
+                                    fd_pl::SNAP_ALL_STALLED_RETRY_MS / 1000
+                                );
                                 shared_c
                                     .slow_snap_src
                                     .lock()
@@ -4330,7 +4356,7 @@ async fn peer_session(
                                 }
                             } else if !reply_send_pieced(&catchup_tx, out, pieces) {
                                 // Data: skip under pressure; joiner hole-fills / retries.
-                                debug!("catch-up data reply deferred (lane full)");
+                                note_catch_defer("outbound", &reply, &session_peer);
                             }
                         } else {
                             let _ = reply_send_pieced(&reply_tx, out, pieces);
@@ -4969,7 +4995,7 @@ async fn handle_inbound(
                     }
                 } else if !reply_send_pieced(&catch_reply_tx, out, pieces) {
                     // SnapshotChunk / LedgersBatch: credit-aware skip under pressure.
-                    debug!("inbound catch-up data deferred (lane full); joiner will hole-fill");
+                    note_catch_defer("inbound", &r, session_peer);
                 }
             } else if should_drop_inbound_reply(inbound_registered, was_hello, &r) {
                 // Hello'd mesh peer: it discards Ok/Err (process_msg -> None),
