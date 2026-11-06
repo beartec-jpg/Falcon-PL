@@ -520,11 +520,13 @@ impl HelloSession {
                 product_version,
                 hello_network_id,
                 release_version,
+                capabilities,
                 ..
             } => match node
                 .hello_reject_reason(*hello_network_id, product_version)
                 .map(str::to_string)
                 .or_else(|| node.hello_release_reject(release_version))
+                .or_else(|| node.hello_utc_capability_reject(capabilities))
             {
                 Some(reason) => {
                     self.accepted_version = None;
@@ -554,6 +556,7 @@ pub const HELLO_ERR_NETWORK_ID: &str = "network_id mismatch";
 pub const PEER_RELEASE_NONE: &str = "none (pre-2.10.3)";
 
 pub const HELLO_ERR_RELEASE_TOO_OLD: &str = "release_version too old";
+pub const HELLO_ERR_UTC_CAPABILITY: &str = "utc-header-v5 capability required";
 
 /// Lowest release a peer may advertise after
 /// [`crate::params_v2::hello_min_release_from_height`]. **TBD**: bump to the
@@ -3690,6 +3693,9 @@ pub struct Node {
     pub orderbook_from_height: u64,
     /// v2.10.3 (TBD): [`crate::params_v2::hello_min_release_from_height`]; runtime only.
     pub hello_min_release_from_height: u64,
+    /// UTC Hello capability hard-enforce from this tip height (`u64::MAX` = never).
+    /// Default never — advertising `utc-header-v5` does not close old peers.
+    pub utc_hello_enforce_from_height: u64,
     /// v2.10.3: last Hello `release_version` per peer id ("" = pre-2.10.3)
     /// and when it was seen (`now_ms`). Observability only; runtime only.
     pub peer_releases: BTreeMap<String, (String, u64)>,
@@ -3954,6 +3960,7 @@ impl Node {
             btc4_lend_scale_from_height,
             orderbook_from_height,
             hello_min_release_from_height,
+            utc_hello_enforce_from_height: utc_header::UTC_HELLO_ENFORCE_FROM_HEIGHT_DISABLED,
             peer_releases: BTreeMap::new(),
             rewards_v2_from_height,
             rewards_v2_epoch,
@@ -4865,6 +4872,30 @@ impl Node {
         }
         hello_release_reject_detail(release_version, HELLO_MIN_RELEASE)
             .map(|d| format!("{d} (local tip {})", self.tip_height))
+    }
+
+    /// Soft gap: peer missing `utc-header-v5` while local tip is past H_utc.
+    /// Always computable; does not close the session.
+    pub fn utc_peer_capability_gap(&self, peer_capabilities: &[String]) -> Option<String> {
+        let from = utc_header::network_utc_from_height(self.cfg.network_id);
+        utc_header::utc_peer_capability_gap(self.tip_height, from, peer_capabilities)
+    }
+
+    /// Hard Hello close when `utc_hello_enforce_from_height` is armed and tip
+    /// has reached it. Default `u64::MAX` ⇒ never. Independent of H_utc bake.
+    pub fn hello_utc_capability_reject(&self, peer_capabilities: &[String]) -> Option<String> {
+        if self.tip_height < self.utc_hello_enforce_from_height {
+            return None;
+        }
+        if utc_header::peer_has_utc_header_v5(peer_capabilities) {
+            return None;
+        }
+        Some(format!(
+            "{HELLO_ERR_UTC_CAPABILITY}: peer Hello lacks {}; local tip {} >= enforce_from {}",
+            utc_header::CAP_UTC_HEADER_V5,
+            self.tip_height,
+            self.utc_hello_enforce_from_height
+        ))
     }
 
     /// v2.9.60 rolling exec-header cut, and the v2.9.61 one-off V1 cutoff,
@@ -15716,6 +15747,11 @@ pub enum WireMsg {
         /// apart. Omitted when empty (older peers ignore unknown fields).
         #[serde(default, skip_serializing_if = "String::is_empty")]
         release_version: String,
+        /// Additive capability tokens (e.g. `utc-header-v5`). Empty/omitted on
+        /// older peers. Advertising is safe while UTC activation stays unarmed;
+        /// session close on missing capability is gated separately (default off).
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        capabilities: Vec<String>,
     },
     /// Liveness + tip advertisement (gossiped). Does not alter lottery election.
     Pong {
@@ -16188,6 +16224,8 @@ mod eth_v3_fork_dry_run_tests;
 mod hello_gate_tests;
 #[cfg(test)]
 mod hello_release_tests;
+#[cfg(test)]
+mod utc_rehearsal_tests;
 #[cfg(test)]
 mod health_tests;
 

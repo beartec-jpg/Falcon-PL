@@ -71,3 +71,19 @@ Arming requires a **separate** commit + preactivation signoff after seat readine
 | Market API / candles ready | **no** |
 | Safe to merge as draft for review | intended |
 | Safe to deploy / arm | **no** |
+
+
+## Milestone t281u (capability + rehearsal harness)
+
+Added (still draft / unarmed on 2300):
+
+- Hello `capabilities` (advertises `utc-header-v5`); hard close only when
+  `Node.utc_hello_enforce_from_height` armed (default `u64::MAX`).
+- Thread-local wall + `from_height` overrides for deterministic rehearsal
+  (no process-global env races).
+- `utc_rehearsal_tests` — **in-process simulation harness** (not multi-node soak):
+  pre/post activation, forged utc, serde restart, live vs historical skew,
+  soft capability gap vs hard enforce, seed_v2 binds utc, production defaults unarmed.
+
+Still unfinished: real multi-node isolated process soak, injectable Node pack
+clock beyond thread override, QC wording pass, P0 explorer, P2 fill IDs, H_utc.

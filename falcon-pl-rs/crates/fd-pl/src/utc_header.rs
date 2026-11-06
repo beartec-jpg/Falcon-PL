@@ -86,6 +86,11 @@ fn env_u64(name: &str) -> Option<u64> {
 /// Activation height for `network_id`. 2300 uses the baked (disabled) constant;
 /// other networks honour `FPL_UTC_FROM_HEIGHT` or stay disabled.
 pub fn network_utc_from_height(network_id: u32) -> u64 {
+    if let Some((nid, h)) = FROM_HEIGHT_OVERRIDE.with(|c| c.get()) {
+        if nid == network_id {
+            return h;
+        }
+    }
     if network_id == NETWORK_ID_PUBLIC_TESTNET_2300 {
         return TESTNET_2300_UTC_FROM_HEIGHT;
     }
@@ -324,10 +329,73 @@ pub fn packer_msg_for_domain(
     }
 }
 
-/// OS wall-clock Unix milliseconds. Returns 0 if the system clock is before epoch.
-/// Used only when UTC activation is armed on the pack path. Not used for
-/// `sealed_at_ms` physics.
+/// Hello capability token advertised by binaries that understand header v5.
+/// Older peers omit the field (empty vec). Not a consensus rule by itself.
+pub const CAP_UTC_HEADER_V5: &str = "utc-header-v5";
+
+/// Capabilities this binary advertises on Hello (additive; empty on ancient peers).
+pub fn local_hello_capabilities() -> Vec<String> {
+    vec![CAP_UTC_HEADER_V5.to_string()]
+}
+
+pub fn peer_has_utc_header_v5(capabilities: &[String]) -> bool {
+    capabilities.iter().any(|c| c == CAP_UTC_HEADER_V5)
+}
+
+/// Soft compatibility: when local tip is at/after H_utc, a peer without the
+/// capability cannot safely pack/OK v5 tips. Returns a human reason or None.
+/// Does **not** close sessions by itself — see `utc_hello_enforce`.
+pub fn utc_peer_capability_gap(
+    local_tip_height: u64,
+    utc_from_height: u64,
+    peer_capabilities: &[String],
+) -> Option<String> {
+    if !utc_active(local_tip_height, utc_from_height) {
+        return None;
+    }
+    if peer_has_utc_header_v5(peer_capabilities) {
+        return None;
+    }
+    Some(format!(
+        "peer lacks Hello capability {CAP_UTC_HEADER_V5} while local tip {local_tip_height} >= H_utc {utc_from_height}"
+    ))
+}
+
+/// Hard Hello enforcement height. `u64::MAX` = never (default on every network,
+/// including 2300). Arming this is a **separate** preactivation decision — never
+/// implied by shipping the capability advertisement.
+pub const UTC_HELLO_ENFORCE_FROM_HEIGHT_DISABLED: u64 = u64::MAX;
+
+thread_local! {
+    /// Test / rehearsal only: override OS wall for deterministic pack + live skew.
+    static WALL_OVERRIDE_MS: std::cell::Cell<Option<u64>> = std::cell::Cell::new(None);
+    /// Test / rehearsal only: override `network_utc_from_height` for a network_id.
+    static FROM_HEIGHT_OVERRIDE: std::cell::Cell<Option<(u32, u64)>> =
+        std::cell::Cell::new(None);
+}
+
+/// Install a wall-clock override for the current thread (`None` clears).
+pub fn set_wall_unix_ms_override(ms: Option<u64>) {
+    WALL_OVERRIDE_MS.with(|c| c.set(ms));
+}
+
+/// Install a per-network activation override for the current thread (`None` clears).
+/// Ignored for production reasoning on 2300 unless tests explicitly set it — the
+/// baked constant remains `u64::MAX`; this override exists so rehearsal does not
+/// mutate process-global env (parallel-test safe per thread).
+pub fn set_utc_from_height_override(network_id: u32, from_height: Option<u64>) {
+    FROM_HEIGHT_OVERRIDE.with(|c| {
+        c.set(from_height.map(|h| (network_id, h)));
+    });
+}
+
+/// OS wall-clock Unix milliseconds, or the thread override when set.
+/// Used only when UTC activation is armed on the pack / live-admission path.
+/// Not used for `sealed_at_ms` physics.
 pub fn wall_unix_ms() -> u64 {
+    if let Some(ms) = WALL_OVERRIDE_MS.with(|c| c.get()) {
+        return ms;
+    }
     use std::time::{SystemTime, UNIX_EPOCH};
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
