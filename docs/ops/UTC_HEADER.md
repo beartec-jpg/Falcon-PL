@@ -53,7 +53,7 @@ Arming requires a **separate** commit + preactivation signoff after seat readine
 2. **Injectable pack wall clock** — `seal_v4_ledger` uses `wall_unix_ms()` when armed; tests need a controllable clock for deterministic pack under V5.
 3. **QC attestation path audit** — OK votes cover `ledger_hash` (hence UTC once v5), but explicit dual-attest / slash evidence docs need a pass for v5 wording.
 4. **Gossip / snapshot / disk round-trip soak** under armed devnet (BodyStore already stores full ledger JSON; needs armed rehearsal).
-5. **Explorer 1970 fix (P0)** — Falcon-faucet-wallet must stop `Date(chain_ms)`; separate PR.
+5. **Explorer 1970 fix (P0)** — Falcon-faucet-wallet draft PR #187 (`draft/explorer-time-honesty-p0`); honesty mappers + docs; not merged.
 6. **Permanent fill IDs + cursor API (P2)** — beyond `RECENT_FILLS=200`; archive capacity not inspected.
 7. **Public height+hash→UTC API (P3)** — only after `H_utc` live.
 8. **Crypto candles (P4)** — do **not** merge #618 from this Go; needs `utc_committed` source.
@@ -99,7 +99,27 @@ clock beyond thread override, QC wording pass, P0 explorer, P2 fill IDs, H_utc.
   across H_utc with agreed tip hash + sealed_utc_ms + QC.
 - Production H_utc / Hello enforce on 2300 remain `u64::MAX`.
 
-## Milestone t286u — restart / compat
+## Milestone t286u — restart / compat (process evidence PASS)
 
-- `docs/ops/tools/utc_restart_compat_rehearsal.sh` + `utc_hello_compat_probe.py`: process-level kill/wipe/restart catch-up, Hello old-peer Close, wrong-network reject. Skew/malformed matrices remain in `utc_rehearsal_tests` / `utc_header` unit filters.
+- `docs/ops/tools/utc_restart_compat_rehearsal.sh` + `utc_hello_compat_probe.py`.
+- **Unit** (`cargo test -p fd-pl --lib utc_`): 26/26 PASS — malformed/future/backward admission, historical replay outside live skew, Hello soft/hard, serde UTC round-trip. Distinct from process soak.
+- **Process** (beartec-brain art `/tmp/falcon-utc-rr-artifacts-20261106T075728Z`, head `fb50253`):
+  - Baseline 6-seat tip agreement past H_utc=2 with `utc_committed` (not counted as restart evidence alone).
+  - Same-seat SnapshotSave → kill → reload: tip/hash/`sealed_utc_ms` restored (catchup_ok); log `loading snapshot` then `snapshot saved … tip=N` (N≥H_utc).
+  - Hello: capable peer OK; old-empty/omit caps → Close (EOF + v1 log `utc-header-v5`); wrong network Close.
+  - Isolation: `127.0.0.1:29201-29206` only, network_id=2200.
+- Fixes on draft: force admin SnapshotSave before kill; v4 freeze debug_assert compares **sets** (order from sealed next-6) so debug restart does not panic.
 - Production H_utc / Hello enforce on 2300 remain `u64::MAX`.
+
+## P2 history API design (PR-only sketch — not implemented / not #618)
+
+Goal: durable fill + block time queries **after** honesty labels exist; **do not** treat `latest`/`limit=200` ring as archive.
+
+| Surface | Intent | Non-goal |
+|---------|--------|----------|
+| Fill ID | Stable id (height + index or hash) for cursor pagination | Equating RECENT_FILLS=200 with complete history |
+| Cursor | Opaque durable cursor over ordered fills | Breaking existing ring endpoints without versioning |
+| Block time | Return `sealed_at_ms` (physics) + optional `sealed_utc_*` when quality utc_committed | Inventing wall UTC from physics |
+| Archive capacity | Inspect before promising depth | Silent truncation disguised as full history |
+
+Implementation stays a **separate draft PR** after P0 honesty (#187 faucet) and unarmed #27 review. Crypto #618 candles remain blocked until live `utc_committed`.
