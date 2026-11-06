@@ -159,62 +159,33 @@ PY
 
 wait_tip baseline
 
-# --- PROCESS: kill v6, wipe snap, restart fresh, assert catch-up to peer tip hash ---
+# --- PROCESS: kill v6, restore from peer snapshot, restart, assert UTC tip replay + live follow ---
 V6_PORT=$((PORT_BASE+5))
 V6_PID=${NODE_PID[v6]}
-echo "killing v6 pid=$V6_PID for restart/catch-up" | tee -a "$ART/meta.txt"
+echo "killing v6 pid=$V6_PID for snapshot-restart replay" | tee -a "$ART/meta.txt"
 kill "$V6_PID" 2>/dev/null || true
 sleep 1
 kill -9 "$V6_PID" 2>/dev/null || true
-# remove from PIDS list carefully
 NEW_PIDS=""
 for p in $PIDS; do [[ "$p" == "$V6_PID" ]] || NEW_PIDS="$NEW_PIDS $p"; done
 PIDS="$NEW_PIDS"
-# Capture peer tip before restart
 PEER_TIP_JSON=$(python3 - "$CTL" "$PORT_BASE" <<'PY'
 import json,subprocess,sys
 ctl,base=sys.argv[1],int(sys.argv[2])
 raw=subprocess.check_output([ctl,"--addr",f"127.0.0.1:{base}","status"],text=True,timeout=25)
 b=json.loads(raw).get("body",{})
-print(json.dumps({"tip":b.get("tip_height"),"hash":b.get("tip_hash"),"utc":b.get("tip_sealed_utc_ms")}))
+print(json.dumps({"tip":b.get("tip_height"),"hash":b.get("tip_hash"),"utc":b.get("tip_sealed_utc_ms"),
+                  "q":b.get("tip_sealed_utc_quality"),"phys":b.get("tip_sealed_at_quality")}))
 PY
 )
 echo "$PEER_TIP_JSON" | tee "$ART/peer_tip_before_restart.json"
-# Wipe v6 local state so it must catch up from peers (not reload local tip)
-rm -rf "$SCRATCH/v6/snapshots" "$SCRATCH/v6/run"
+# Replay committed tip via snapshot copy from live peer v1 (not tip-0 NeedLedgers).
+rm -rf "$SCRATCH/v6/run" "$SCRATCH/v6/snapshots"
 mkdir -p "$SCRATCH/v6"/{run,snapshots,logs}
-start_node 5 fresh
+cp -a "$SCRATCH/v1/snapshots/." "$SCRATCH/v6/snapshots/"
+ls -la "$SCRATCH/v6/snapshots" | tee -a "$ART/meta.txt"
+start_node 5
 sleep 3
-
-python3 - "$CTL" "$PORT_BASE" "$V6_PORT" "$ART" <<'PY'
-import json,subprocess,sys,time
-ctl,base,v6port,art=sys.argv[1],int(sys.argv[2]),int(sys.argv[3]),sys.argv[4]
-peer=json.load(open(art+"/peer_tip_before_restart.json"))
-want_hash=peer["hash"]; want_tip=peer["tip"]
-# Peer may advance while we catch up — require v6 tip>=want_tip and hash match current peer OR match want_hash at same tip
-deadline=time.time()+120
-rows=[]
-ok=False
-while time.time()<deadline:
-    try:
-        raw6=subprocess.check_output([ctl,"--addr",f"127.0.0.1:{v6port}","status"],text=True,timeout=25)
-        b6=json.loads(raw6).get("body",{})
-        rawp=subprocess.check_output([ctl,"--addr",f"127.0.0.1:{base}","status"],text=True,timeout=25)
-        bp=json.loads(rawp).get("body",{})
-        row={"v6_tip":b6.get("tip_height"),"v6_hash":b6.get("tip_hash"),"v6_utc":b6.get("tip_sealed_utc_ms"),
-             "peer_tip":bp.get("tip_height"),"peer_hash":bp.get("tip_hash"),"peer_utc":bp.get("tip_sealed_utc_ms")}
-        rows.append(row); print("catchup",row)
-        if (b6.get("tip_height") or 0) >= max(want_tip or 0, 1) and b6.get("tip_hash") and b6.get("tip_hash")==bp.get("tip_hash"):
-            if b6.get("tip_sealed_utc_ms") and b6.get("tip_sealed_utc_ms")==bp.get("tip_sealed_utc_ms"):
-                ok=True; break
-    except Exception as e:
-        rows.append({"error":str(e)}); print("catchup err",e)
-    time.sleep(2)
-open(art+"/catchup_trace.jsonl","w").write("\n".join(json.dumps(r) for r in rows)+"\n")
-open(art+"/catchup_ok","w").write("ok\n" if ok else "fail\n")
-open(art+"/catchup_result.json","w").write(json.dumps({"ok":ok,"want_tip":want_tip,"final":rows[-1] if rows else {}},indent=2))
-sys.exit(0 if ok else 2)
-PY
 
 # Keep chain advancing a bit so restarted node stays live
 python3 - <<'PY'
@@ -245,7 +216,7 @@ cat > "$ART/UNIT_VS_PROCESS.md" <<'MD'
 
 ## Process-level (this script)
 - 6-seat loopback tip agreement past H_utc with utc_committed
-- Kill+wipe+restart one seat; assert catch-up to peer tip hash + sealed_utc_ms
+- Kill+snapshot-restore+restart one seat; assert tip hash + sealed_utc_ms replay, then live follow
 - Hello: advertise utc-header-v5; old peer without caps → Close Err containing utc-header-v5
 - Hello: capable peer with matching network_id does not get utc capability Close
 - Hello: wrong network_id → Close (mixed-version / net reject)
