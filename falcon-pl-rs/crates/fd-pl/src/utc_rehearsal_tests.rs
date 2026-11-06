@@ -396,3 +396,60 @@ fn rehearsal_malformed_and_skew_admission_matrix() {
 // utc_restart_compat_rehearsal.sh (kill/wipe/restart catch-up) plus
 // rehearsal_serde_restart_roundtrip_preserves_utc_commitment. A full
 // Network::seal loop here races v4 next-committee freeze under --test-threads>1.
+
+/// Tip-0 joiner catch-up via `ledgers_from` + `apply_catchup_batch` while peers
+/// still hold full bodies in the RAM window (no archive body store).
+/// Process-level NeedLedgers wire routing is covered separately; this asserts
+/// the body-availability precondition for that path.
+#[test]
+fn rehearsal_tip0_catchup_ledgers_from_ram_window_preserves_utc() {
+    // Private-net H_utc=2 (not the default rehearsal H_UTC=100) so a short
+    // tip stays inside max_body_ledgers and NeedLedgers can serve h=1..tip.
+    set_utc_from_height_override(NET, Some(2));
+    set_wall_unix_ms_override(Some(1_700_000_000_000));
+    let _clear = UtcOverrides;
+    let cfg = ChainConfig {
+        network_id: NET,
+        pack_budget_ms: 0,
+        max_txs_per_ledger: 8,
+        ..Default::default()
+    };
+    let mut net = Network::bootstrap(&["v1", "v2", "v3", "v4", "v5", "v6"], 1000, &users(), cfg);
+    for n in net.nodes.values_mut() {
+        n.qc_header_version = 4;
+        n.qc_start_height = 1;
+    }
+    net.pong_all();
+    for _ in 0..4 {
+        let _ = net.payment("alice", "bob", 1, 1);
+        net.seal_next_height().unwrap();
+    }
+    let tip = net.tip_height();
+    assert!(tip >= 2);
+    let donor = &net.nodes["v1"];
+    assert!(donor.chain.iter().all(|l| l.has_body()), "RAM window must retain bodies");
+    let batch = donor.ledgers_from(1, 64);
+    assert!(!batch.is_empty(), "ledgers_from(1) must serve contiguous bodies");
+    assert_eq!(batch[0].height, 1);
+    let last = batch.last().unwrap();
+    assert_eq!(last.height, tip);
+    assert!(last.sealed_utc_ms > 0);
+
+    // Fresh tip-0 joiner (same genesis keys/validators)
+    let keys = donor.keys.clone();
+    let mut joiner = Node::new("joiner".into(), donor.cfg.clone(), keys, &users());
+    for v in ["v1", "v2", "v3", "v4", "v5", "v6", "joiner"] {
+        joiner.register_validator(v, 1000);
+    }
+    joiner.qc_header_version = 4;
+    joiner.qc_start_height = 1;
+    joiner.ensure_faucet();
+    assert_eq!(joiner.tip_height, 0);
+    let new_tip = joiner.apply_catchup_batch(&batch).expect("tip0 catch-up");
+    assert_eq!(new_tip, tip);
+    assert_eq!(joiner.tip_hash, donor.tip_hash);
+    assert_eq!(
+        joiner.chain.last().unwrap().sealed_utc_ms,
+        donor.chain.last().unwrap().sealed_utc_ms
+    );
+}

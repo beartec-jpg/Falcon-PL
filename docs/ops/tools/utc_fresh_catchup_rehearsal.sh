@@ -43,6 +43,7 @@ export FPL_UTC_FROM_HEIGHT="$H_UTC"
 export FPL_UTC_HELLO_ENFORCE_FROM_HEIGHT="$H_UTC"
 export FPL_EMPTY_BLOCK_FROM_HEIGHT=1
 export ART PORT_BASE NET H_UTC CTL KEYS SCRATCH
+export RUST_LOG="${RUST_LOG:-falcon_pl_node=debug}"
 
 KEYS="$SCRATCH/keys"
 mkdir -p "$KEYS/lc"
@@ -90,6 +91,9 @@ start_node() {
   if [[ "${2:-}" == "archive" ]]; then
     extra+=(--archive)
   fi
+  if [[ "${2:-}" == "hub" || "${2:-}" == "archive" ]]; then
+    extra+=(--hub)
+  fi
   if [[ "${2:-}" == "fresh" || "${2:-}" == "fresh_join" ]]; then
     rm -f "$dat/snapshots/snap.json" "$dat/snapshots/snap.ring.json" 2>/dev/null || true
   fi
@@ -128,7 +132,8 @@ start_node() {
 }
 
 # --- Mode A mesh (non-archive) ---
-for i in $(seq 0 $((N_MESH-1))); do start_node "$i"; done
+start_node 0 hub
+for i in $(seq 1 $((N_MESH-1))); do start_node "$i"; done
 sleep 4
 
 python3 - <<'PY'
@@ -178,6 +183,32 @@ open(art+"/mode_a_assumption.json","w").write(json.dumps({
 },indent=2))
 print("MESH_OK tip",min(tips))
 PY
+
+# Prove peer RAM window still has full bodies at h=1 (honest precondition)
+python3 - "$SCRATCH/v1/snapshots/snap.json" "$ART" <<'PY'
+import json,sys,os,time,subprocess
+path,art=sys.argv[1],sys.argv[2]
+ctl=os.environ["CTL"]
+admin=os.path.join(os.environ["SCRATCH"],"v1/run/admin.sock")
+subprocess.check_output([ctl,"--admin-sock",admin,"snapshot-save","--path",path],text=True,timeout=30)
+time.sleep(0.5)
+d=json.load(open(path))
+chain=d.get("chain") or []
+info={"tip":d.get("tip_height"),"chain_len":len(chain),"heights":[]}
+for led in chain:
+    txs=led.get("txs")
+    ids=led.get("tx_ids") or []
+    n_txs=len(txs) if isinstance(txs,list) else None
+    info["heights"].append({"h":led.get("height"),"tx_ids":len(ids),"txs":n_txs,"has_body": n_txs==len(ids) if n_txs is not None else False, "utc": led.get("sealed_utc_ms")})
+open(art+"/peer_body_inventory.json","w").write(json.dumps(info,indent=2))
+print("body_inventory",info)
+missing=[x for x in info["heights"] if not x["has_body"]]
+if missing:
+    open(art+"/BODY_HOLE.json","w").write(json.dumps(missing,indent=2))
+    raise SystemExit(f"peer missing bodies (cannot claim NeedLedgers will work): {missing}")
+assert info["tip"]>=2
+PY
+
 
 # Capture mesh tip before launching fresh joiner
 MESH_TIP_JSON=$(python3 - "$CTL" "$PORT_BASE" <<'PY'
