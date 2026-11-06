@@ -4253,7 +4253,7 @@ async fn peer_session(
                 let session_peer = peer_id.lock().clone();
                 // Keep legacy tag for any residual readers; session_peer is authoritative.
                 *shared_r.wire_from.lock() = session_peer.clone();
-                let budget = fd_pl::snap_push_budget(catchup_tx.capacity(), SNAPSHOT_PUSH_MAX);
+                let budget = fd_pl::snap_push_budget(catchup_tx.capacity(), snapshot_push_max());
                 for reply in dispatch_wire(
                     &shared_r,
                     msg,
@@ -4885,7 +4885,7 @@ async fn handle_inbound(
         let was_hello = matches!(msg, WireMsg::Hello { .. });
         // Session peer is Hello-validated `seen_id` only (immutable for this call).
         let session_peer = seen_id.as_str();
-        let budget = fd_pl::snap_push_budget(catch_reply_tx.capacity(), SNAPSHOT_PUSH_MAX);
+        let budget = fd_pl::snap_push_budget(catch_reply_tx.capacity(), snapshot_push_max());
         let replies = dispatch_wire(
             &shared,
             msg,
@@ -5098,6 +5098,35 @@ fn refresh_archive_serve_snapshot(shared: &Shared) {
     }
 }
 
+/// Max chunks bulk-pushed after an Offer. Default [`SNAPSHOT_PUSH_MAX`].
+/// `FALCON_PL_SNAPSHOT_PUSH_MAX` clamps to 0..=default for isolated
+/// rehearsals that force the joiner hole-fill (NeedSnapshotChunk) path.
+fn snapshot_push_max() -> u32 {
+    match std::env::var("FALCON_PL_SNAPSHOT_PUSH_MAX") {
+        Ok(s) => s
+            .parse::<u32>()
+            .ok()
+            .map(|n| n.min(SNAPSHOT_PUSH_MAX))
+            .unwrap_or(SNAPSHOT_PUSH_MAX),
+        Err(_) => SNAPSHOT_PUSH_MAX,
+    }
+}
+
+/// Join-snap chunk size. Default [`fd_pl::Node::SNAPSHOT_CHUNK_BYTES`].
+/// `FALCON_PL_SNAPSHOT_CHUNK_BYTES` clamps to 16 KiB..=default for isolated
+/// multi-chunk rehearsals without growing wallets enough to stall tip-0.
+fn snapshot_chunk_bytes() -> usize {
+    const DEFAULT: usize = fd_pl::Node::SNAPSHOT_CHUNK_BYTES;
+    match std::env::var("FALCON_PL_SNAPSHOT_CHUNK_BYTES") {
+        Ok(s) => s
+            .parse::<usize>()
+            .ok()
+            .map(|n| n.clamp(16 * 1024, DEFAULT))
+            .unwrap_or(DEFAULT),
+        Err(_) => DEFAULT,
+    }
+}
+
 fn serve_snap_chunk(shared: &Shared, sha256: &str, index: u32) -> Result<WireMsg, String> {
     // v2.9.67: any seat with hashed serve files (archive or hub) serves an
     // offered sha by hash until retention drops it, so a pin rotation no
@@ -5167,7 +5196,7 @@ fn serve_snap_chunk(shared: &Shared, sha256: &str, index: u32) -> Result<WireMsg
     if !sha_ok {
         return Err("snap hash changed".into());
     }
-    let chunk_sz = fd_pl::Node::SNAPSHOT_CHUNK_BYTES;
+    let chunk_sz = snapshot_chunk_bytes();
     let total = (nbytes as usize).div_ceil(chunk_sz).max(1) as u32;
     let start = index as u64 * chunk_sz as u64;
     if start > nbytes {
@@ -5240,7 +5269,7 @@ fn dispatch_wire(
         out.push(r);
         if let Some((sha, n)) = extra {
             // Cap by SNAPSHOT_PUSH_MAX and caller credit (lane free slots).
-            let n_push = n.min(SNAPSHOT_PUSH_MAX).min(push_budget);
+            let n_push = n.min(snapshot_push_max()).min(push_budget);
             for i in 0..n_push {
                 match serve_snap_chunk(shared, &sha, i) {
                     Ok(c) => out.push(c),
@@ -5727,7 +5756,7 @@ fn process_msg(
                     reason: "no snapshot file yet".into(),
                 });
             };
-            let chunk = fd_pl::Node::SNAPSHOT_CHUNK_BYTES as u32;
+            let chunk = snapshot_chunk_bytes() as u32;
             let chunks = meta.bytes.div_ceil(chunk as u64).max(1) as u32;
             info!(
                 "snapshot serving tip={} bytes={} chunks={chunks} to={}",
