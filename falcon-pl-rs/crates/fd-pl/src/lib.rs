@@ -229,7 +229,7 @@
 //!   3 < 4, the cert-less round-0 proposer looped "no tip cert", and the
 //!   cert-less seats (by design) do not vote view-change: 3 VC voters < 4.
 //!   Cert holders now answer a peer's recert vote for their tip with their
-//!   own recert vote ([`Node::recert_assist`], re-sent every 3 s at most).
+//!   own recert vote ([`Node::recert_assist`], unicast once per asking seat per height).
 //! - **v2.9.58 "lean node":** local only — the state root, wire format, vote
 //!   payloads and certs are byte-identical; no activation height.
 //!   (a) The commitment root no longer re-encodes and re-hashes the ~199 MB
