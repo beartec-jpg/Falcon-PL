@@ -4101,6 +4101,7 @@ async fn peer_session(
                 .map(|m| m.tip)
                 .unwrap_or(0),
             release_version: PRODUCT_VERSION.to_string(),
+            capabilities: fd_pl::utc_header::local_hello_capabilities(),
         };
         serde_json::to_string(&hello)? + "\n"
     };
@@ -4570,6 +4571,7 @@ async fn handle_inbound(
                 .map(|m| m.tip)
                 .unwrap_or(0),
             release_version: PRODUCT_VERSION.to_string(),
+            capabilities: fd_pl::utc_header::local_hello_capabilities(),
         };
         serde_json::to_string(&hello)? + "\n"
     };
@@ -5235,6 +5237,7 @@ fn process_msg(
             archive,
             snap_height,
             release_version,
+            capabilities: _, // gated earlier via HelloSession::check
         } => {
             // Live bond-in: Hello only advertises keys (+ tip). Bonded seats come
             // from genesis register or Bond ledger txs — never free-register from wire.
@@ -7393,6 +7396,7 @@ mod inbound_ack_tests {
             archive: false,
             snap_height: 0,
             release_version: String::new(),
+            capabilities: Vec::new(),
         };
         cw.write_all((serde_json::to_string(&hello).unwrap() + "\n").as_bytes()).await.unwrap();
 
@@ -7462,6 +7466,7 @@ mod inbound_ack_tests {
             archive: false,
             snap_height: 0,
             release_version: String::new(),
+            capabilities: Vec::new(),
         };
         let mut gate = HelloSession::default();
         let verdict = gate.check(&shared.node.lock(), &bad_hello);

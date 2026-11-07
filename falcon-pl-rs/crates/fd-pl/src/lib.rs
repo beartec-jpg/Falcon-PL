@@ -347,6 +347,7 @@ pub mod frost_vault;
 pub mod lc;
 pub mod falcon_qc;
 pub mod qc_header;
+pub mod utc_header;
 pub mod health;
 pub mod health_web;
 pub mod metrics;
@@ -365,9 +366,9 @@ use body_store::BodyStore;
 use bridge::{BridgeProof, BridgeState, RailHeader};
 use crypto::{sha256_hex, CryptoScheme, KeyRing};
 use qc_header::{
-    committee_leaf_hexes_for_ids, committee_root_for_ids, header_msg_v4, inner_hash_hex,
-    outer_hash_hex, parse32,
+    committee_leaf_hexes_for_ids, committee_root_for_ids, inner_hash_hex, outer_hash_hex, parse32,
 };
+use utc_header::{header_domain, packer_msg_for_domain, HeaderDomain};
 use defi::{AmmPool, DefiState, LendingMarket, NATIVE as DEFI_NATIVE};
 use economy::{
     epoch_claimable, epoch_claimable_from, epoch_index, fee_burn_and_reward,
@@ -519,11 +520,13 @@ impl HelloSession {
                 product_version,
                 hello_network_id,
                 release_version,
+                capabilities,
                 ..
             } => match node
                 .hello_reject_reason(*hello_network_id, product_version)
                 .map(str::to_string)
                 .or_else(|| node.hello_release_reject(release_version))
+                .or_else(|| node.hello_utc_capability_reject(capabilities))
             {
                 Some(reason) => {
                     self.accepted_version = None;
@@ -553,6 +556,7 @@ pub const HELLO_ERR_NETWORK_ID: &str = "network_id mismatch";
 pub const PEER_RELEASE_NONE: &str = "none (pre-2.10.3)";
 
 pub const HELLO_ERR_RELEASE_TOO_OLD: &str = "release_version too old";
+pub const HELLO_ERR_UTC_CAPABILITY: &str = "utc-header-v5 capability required";
 
 /// Lowest release a peer may advertise after
 /// [`crate::params_v2::hello_min_release_from_height`]. **TBD**: bump to the
@@ -2055,6 +2059,12 @@ pub struct Ledger {
     pub txs: Vec<Tx>,
     pub state_root_after: String,
     pub sealed_at_ms: u64,
+    /// Proposer wall-clock Unix ms; bound into header v5 when UTC activation is
+    /// armed. **Unarmed by default** (`utc_header::UTC_FROM_HEIGHT_DISABLED`):
+    /// stays 0 and is omitted from the signed preimage so main stays compatible.
+    /// Independent of `sealed_at_ms` (chain physics / reward clock).
+    #[serde(default, skip_serializing_if = "is_zero_u64")]
+    pub sealed_utc_ms: u64,
     pub packer_sig: String,
     pub ledger_hash: String,
     /// Seats skip-QC'd (or claimed skipped) before this packer in the shared
@@ -2131,6 +2141,9 @@ pub struct LedgerHeader {
     pub tx_ids: Vec<String>,
     pub state_root_after: String,
     pub sealed_at_ms: u64,
+    /// See [`Ledger::sealed_utc_ms`]. Zero / omitted while UTC activation is unarmed.
+    #[serde(default, skip_serializing_if = "is_zero_u64")]
+    pub sealed_utc_ms: u64,
     pub packer_sig: String,
     pub ledger_hash: String,
     #[serde(default)]
@@ -2339,6 +2352,7 @@ impl Ledger {
             txs,
             state_root_after,
             sealed_at_ms,
+            sealed_utc_ms: 0,
             packer_sig,
             ledger_hash,
             skipped_predecessors,
@@ -2361,7 +2375,11 @@ impl Ledger {
         !self.inner_hash.is_empty()
     }
 
-    /// Two-stage v4 seal. `current_committee` is the unfiltered freeze for this height.
+    /// Two-stage v4/v5 seal. `current_committee` is the unfiltered freeze for this height.
+    ///
+    /// When UTC activation is unarmed (default), `sealed_utc_ms` is forced to 0 and the
+    /// signed preimage stays `pl-ledger:v4|…` — identical to pre-UTC binaries.
+    /// When armed at `H_utc`, pass the proposer Unix-ms stamp; the preimage becomes v5.
     pub fn seal_v4(
         height: u64,
         parent_hash: String,
@@ -2371,6 +2389,7 @@ impl Ledger {
         txs: Vec<Tx>,
         state_root_after: String,
         sealed_at_ms: u64,
+        sealed_utc_ms: u64,
         skipped_predecessors: Vec<String>,
         parent_cert: Option<LedgerCert>,
         claim_root_hex: String,
@@ -2383,7 +2402,19 @@ impl Ledger {
         let fee_total: u64 = txs.iter().map(|t| t.fee).sum();
         let tx_root = Self::tx_root(&tx_ids);
         let cert_tag = Self::parent_cert_tag(parent_cert.as_ref());
-        let msg = header_msg_v4(
+        let from = utc_header::network_utc_from_height(network_id);
+        let domain = header_domain(height, from);
+        let sealed_utc_ms = match domain {
+            HeaderDomain::LegacyV4 => 0,
+            HeaderDomain::V5 => {
+                if sealed_utc_ms == 0 {
+                    return Err("seal_v4: sealed_utc_ms required when UTC header active".into());
+                }
+                sealed_utc_ms
+            }
+        };
+        let msg = packer_msg_for_domain(
+            domain,
             height,
             &parent_hash,
             network_id,
@@ -2394,6 +2425,7 @@ impl Ledger {
             &cert_tag,
             &claim_root_hex,
             &current_committee_root,
+            sealed_utc_ms,
         );
         let packer_public_key = keys
             .public_hex(packer)
@@ -2414,6 +2446,7 @@ impl Ledger {
             txs,
             state_root_after,
             sealed_at_ms,
+            sealed_utc_ms,
             packer_sig,
             ledger_hash,
             skipped_predecessors,
@@ -2604,7 +2637,10 @@ impl Ledger {
     pub fn seed_v2(&self) -> String {
         let tx_root = Self::tx_root(&self.tx_ids);
         let cert_tag = Self::parent_cert_tag(self.parent_cert.as_ref());
-        let msg_v4 = header_msg_v4(
+        let from = utc_header::network_utc_from_height(self.network_id);
+        let domain = header_domain(self.height, from);
+        let msg = packer_msg_for_domain(
+            domain,
             self.height,
             &self.parent_hash,
             self.network_id,
@@ -2615,8 +2651,9 @@ impl Ledger {
             &cert_tag,
             &self.claim_root,
             &self.current_committee_root,
+            self.sealed_utc_ms,
         );
-        seed_v2_hex(&self.parent_hash, self.height, &msg_v4)
+        seed_v2_hex(&self.parent_hash, self.height, &msg)
     }
 
     pub fn verify_packer(&self, keys: &KeyRing) -> bool {
@@ -2628,7 +2665,17 @@ impl Ledger {
         let tx_root = Self::tx_root(&self.tx_ids);
         let cert_tag = Self::parent_cert_tag(self.parent_cert.as_ref());
         if self.is_v4() {
-            let msg_v4 = header_msg_v4(
+            let from = utc_header::network_utc_from_height(self.network_id);
+            let domain = header_domain(self.height, from);
+            // Inactive heights must not carry a non-zero UTC stamp (unbound field).
+            if domain == HeaderDomain::LegacyV4 && self.sealed_utc_ms != 0 {
+                return false;
+            }
+            if domain == HeaderDomain::V5 && self.sealed_utc_ms == 0 {
+                return false;
+            }
+            let msg = packer_msg_for_domain(
+                domain,
                 self.height,
                 &self.parent_hash,
                 self.network_id,
@@ -2639,8 +2686,9 @@ impl Ledger {
                 &cert_tag,
                 &self.claim_root,
                 &self.current_committee_root,
+                self.sealed_utc_ms,
             );
-            if inner_hash_hex(&msg_v4, &self.packer_sig) != self.inner_hash {
+            if inner_hash_hex(&msg, &self.packer_sig) != self.inner_hash {
                 return false;
             }
             let Ok(inner) = parse32(&self.inner_hash) else {
@@ -2655,7 +2703,7 @@ impl Ledger {
             if outer_hash_hex(&inner, &next_root, &claim) != self.ledger_hash {
                 return false;
             }
-            return vf(&self.packer, &self.packer_public_key, &msg_v4, &self.packer_sig);
+            return vf(&self.packer, &self.packer_public_key, &msg, &self.packer_sig);
         }
         let msg_v3 = Self::header_msg_v3(
             self.height,
@@ -2716,6 +2764,7 @@ impl Ledger {
             tx_ids: self.tx_ids.clone(),
             state_root_after: self.state_root_after.clone(),
             sealed_at_ms: self.sealed_at_ms,
+            sealed_utc_ms: self.sealed_utc_ms,
             packer_sig: self.packer_sig.clone(),
             ledger_hash: self.ledger_hash.clone(),
             skipped_predecessors: self.skipped_predecessors.clone(),
@@ -2778,6 +2827,7 @@ impl LedgerHeader {
             txs: Vec::new(),
             state_root_after: self.state_root_after.clone(),
             sealed_at_ms: self.sealed_at_ms,
+            sealed_utc_ms: self.sealed_utc_ms,
             packer_sig: self.packer_sig.clone(),
             ledger_hash: self.ledger_hash.clone(),
             skipped_predecessors: self.skipped_predecessors.clone(),
@@ -3643,6 +3693,12 @@ pub struct Node {
     pub orderbook_from_height: u64,
     /// v2.10.3 (TBD): [`crate::params_v2::hello_min_release_from_height`]; runtime only.
     pub hello_min_release_from_height: u64,
+    /// UTC Hello capability hard-enforce from this tip height (`u64::MAX` = never).
+    /// Default never — advertising `utc-header-v5` does not close old peers.
+    pub utc_hello_enforce_from_height: u64,
+    /// Injectable UTC pack / live-admission clock (default `System`). Tests and
+    /// isolated rehearsals may set `Frozen`/`Offset`; runtime only, not persisted.
+    pub utc_pack_clock: utc_header::UtcPackClock,
     /// v2.10.3: last Hello `release_version` per peer id ("" = pre-2.10.3)
     /// and when it was seen (`now_ms`). Observability only; runtime only.
     pub peer_releases: BTreeMap<String, (String, u64)>,
@@ -3770,6 +3826,7 @@ impl Node {
         let btc4_lend_scale_from_height = crate::params_v2::btc4_lend_scale_from_height(cfg.network_id);
         let orderbook_from_height = crate::params_v2::orderbook_from_height(cfg.network_id);
         let hello_min_release_from_height = crate::params_v2::hello_min_release_from_height(cfg.network_id);
+        let network_id_for_utc_hello = cfg.network_id;
         let rewards_v2_from_height = params_v2::network_rewards_v2_from_height(cfg.network_id);
         let rewards_v2_epoch = params_v2::network_rewards_v2_epoch(cfg.network_id);
         let presence_from_height = params_v2::network_presence_from_height(cfg.network_id);
@@ -3907,6 +3964,8 @@ impl Node {
             btc4_lend_scale_from_height,
             orderbook_from_height,
             hello_min_release_from_height,
+            utc_hello_enforce_from_height: utc_header::network_utc_hello_enforce_from_height(network_id_for_utc_hello),
+            utc_pack_clock: utc_header::UtcPackClock::System,
             peer_releases: BTreeMap::new(),
             rewards_v2_from_height,
             rewards_v2_epoch,
@@ -4818,6 +4877,54 @@ impl Node {
         }
         hello_release_reject_detail(release_version, HELLO_MIN_RELEASE)
             .map(|d| format!("{d} (local tip {})", self.tip_height))
+    }
+
+    /// Soft gap: peer missing `utc-header-v5` while local tip is past H_utc.
+    /// Always computable; does not close the session.
+    pub fn utc_peer_capability_gap(&self, peer_capabilities: &[String]) -> Option<String> {
+        let from = utc_header::network_utc_from_height(self.cfg.network_id);
+        utc_header::utc_peer_capability_gap(self.tip_height, from, peer_capabilities)
+    }
+
+    /// Hard Hello close when `utc_hello_enforce_from_height` is armed and tip
+    /// has reached it. Default `u64::MAX` ⇒ never. Independent of H_utc bake.
+    ///
+    /// With enforce armed, the PROPOSED min-release safety window
+    /// ([`utc_header::PROPOSED_UTC_HELLO_LEAD_BLOCKS`]) closes old peers from
+    /// `H_utc - lead` so they cannot Pack/OK across activation. Closing the
+    /// session is how Pack/OK from such a peer is refused (no session ⇒ no
+    /// Pack/OK frames). 2300: enforce is always `u64::MAX` ⇒ inert.
+    pub fn hello_utc_capability_reject(&self, peer_capabilities: &[String]) -> Option<String> {
+        let close_from = self.utc_hello_hard_close_from();
+        if self.tip_height < close_from {
+            return None;
+        }
+        if utc_header::peer_has_utc_header_v5(peer_capabilities) {
+            return None;
+        }
+        Some(format!(
+            "{HELLO_ERR_UTC_CAPABILITY}: peer Hello lacks {}; local tip {} >= close_from {} (enforce_from {}, lead {})",
+            utc_header::CAP_UTC_HEADER_V5,
+            self.tip_height,
+            close_from,
+            self.utc_hello_enforce_from_height,
+            utc_header::PROPOSED_UTC_HELLO_LEAD_BLOCKS
+        ))
+    }
+
+    /// Effective hard-close height (enforce armed ⇒ min(enforce, H_utc - lead)).
+    pub fn utc_hello_hard_close_from(&self) -> u64 {
+        utc_header::utc_hello_hard_close_from(
+            self.utc_hello_enforce_from_height,
+            utc_header::network_utc_from_height(self.cfg.network_id),
+            utc_header::PROPOSED_UTC_HELLO_LEAD_BLOCKS,
+        )
+    }
+
+    /// True when Pack/OK from a peer with these Hello capabilities must be
+    /// refused (same predicate as the Hello hard close).
+    pub fn utc_refuse_peer_pack_ok(&self, peer_capabilities: &[String]) -> bool {
+        self.hello_utc_capability_reject(peer_capabilities).is_some()
     }
 
     /// v2.9.60 rolling exec-header cut, and the v2.9.61 one-off V1 cutoff,
@@ -5798,6 +5905,46 @@ impl Node {
             ));
         }
         Ok(())
+    }
+
+    fn parent_sealed_utc(&self) -> u64 {
+        self.chain
+            .last()
+            .map(|l| l.sealed_utc_ms)
+            .unwrap_or(0)
+    }
+
+    /// Deterministic UTC field checks (safe for catch-up / replay / archive).
+    /// Does not consult wall clock. No-op while activation is unarmed.
+    fn check_sealed_utc_historical(&self, ledger: &Ledger) -> Result<(), String> {
+        let from = utc_header::network_utc_from_height(self.cfg.network_id);
+        let bounds = utc_header::UtcSkewBounds::resolve(self.cfg.network_id);
+        utc_header::check_utc_historical(
+            ledger.height,
+            from,
+            ledger.sealed_utc_ms,
+            self.parent_sealed_utc(),
+            &bounds,
+        )
+        .map_err(|e| e.to_string())
+    }
+
+    /// Live admission UTC checks: historical rules + PROPOSED skew vs local wall.
+    /// Call only on live staging / OK paths — never on pure historical apply.
+    /// Uses the Node's `utc_pack_clock` (System = OS wall; not chain `now_ms`) so synthetic
+    /// physics clocks cannot masquerade as UTC skew reference.
+    fn check_sealed_utc_live(&self, ledger: &Ledger) -> Result<(), String> {
+        let from = utc_header::network_utc_from_height(self.cfg.network_id);
+        let bounds = utc_header::UtcSkewBounds::resolve(self.cfg.network_id);
+        utc_header::check_utc_live_admission(
+            ledger.height,
+            from,
+            ledger.sealed_utc_ms,
+            self.parent_sealed_utc(),
+            self.utc_pack_clock.now_unix_ms(),
+            &bounds,
+        )
+        .map_err(|e| e.to_string())
     }
 
     /// After snap load: timeout clock at least at the tip's stamp.
@@ -8486,9 +8633,12 @@ impl Node {
         self.schedule_committee = self.draw_committee();
         if let Some(l) = self.chain.last() {
             if l.is_v4() && !l.next_committee.is_empty() {
+                // Membership must match; sealed next-6 order is authoritative
+                // (draw_committee Vec order can differ after snapshot load).
                 debug_assert_eq!(
-                    self.schedule_committee, l.next_committee,
-                    "v4 freeze must equal sealed next-6"
+                    self.schedule_committee.iter().collect::<BTreeSet<_>>(),
+                    l.next_committee.iter().collect::<BTreeSet<_>>(),
+                    "v4 freeze must equal sealed next-6 (as sets)"
                 );
                 self.schedule_committee = l.next_committee.clone();
             }
@@ -12867,6 +13017,15 @@ impl Node {
                 &draft.vals,
             )?
         } else {
+            // UTC header binds only on the v4/v5 pack path. Refuse non-v4 pack
+            // once FPL_UTC_FROM_HEIGHT (or override) is armed for this net —
+            // packing with sealed_utc_ms=0 would fail live admission anyway.
+            let utc_from = utc_header::network_utc_from_height(self.cfg.network_id);
+            if utc_header::utc_active(height, utc_from) {
+                return Err(format!(
+                    "UTC active at h={height} (from={utc_from}) but qc_v4 not armed — refuse non-v4 pack"
+                ));
+            }
             Ledger::seal_with_skips(
                 height,
                 self.tip_hash.clone(),
@@ -12926,7 +13085,22 @@ impl Node {
         let fee_total: u64 = txs.iter().map(|t| t.fee).sum();
         let tx_root = Ledger::tx_root(&tx_ids);
         let cert_tag = Ledger::parent_cert_tag(parent_cert.as_ref());
-        let msg = header_msg_v4(
+        let from = utc_header::network_utc_from_height(self.cfg.network_id);
+        let domain = header_domain(height, from);
+        // Unarmed (default): sealed_utc_ms=0, v4 preimage unchanged.
+        // Armed: stamp the Node's injectable pack clock (System = OS wall).
+        let sealed_utc_ms = match domain {
+            HeaderDomain::LegacyV4 => 0,
+            HeaderDomain::V5 => {
+                let w = self.utc_pack_clock.now_unix_ms();
+                if w == 0 {
+                    return Err("seal_v4_ledger: wall_unix_ms unavailable while UTC active".into());
+                }
+                w
+            }
+        };
+        let msg = packer_msg_for_domain(
+            domain,
             height,
             &self.tip_hash,
             self.cfg.network_id,
@@ -12937,6 +13111,7 @@ impl Node {
             &cert_tag,
             &claim_root_hex,
             &current_committee_root,
+            sealed_utc_ms,
         );
         let packer_public_key = self
             .keys
@@ -12972,6 +13147,7 @@ impl Node {
             txs,
             state_root_after,
             sealed_at_ms,
+            sealed_utc_ms,
             packer_sig,
             ledger_hash,
             skipped_predecessors,
@@ -13849,6 +14025,8 @@ impl Node {
     /// [`Self::verify_ledger_state_root`] and [`Self::prestage_root_input`].
     fn stage_drafts(&mut self, ledger: &Ledger) -> Result<(RootInput, u64, u64), String> {
         self.check_sealed_at(ledger)?;
+        // Live staging: UTC skew vs OS wall (no-op while H_utc unarmed).
+        self.check_sealed_utc_live(ledger)?;
         // Same physics as pack: settle → slash → unbonds at sealed_at, then txs.
         let ckpt = TimeFold::take(self);
         let _seized = self.apply_time_effects_with_slashes(
@@ -14171,6 +14349,9 @@ impl Node {
         ledger: &Ledger,
         catchup: bool,
     ) -> Result<AcceptResult, String> {
+        // Deterministic UTC field rules only — never re-apply live wall skew on
+        // commit/catch-up (replay must accept historical stamps).
+        self.check_sealed_utc_historical(ledger)?;
         // One apply path: time effects from the ledger stamp, then txs.
         // Local now_ms is not an input to the root. Catch-up of old ledgers
         // must match even if this node has been ticking for hours.
@@ -15137,6 +15318,33 @@ impl Node {
                 }),
             );
             m.insert("min_bond_new".into(), serde_json::json!(crate::params_v2::MIN_BOND_V2));
+            // Tip time metadata outside json! (recursion limit). chain_physics ≠ Unix.
+            m.insert(
+                "tip_sealed_at_ms".into(),
+                serde_json::json!(self.chain.last().map(|l| l.sealed_at_ms)),
+            );
+            m.insert("tip_sealed_at_quality".into(), serde_json::json!("chain_physics"));
+            let tip_utc = self.chain.last().map(|l| l.sealed_utc_ms).filter(|&u| u > 0);
+            m.insert("tip_sealed_utc_ms".into(), serde_json::json!(tip_utc));
+            m.insert(
+                "tip_sealed_utc_quality".into(),
+                serde_json::json!(if tip_utc.is_some() {
+                    "utc_committed"
+                } else {
+                    "unavailable"
+                }),
+            );
+            m.insert(
+                "utc_from_height".into(),
+                serde_json::json!(utc_header::network_utc_from_height(self.cfg.network_id)),
+            );
+            m.insert(
+                "utc_active_next".into(),
+                serde_json::json!(utc_header::utc_active_on(
+                    self.cfg.network_id,
+                    self.tip_height.saturating_add(1),
+                )),
+            );
             m.insert(
                 "seat_key_registry_ids".into(),
                 serde_json::json!(self.seat_key_registry.keys().collect::<Vec<_>>()),
@@ -15580,6 +15788,11 @@ pub enum WireMsg {
         /// apart. Omitted when empty (older peers ignore unknown fields).
         #[serde(default, skip_serializing_if = "String::is_empty")]
         release_version: String,
+        /// Additive capability tokens (e.g. `utc-header-v5`). Empty/omitted on
+        /// older peers. Advertising is safe while UTC activation stays unarmed;
+        /// session close on missing capability is gated separately (default off).
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        capabilities: Vec<String>,
     },
     /// Liveness + tip advertisement (gossiped). Does not alter lottery election.
     Pong {
@@ -16052,6 +16265,8 @@ mod eth_v3_fork_dry_run_tests;
 mod hello_gate_tests;
 #[cfg(test)]
 mod hello_release_tests;
+#[cfg(test)]
+mod utc_rehearsal_tests;
 #[cfg(test)]
 mod health_tests;
 
@@ -20357,6 +20572,7 @@ mod tests {
             txs: vec![],
             state_root_after: String::new(),
             sealed_at_ms: 1,
+            sealed_utc_ms: 0,
             packer_sig: String::new(),
             ledger_hash: "abc".into(),
             skipped_predecessors: vec![],

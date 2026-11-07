@@ -54,6 +54,7 @@ fn hello(release: &str) -> WireMsg {
         archive: false,
         snap_height: 0,
         release_version: release.into(),
+        capabilities: Vec::new(),
     }
 }
 
