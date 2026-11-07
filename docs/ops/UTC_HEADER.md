@@ -1,7 +1,7 @@
 # UTC signed header (v5) — design notes & unfinished gates
 
-**Status:** implementation started; **activation disabled** (`TESTNET_2300_UTC_FROM_HEIGHT = u64::MAX`).
-**Not production-ready.** Do not merge as “UTC live”. Do not set a near-term `H_utc` from this document alone.
+**Status:** implementation started; **activation disabled** (`TESTNET_2300_UTC_FROM_HEIGHT = u64::MAX`, `TESTNET_2300_UTC_HELLO_ENFORCE_FROM_HEIGHT = u64::MAX`).
+**Not production-ready.** Do not merge as “UTC live”. Do not bake a near-term `H_utc` until every seat is on a UTC-capable binary.
 
 ## What this change does
 
@@ -20,10 +20,12 @@
 | Knob | Live 2300 | Devnet / tests |
 |------|-----------|----------------|
 | `TESTNET_2300_UTC_FROM_HEIGHT` | `u64::MAX` (disabled) | n/a |
+| `TESTNET_2300_UTC_HELLO_ENFORCE_FROM_HEIGHT` | `u64::MAX` (disabled) | n/a |
 | `FPL_UTC_FROM_HEIGHT` | **ignored** on 2300 | honoured on other network ids |
 | `FPL_UTC_MAX_AHEAD_MS` / `FPL_UTC_MAX_BEHIND_MS` | ignored on 2300 | optional overrides |
+| `FPL_UTC_HELLO_ENFORCE_FROM_HEIGHT` | **ignored** on 2300 | honoured on other network ids |
 
-Arming requires a **separate** commit + preactivation signoff after seat readiness, Hello gate, and soak — not this PR.
+Arming requires a **separate** commit after every 2300 seat advertises `utc-header-v5` — not this PR. Baking today’s tip would make UTC activate immediately if that height has already passed by deploy time.
 
 ## Skew / bootstrap
 
@@ -36,7 +38,7 @@ Arming requires a **separate** commit + preactivation signoff after seat readine
 | Historical replay | no wall skew | Deterministic catch-up / archive restore |
 | Stalled chain | no auto-widen on 2300 | Widening needs coordinated signoff; replay still works |
 
-**Flagged for preactivation signoff:** peer Hello min-release window (1_000 blocks), whether monotonicity allows equal timestamps, monitoring alerts for tip UTC freshness.
+**Still open (not signed off):** whether monotonicity allows equal timestamps; monitoring alerts for tip UTC freshness.
 
 ## Test coverage in this PR (`utc_header` unit tests)
 
@@ -51,21 +53,27 @@ Arming requires a **separate** commit + preactivation signoff after seat readine
 
 Consensus gates (t568u pass):
 
-1. ~~**Hello / min-release peer gate**~~ — **DONE (code, unarmed).** `utc_header::utc_hello_hard_close_from` + `Node::hello_utc_capability_reject`: when Hello enforce is armed, peers lacking `utc-header-v5` are hard-closed from `min(enforce_from, H_utc − PROPOSED_UTC_HELLO_LEAD_BLOCKS)`. Closing the session is how Pack/OK from such peers is refused (`Node::utc_refuse_peer_pack_ok`, same predicate). `PROPOSED_UTC_HELLO_LEAD_BLOCKS = 1_000` is **PROPOSED, not production-signed**. Enforce unarmed (default; always on 2300) ⇒ advertise / soft-gap only, never hard close.
+1. ~~**Hello / min-release peer gate**~~ — **DONE (code, unarmed).** `utc_header::utc_hello_hard_close_from` + `Node::hello_utc_capability_reject`: when Hello enforce is armed, peers lacking `utc-header-v5` are hard-closed from `min(enforce_from, H_utc − PROPOSED_UTC_HELLO_LEAD_BLOCKS)`. Closing the session is how Pack/OK from such peers is refused (`Node::utc_refuse_peer_pack_ok`, same predicate). `PROPOSED_UTC_HELLO_LEAD_BLOCKS = 1_000` is **signed off 2026-11-07**. Enforce unarmed (default; baked 2300 constant is `u64::MAX`) ⇒ advertise / soft-gap only, never hard close.
 2. ~~**Injectable pack wall clock**~~ — **DONE.** `Node.utc_pack_clock: UtcPackClock { System | Frozen(ms) | Offset(ms) }` drives both `seal_v4_ledger` V5 stamping and live admission (`check_sealed_utc_live`). Production constructors (`Node::new`, snapshot load) use `System`. Tests inject per-Node clocks with no process-global state.
 3. ~~**QC attestation wording**~~ — **DONE (docs).** See “QC / slash coverage” below. No new slashing rule.
 4. **Devnet fork rehearsal** — **script DONE, process evidence: see milestone t568u.** `docs/ops/tools/utc_fork_rehearsal.sh` (2200 loopback, old binary from `OLD_REF`).
 5. **Gossip / snapshot / disk round-trip soak** under armed devnet — restart evidence exists (t286u); long soak not done.
 
-Policy items (still explicit, NOT decided by code):
+Policy items:
 
-6. **`H_utc` assignment for 2300** — stays `u64::MAX`.
-7. **Hello-enforce height for 2300** — stays `u64::MAX`; env ignored on 2300.
+6. ~~**`H_utc` assignment for 2300**~~ — **rule signed off 2026-11-07; value not baked.** After every seat advertises `utc-header-v5`, a separate arming commit sets `TESTNET_2300_UTC_FROM_HEIGHT = T + 1_000`, where `T` is the live 2300 tip at that moment. Optional extra buffer `B` (blocks) may be added if a seat is still restarting: `H_utc = T + 1_000 + B`. Stays `u64::MAX` in this PR.
+7. ~~**Hello-enforce height for 2300**~~ — **rule signed off 2026-11-07; value not baked.** Same arming commit sets `TESTNET_2300_UTC_HELLO_ENFORCE_FROM_HEIGHT = H_utc − 1_000` (`T + B`). Env overrides stay ignored on 2300. Stays `u64::MAX` in this PR.
 8. ~~**Exact skew signoff**~~ — **DONE (2026-11-07):** 5_000 ms ahead / 60_000 ms behind. Parent monotonicity (child ≥ parent, equal allowed) remains PROPOSED.
-9. **Hello lead window signoff** — `PROPOSED_UTC_HELLO_LEAD_BLOCKS = 1_000` PROPOSED.
-10. **Release tag / version bump** — not chosen.
+9. ~~**Hello lead window signoff**~~ — **DONE (2026-11-07):** `PROPOSED_UTC_HELLO_LEAD_BLOCKS = 1_000`.
+10. ~~**Release tag / version bump**~~ — **chosen 2026-11-07:** tag the UTC-capable release `v2.11.0` (workspace is currently `2.10.4`; bump Cargo and create the git tag when this ships, not while the PR is still an unarmed draft).
 
 Downstream (not consensus): explorer 1970 fix (P0, faucet #187), permanent fill IDs + cursor API (P2), public height+hash→UTC API (P3, after live H_utc), Crypto candles (P4; #618 must not claim `utc_committed`).
+
+## 2300 arming rule (signed off 2026-11-07)
+
+Worked example from live tip **825,993** at 08:34 Europe/Dublin on 7 Nov 2026 (`T = 825993`, `B = 0`): Hello-enforce would be **825,993** and `H_utc` would be **826,993**. Those numbers are an illustration only — they must be recomputed from the tip at the arming commit, after every seat is UTC-capable. They are not compiled into this binary.
+
+Recommended operational order: ship this unarmed binary (optional quiet window while seats upgrade) → confirm every seat advertises `utc-header-v5` → then the arming commit above → only then resume heavy load if it was paused.
 
 ## QC / slash coverage (v5 wording)
 
@@ -82,6 +90,9 @@ Downstream (not consensus): explorer 1970 fix (P0, faucet #187), permanent fill 
 | v5 domain + test harness | yes |
 | Live activation on 2300 | **no** (`u64::MAX`) |
 | Skew numbers (5s ahead / 60s behind) | **signed off 2026-11-07** (unused until armed) |
+| Hello lead window (1_000 blocks) | **signed off 2026-11-07** (unused until Hello-enforce is armed) |
+| Arming heights | **rule signed off** (`H_utc = T+1000+B`, enforce = `H_utc-1000`); not baked |
+| Release tag | **chosen:** `v2.11.0` (tag at ship; Cargo still 2.10.4 on this draft) |
 | Market API / candles ready | **no** |
 | Safe to merge as draft for review | intended |
 | Safe to deploy / arm | **no** |

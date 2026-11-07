@@ -18,8 +18,8 @@
 //! UTC-specific slash rule exists; conflicting UTC at one height is ordinary
 //! conflicting-hash evidence.
 //!
-//! See `docs/ops/UTC_HEADER.md` for remaining policy gates (H_utc,
-//! Hello lead signoff, release tag) and downstream work.
+//! See `docs/ops/UTC_HEADER.md` for remaining gates (bake 2300 H_utc and
+//! Hello-enforce heights in a separate arming commit) and downstream work.
 
 use crate::NETWORK_ID_PUBLIC_TESTNET_2300;
 
@@ -372,14 +372,21 @@ pub fn utc_peer_capability_gap(
 /// implied by shipping the capability advertisement.
 pub const UTC_HELLO_ENFORCE_FROM_HEIGHT_DISABLED: u64 = u64::MAX;
 
-/// Env for non-2300 rehearsal only. Ignored on public testnet 2300 (always disabled).
+/// Baked 2300 Hello-enforce — **must stay disabled** until the arming commit.
+/// Signed-off rule: set this to `H_utc - UTC hello lead` (1_000 blocks) once
+/// every seat advertises `utc-header-v5`. Until then it stays `u64::MAX`.
+pub const TESTNET_2300_UTC_HELLO_ENFORCE_FROM_HEIGHT: u64 =
+    UTC_HELLO_ENFORCE_FROM_HEIGHT_DISABLED;
+
+/// Env for non-2300 rehearsal only. Ignored on public testnet 2300 (always the baked constant).
 pub const ENV_UTC_HELLO_ENFORCE_FROM_HEIGHT: &str = "FPL_UTC_HELLO_ENFORCE_FROM_HEIGHT";
 
-/// Hard Hello capability enforce height. **2300 always disabled.** Other nets
-/// may set `FPL_UTC_HELLO_ENFORCE_FROM_HEIGHT` for isolated rehearsal.
+/// Hard Hello capability enforce height. **2300 uses the baked constant**
+/// (disabled until the arming commit). Other nets may set
+/// `FPL_UTC_HELLO_ENFORCE_FROM_HEIGHT` for isolated rehearsal.
 pub fn network_utc_hello_enforce_from_height(network_id: u32) -> u64 {
     if network_id == NETWORK_ID_PUBLIC_TESTNET_2300 {
-        return UTC_HELLO_ENFORCE_FROM_HEIGHT_DISABLED;
+        return TESTNET_2300_UTC_HELLO_ENFORCE_FROM_HEIGHT;
     }
     env_u64(ENV_UTC_HELLO_ENFORCE_FROM_HEIGHT).unwrap_or(UTC_HELLO_ENFORCE_FROM_HEIGHT_DISABLED)
 }
@@ -441,11 +448,11 @@ impl UtcPackClock {
     }
 }
 
-/// PROPOSED (not production-signed): Hello min-release safety window. When
-/// Hello enforce is armed, peers lacking `utc-header-v5` are hard-closed from
-/// `H_utc - lead` (so they cannot deliver Pack/OK across the activation) or
-/// from the explicit enforce height, whichever is earlier. Inert while either
-/// enforce is `u64::MAX` (default everywhere, always on 2300).
+/// Signed off 2026-11-07: Hello min-release safety window (1_000 blocks).
+/// When Hello enforce is armed, peers lacking `utc-header-v5` are hard-closed
+/// from `H_utc - lead` (so they cannot deliver Pack/OK across the activation)
+/// or from the explicit enforce height, whichever is earlier. Inert while
+/// enforce is `u64::MAX` (default everywhere, and on 2300 until the arming commit).
 pub const PROPOSED_UTC_HELLO_LEAD_BLOCKS: u64 = 1_000;
 
 /// Effective hard-close height for peers missing `utc-header-v5`.
@@ -502,6 +509,14 @@ mod tests {
     #[test]
     fn disabled_by_default_on_2300() {
         assert_eq!(TESTNET_2300_UTC_FROM_HEIGHT, UTC_FROM_HEIGHT_DISABLED);
+        assert_eq!(
+            TESTNET_2300_UTC_HELLO_ENFORCE_FROM_HEIGHT,
+            UTC_HELLO_ENFORCE_FROM_HEIGHT_DISABLED
+        );
+        assert_eq!(
+            network_utc_hello_enforce_from_height(NETWORK_ID_PUBLIC_TESTNET_2300),
+            UTC_HELLO_ENFORCE_FROM_HEIGHT_DISABLED
+        );
         assert!(!utc_active(0, UTC_FROM_HEIGHT_DISABLED));
         assert!(!utc_active(u64::MAX - 1, UTC_FROM_HEIGHT_DISABLED));
         assert!(!utc_active_on(NETWORK_ID_PUBLIC_TESTNET_2300, 1_000_000));
