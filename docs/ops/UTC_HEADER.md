@@ -147,3 +147,15 @@ Implementation stays a **separate draft PR** after P0 honesty (#187 faucet) and 
 - Hello lead window: `rehearsal_hello_lead_window_matrix` (unarmed ⇒ Pass everywhere; armed non-2300 ⇒ Pass before `H−lead`, Close at/after; capable peers Pass), `rehearsal_hello_lead_window_inert_on_2300_defaults` (env set + test H override on 2300 still never closes).
 - `docs/ops/tools/utc_fork_rehearsal.sh` — MODE=soft|enforce mixed old/new binaries on 2200.
 - 2300: `TESTNET_2300_UTC_FROM_HEIGHT` and Hello enforce remain `u64::MAX`.
+
+### t568u fork rehearsal — process evidence (box, 2026-11-07 ~04:36–04:39 UTC)
+
+`utc_fork_rehearsal.sh`, loopback `127.0.0.1:29201-29206`, network_id 2200, H_utc=8,
+NEW = this branch (v1–v4), OLD = `origin/main` @ `4321534` (v5–v6, no `utc-header-v5`).
+
+| Mode | Observed | Interpretation |
+|------|----------|----------------|
+| `soft` (enforce unarmed) | All 6 seats agree through tip 7, then **halt at H_utc**: old v5 won h=8 and packed a v4-preimage ledger; every new seat logs `ingest fail h=8 … bad packer sig`. No seat committed h=8. | Mixed binaries at H_utc ⇒ liveness halt (no QC across the split), not a silent fork. This is why Hello enforce must be armed before H_utc. |
+| `enforce` (`FPL_UTC_HELLO_ENFORCE_FROM_HEIGHT=8`, lead 1000 ⇒ close_from 0) | New seats logged 872 `utc-header-v5 capability required` Hello closes. New seats v1–v4 reached tip 8 (= H_utc) with one agreed hash; old seats isolated at tip 2. | Old peers cut off before activation; new side continues where it holds enough seats for soft QC; old side stalls isolated. |
+
+Caveats: debug binaries, 4/2 split, single short run, `tip_sealed_utc_ms` not read by the summary (status field shown `None`). Not a soak. Nothing touched 2300.

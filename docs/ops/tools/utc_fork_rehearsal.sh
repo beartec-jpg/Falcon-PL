@@ -86,6 +86,14 @@ for i in $(seq 0 $((N-1))); do
     >"$dat/logs/node.log" 2>&1 &
   PIDS="$PIDS $!"; echo "started $id ($kind) :$port pid=$!" | tee -a "$ART/meta.txt"
 done
+sleep 4
+# Drive txs so packers seal past H_utc (same as utc_multinode_rehearsal.sh).
+for seq in $(seq 1 $((H_UTC+6))); do
+  "$CTL" --addr "127.0.0.1:$PORT_BASE" pay --from alice --to bob --amount 1 --fee 1 \
+    --sequence "$seq" --scheme hmac --keys-dir "$KEYS" --network-id "$NET" >/dev/null 2>&1 \
+    || echo "pay seq $seq err" | tee -a "$ART/meta.txt"
+  sleep 1.5
+done
 sleep "$RUN_SECS"
 
 python3 - "$CTL" "$PORT_BASE" "$N" "$NEW_SEATS" "$H_UTC" "$ART" "$SCRATCH" "$MODE" <<'PY'
