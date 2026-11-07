@@ -11,7 +11,7 @@
 - When activation is **armed** (`height >= H_utc`, `H_utc != u64::MAX`):
   - packer signs v5; `inner_hash` / `ledger_hash` / OK votes over `ledger_hash` cover UTC;
   - `seed_v2` uses the same domain-selected message;
-  - live staging applies PROPOSED skew vs OS wall; commit/catch-up apply **historical-only** rules (no wall rejection on replay).
+  - live staging applies signed skew (5s ahead / 60s behind) vs OS wall; commit/catch-up apply **historical-only** rules (no wall rejection on replay).
 - Preserves `sealed_at_ms` as synthetic chain physics / reward time unchanged.
 - Status exposes `tip_sealed_at_ms` + quality `chain_physics`, and `tip_sealed_utc_ms` only when non-zero.
 
@@ -25,18 +25,18 @@
 
 Arming requires a **separate** commit + preactivation signoff after seat readiness, Hello gate, and soak — not this PR.
 
-## PROPOSED skew / bootstrap (rationale — not measured safe values)
+## Skew / bootstrap
 
-| Rule | PROPOSED | Rationale sketch |
-|------|----------|------------------|
-| Max ahead of checker wall | 5_000 ms | Mirror existing `SEALED_AT_MAX_AHEAD_MS` order; refuse future-dated tips |
-| Max behind checker wall (live only) | 60_000 ms | Tolerate short stalls / NTP wobble; long stall → operational recovery |
-| Parent monotonicity | child ≥ parent when parent UTC > 0 | Prevent rewind of committed wall timeline |
+| Rule | Status | Rationale sketch |
+|------|--------|------------------|
+| Max ahead of checker wall | **signed off 2026-11-07:** 5_000 ms | Refuse future-dated tips; matches existing `SEALED_AT_MAX_AHEAD_MS` order |
+| Max behind checker wall (live only) | **signed off 2026-11-07:** 60_000 ms | Tolerate short stalls / NTP wobble; long stall → operational recovery |
+| Parent monotonicity | PROPOSED: child ≥ parent when parent UTC > 0 | Prevent rewind of committed wall timeline |
 | First block at `H_utc` | parent UTC may be 0; absolute skew only | Bootstrap without inventing parent UTC |
 | Historical replay | no wall skew | Deterministic catch-up / archive restore |
 | Stalled chain | no auto-widen on 2300 | Widening needs coordinated signoff; replay still works |
 
-**Flagged for preactivation signoff:** exact ahead/behind numbers, peer Hello min-release window, whether monotonicity allows equal timestamps, monitoring alerts for tip UTC freshness.
+**Flagged for preactivation signoff:** peer Hello min-release window (1_000 blocks), whether monotonicity allows equal timestamps, monitoring alerts for tip UTC freshness.
 
 ## Test coverage in this PR (`utc_header` unit tests)
 
@@ -61,7 +61,7 @@ Policy items (still explicit, NOT decided by code):
 
 6. **`H_utc` assignment for 2300** — stays `u64::MAX`.
 7. **Hello-enforce height for 2300** — stays `u64::MAX`; env ignored on 2300.
-8. **Exact skew signoff** — 5_000 ms ahead / 60_000 ms behind / monotonic-with-equal remain PROPOSED.
+8. ~~**Exact skew signoff**~~ — **DONE (2026-11-07):** 5_000 ms ahead / 60_000 ms behind. Parent monotonicity (child ≥ parent, equal allowed) remains PROPOSED.
 9. **Hello lead window signoff** — `PROPOSED_UTC_HELLO_LEAD_BLOCKS = 1_000` PROPOSED.
 10. **Release tag / version bump** — not chosen.
 
@@ -81,7 +81,7 @@ Downstream (not consensus): explorer 1970 fix (P0, faucet #187), permanent fill 
 | Field exists on Ledger wire | yes (default 0) |
 | v5 domain + test harness | yes |
 | Live activation on 2300 | **no** (`u64::MAX`) |
-| Production-safe skew | **no** (PROPOSED only) |
+| Skew numbers (5s ahead / 60s behind) | **signed off 2026-11-07** (unused until armed) |
 | Market API / candles ready | **no** |
 | Safe to merge as draft for review | intended |
 | Safe to deploy / arm | **no** |

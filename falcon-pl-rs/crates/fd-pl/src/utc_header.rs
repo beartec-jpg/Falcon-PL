@@ -7,9 +7,10 @@
 //! - split validation: **historical / deterministic** vs **live admission**
 //!
 //! `sealed_at_ms` (chain physics / reward clock) is intentionally untouched.
-//! Live skew bounds below are **PROPOSED for configurable devnet tests only**
-//! — not measured production-safe thresholds. Arming `H_utc` requires
-//! separate preactivation signoff.
+//! Live skew numbers: **5_000 ms ahead / 60_000 ms behind**, signed off
+//! 2026-11-07. They do nothing on a network until `H_utc` is armed.
+//! Child≥parent monotonicity is still proposed. Arming `H_utc` still
+//! requires a separate preactivation commit.
 //!
 //! QC coverage: once v5 is armed, OK votes / QCs sign `ledger_hash`, which is
 //! derived from the v5 preimage ⇒ they attest to `sealed_utc_ms`. Mutating the
@@ -17,8 +18,8 @@
 //! UTC-specific slash rule exists; conflicting UTC at one height is ordinary
 //! conflicting-hash evidence.
 //!
-//! See `docs/ops/UTC_HEADER.md` for remaining policy gates (H_utc, skew
-//! signoff, Hello lead signoff, release tag) and downstream work.
+//! See `docs/ops/UTC_HEADER.md` for remaining policy gates (H_utc,
+//! Hello lead signoff, release tag) and downstream work.
 
 use crate::NETWORK_ID_PUBLIC_TESTNET_2300;
 
@@ -29,13 +30,12 @@ pub const UTC_FROM_HEIGHT_DISABLED: u64 = u64::MAX;
 /// Baked 2300 activation — **must stay disabled** until seat readiness + soak.
 pub const TESTNET_2300_UTC_FROM_HEIGHT: u64 = UTC_FROM_HEIGHT_DISABLED;
 
-/// PROPOSED (devnet-configurable): max `sealed_utc_ms` ahead of checker wall clock.
-/// Mirrors `params_v2::SEALED_AT_MAX_AHEAD_MS` order of magnitude — not a measured safe value.
+/// Signed off 2026-11-07: max `sealed_utc_ms` ahead of checker wall clock (5 seconds).
+/// Unused until `H_utc` is armed. Devnet may still override via `FPL_UTC_MAX_AHEAD_MS` (ignored on 2300).
 pub const PROPOSED_UTC_MAX_AHEAD_MS: u64 = 5_000;
 
-/// PROPOSED (devnet-configurable): max `sealed_utc_ms` behind checker wall clock on live admit.
-/// Rationale sketch: tolerate short stalls / NTP wobble; long stalls need operational recovery
-/// (documented), not silent auto-widen. **Not production-signed.**
+/// Signed off 2026-11-07: max `sealed_utc_ms` behind checker wall clock on live admit (60 seconds).
+/// Unused until `H_utc` is armed. Devnet may still override via `FPL_UTC_MAX_BEHIND_MS` (ignored on 2300).
 pub const PROPOSED_UTC_MAX_BEHIND_MS: u64 = 60_000;
 
 /// PROPOSED: child `sealed_utc_ms` must be >= parent when parent carries UTC (>0).
@@ -68,7 +68,7 @@ impl Default for UtcSkewBounds {
 }
 
 impl UtcSkewBounds {
-    /// Resolve bounds: on 2300 always the PROPOSED constants (still inactive until H armed).
+    /// Resolve bounds: on 2300 always the signed 5s/60s constants (still inactive until H armed).
     /// Elsewhere env may override for tests.
     pub fn resolve(network_id: u32) -> Self {
         let mut b = Self::default();
