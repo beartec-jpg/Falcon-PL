@@ -384,7 +384,7 @@ use thiserror::Error;
 
 pub const NETWORK_NAME: &str = "falcon-pl-private-v22";
 /// Product release line. One number on crate, status, Hello, and binaries.
-pub const PRODUCT_VERSION: &str = "2.10.4";
+pub const PRODUCT_VERSION: &str = "2.11.0";
 
 /// Version string a node puts in its Hello (`WireMsg::Hello::product_version`).
 ///
@@ -469,7 +469,7 @@ pub fn hello_version_compatible_at(peer: &str, gloas_active: bool) -> bool {
         return false;
     }
     // The `x >= 60` floor is a rule for the legacy `2.9.x` line only; a peer on
-    // this release's own line (`2.10.x`) is always new enough.
+    // this release's own line (`2.11.x`) is always new enough.
     if !peer.starts_with("2.9.") {
         return true;
     }
@@ -16641,11 +16641,11 @@ mod tests {
         assert!(hello_version_compatible("2.9.59"));
         assert!(hello_version_compatible("2.9.0"));
         assert!(hello_version_compatible("2.9.61"));
-        // 2.10.0 accepts its own line and the legacy 2.9.x line.
-        assert!(hello_version_compatible("2.10.0"));
-        assert!(hello_version_compatible("2.10.7"));
-        assert!(!hello_version_compatible("2.10.07"));
-        assert!(!hello_version_compatible("2.11.0"));
+        // 2.11.0 accepts its own line and the legacy 2.9.x line.
+        assert!(hello_version_compatible("2.11.0"));
+        assert!(hello_version_compatible("2.11.7"));
+        assert!(!hello_version_compatible("2.11.07"));
+        assert!(!hello_version_compatible("2.10.0"));
         assert!(!hello_version_compatible("3.9.60"));
         assert!(!hello_version_compatible("2.8.99"));
         assert!(!hello_version_compatible("2.90.1"));
@@ -16660,8 +16660,8 @@ mod tests {
 
     #[test]
     fn product_version_is_locked_to_crate() {
-        assert_eq!(PRODUCT_VERSION, "2.10.4");
-        assert_eq!(env!("CARGO_PKG_VERSION"), "2.10.4");
+        assert_eq!(PRODUCT_VERSION, "2.11.0");
+        assert_eq!(env!("CARGO_PKG_VERSION"), "2.11.0");
         assert_eq!(NodeRole::from_exe_name("/opt/bin/falcon-pl-val"), Some(NodeRole::Val));
         assert_eq!(NodeRole::from_exe_name("falcon-pl-archive"), Some(NodeRole::Archive));
         assert_eq!(NodeRole::VAL_MAX_CHAIN, 128);

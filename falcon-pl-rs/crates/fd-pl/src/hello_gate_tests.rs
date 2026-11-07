@@ -82,22 +82,22 @@ fn live(n: &Node, id: &str) -> bool {
 
 #[test]
 fn predicate_before_gloas_accepts_any_2_9_x() {
-    // 2.10.0 still accepts the whole legacy 2.9.x line plus its own 2.10.x.
-    for v in ["", "2.9.0", "2.9.59", "2.9.60", "2.9.61", "2.10.0", "2.10.7"] {
+    // 2.11.0 still accepts the whole legacy 2.9.x line plus its own 2.11.x.
+    for v in ["", "2.9.0", "2.9.59", "2.9.60", "2.9.61", "2.11.0", "2.11.7"] {
         assert!(hello_version_compatible_at(v, false), "{v:?} pre-H");
     }
-    for v in ["3.0.0", "2.8.99", "2.8.0", "2.11.0", "2.90.1", "2.9", "2.10", "2.10.07", "2.9.060", "junk"] {
+    for v in ["3.0.0", "2.8.99", "2.8.0", "2.10.0", "2.12.0", "2.90.1", "2.9", "2.10", "2.10.07", "2.9.060", "junk"] {
         assert!(!hello_version_compatible_at(v, false), "{v:?} pre-H");
     }
 }
 
 #[test]
 fn predicate_after_gloas_requires_2_9_60_or_newer() {
-    for v in ["2.9.60", "2.9.61", "2.9.100", "2.10.0", "2.10.60"] {
+    for v in ["2.9.60", "2.9.61", "2.9.100", "2.11.0", "2.11.60"] {
         assert!(hello_version_compatible_at(v, true), "{v:?} post-H");
     }
     for v in [
-        "", "2.9.59", "2.9.0", "2.9.060", "3.0.0", "3.9.60", "2.8.99", "2.11.60", "2.9", "junk",
+        "", "2.9.59", "2.9.0", "2.9.060", "3.0.0", "3.9.60", "2.8.99", "2.10.60", "2.12.60", "2.9", "junk",
     ] {
         assert!(!hello_version_compatible_at(v, true), "{v:?} post-H");
     }

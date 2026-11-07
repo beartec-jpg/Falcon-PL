@@ -65,7 +65,7 @@ Policy items:
 7. ~~**Hello-enforce height for 2300**~~ — **rule signed off 2026-11-07; value not baked.** Same arming commit sets `TESTNET_2300_UTC_HELLO_ENFORCE_FROM_HEIGHT = H_utc − 1_000` (`T + B`). Env overrides stay ignored on 2300. Stays `u64::MAX` in this PR.
 8. ~~**Exact skew signoff**~~ — **DONE (2026-11-07):** 5_000 ms ahead / 60_000 ms behind. Parent monotonicity (child ≥ parent, equal allowed) remains PROPOSED.
 9. ~~**Hello lead window signoff**~~ — **DONE (2026-11-07):** `PROPOSED_UTC_HELLO_LEAD_BLOCKS = 1_000`.
-10. ~~**Release tag / version bump**~~ — **chosen 2026-11-07:** tag the UTC-capable release `v2.11.0` (workspace is currently `2.10.4`; bump Cargo and create the git tag when this ships, not while the PR is still an unarmed draft).
+10. ~~**Release tag / version bump**~~ — **bumped 2026-11-07:** workspace / `PRODUCT_VERSION` / installer are `2.11.0`. Create the git tag `v2.11.0` when this ships (do not arm 2300).
 
 Downstream (not consensus): explorer 1970 fix (P0, faucet #187), permanent fill IDs + cursor API (P2), public height+hash→UTC API (P3, after live H_utc), Crypto candles (P4; #618 must not claim `utc_committed`).
 
@@ -92,7 +92,7 @@ Recommended operational order: ship this unarmed binary (optional quiet window w
 | Skew numbers (5s ahead / 60s behind) | **signed off 2026-11-07** (unused until armed) |
 | Hello lead window (1_000 blocks) | **signed off 2026-11-07** (unused until Hello-enforce is armed) |
 | Arming heights | **rule signed off** (`H_utc = T+1000+B`, enforce = `H_utc-1000`); not baked |
-| Release tag | **chosen:** `v2.11.0` (tag at ship; Cargo still 2.10.4 on this draft) |
+| Release tag | **bumped:** Cargo / product / installer `2.11.0`; git tag `v2.11.0` at ship |
 | Market API / candles ready | **no** |
 | Safe to merge as draft for review | intended |
 | Safe to deploy / arm | **no** |
