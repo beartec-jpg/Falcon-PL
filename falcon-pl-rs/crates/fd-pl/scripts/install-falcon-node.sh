@@ -33,7 +33,7 @@
 # (and an interactive confirmation unless --yes). Docs: docs/PUBLIC_NODE.md in the Falcon-PL repo.
 set -euo pipefail
 
-INSTALLER_VERSION="2.11.0"
+INSTALLER_VERSION="2.11.1"
 RELEASE_REPO="${FALCON_RELEASE_REPO:-beartec-jpg/falcon-pl-releases}"
 # Pinned minisign public key of the Falcon PL release key (key id 8ACFFC29EE09FAEC).
 # A valid SHA256SUMS.minisig is REQUIRED. FALCON_MINISIGN_PUBKEY="" disables the check, but only together
@@ -452,11 +452,20 @@ public_status() { # dest file; uses the downloaded/installed ctl
   timeout 40 "$ctl" --addr "$rpc" status >"$out" 2>/dev/null
 }
 
-# Same rule as the node's Hello gate after Gloas: 2.9.x with x >= 60, no
-# leading zero. Only these pairs peer; anything else is a real mismatch.
+# Product versions that can roll together without isolating peers.
+# 2.9.x with x >= 60 (no leading zero), or any later 2.x (2.10, 2.11, 2.12, …).
+# Those later 2.x binaries still advertise HELLO_WIRE_VERSION 2.9.100, so a
+# newer GitHub release can follow a live 2.x network without --force-version.
 wire_compatible() {
-  { [[ "$1" =~ ^2\.9\.([1-9][0-9]*)$ ]] && (( BASH_REMATCH[1] >= 60 )); } \
-    || [[ "$1" =~ ^2\.10\.(0|[1-9][0-9]*)$ ]]
+  [[ "$1" =~ ^([0-9]+)\.([0-9]+)\.(0|[1-9][0-9]*)$ ]] || return 1
+  local maj="${BASH_REMATCH[1]}" min="${BASH_REMATCH[2]}" patch="${BASH_REMATCH[3]}"
+  if [[ "$maj" -eq 2 && "$min" -eq 9 && "$patch" -ge 60 ]]; then
+    return 0
+  fi
+  if [[ "$maj" -eq 2 && "$min" -ge 10 ]]; then
+    return 0
+  fi
+  return 1
 }
 
 check_network_version() {
@@ -467,7 +476,7 @@ check_network_version() {
     ok "public network reachable: product $LIVE_VERSION, tip $LIVE_TIP (via $(net STATUS_RPC))"
     if [[ -n "$LIVE_VERSION" && "$LIVE_VERSION" != "$REL_VERSION" ]]; then
       if wire_compatible "$REL_VERSION" && wire_compatible "$LIVE_VERSION"; then
-        ok "release $REL_VERSION peers with the network's $LIVE_VERSION (2.9.x >= 2.9.60 are wire-compatible)"
+        ok "release $REL_VERSION peers with the network's $LIVE_VERSION (2.9.x >= 2.9.60 and later 2.x are wire-compatible)"
         # Wire-compatible is not consensus-current: an older pinned release can
         # miss later rule gates. Say so instead of passing silently.
         if [[ "$(printf '%s\n%s\n' "$REL_VERSION" "$LIVE_VERSION" | sort -V | head -1)" == "$REL_VERSION" && "$REL_VERSION" != "$LIVE_VERSION" ]]; then
