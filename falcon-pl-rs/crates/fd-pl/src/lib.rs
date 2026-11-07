@@ -3696,6 +3696,9 @@ pub struct Node {
     /// UTC Hello capability hard-enforce from this tip height (`u64::MAX` = never).
     /// Default never — advertising `utc-header-v5` does not close old peers.
     pub utc_hello_enforce_from_height: u64,
+    /// Injectable UTC pack / live-admission clock (default `System`). Tests and
+    /// isolated rehearsals may set `Frozen`/`Offset`; runtime only, not persisted.
+    pub utc_pack_clock: utc_header::UtcPackClock,
     /// v2.10.3: last Hello `release_version` per peer id ("" = pre-2.10.3)
     /// and when it was seen (`now_ms`). Observability only; runtime only.
     pub peer_releases: BTreeMap<String, (String, u64)>,
@@ -3962,6 +3965,7 @@ impl Node {
             orderbook_from_height,
             hello_min_release_from_height,
             utc_hello_enforce_from_height: utc_header::network_utc_hello_enforce_from_height(network_id_for_utc_hello),
+            utc_pack_clock: utc_header::UtcPackClock::System,
             peer_releases: BTreeMap::new(),
             rewards_v2_from_height,
             rewards_v2_epoch,
@@ -4884,19 +4888,43 @@ impl Node {
 
     /// Hard Hello close when `utc_hello_enforce_from_height` is armed and tip
     /// has reached it. Default `u64::MAX` ⇒ never. Independent of H_utc bake.
+    ///
+    /// With enforce armed, the PROPOSED min-release safety window
+    /// ([`utc_header::PROPOSED_UTC_HELLO_LEAD_BLOCKS`]) closes old peers from
+    /// `H_utc - lead` so they cannot Pack/OK across activation. Closing the
+    /// session is how Pack/OK from such a peer is refused (no session ⇒ no
+    /// Pack/OK frames). 2300: enforce is always `u64::MAX` ⇒ inert.
     pub fn hello_utc_capability_reject(&self, peer_capabilities: &[String]) -> Option<String> {
-        if self.tip_height < self.utc_hello_enforce_from_height {
+        let close_from = self.utc_hello_hard_close_from();
+        if self.tip_height < close_from {
             return None;
         }
         if utc_header::peer_has_utc_header_v5(peer_capabilities) {
             return None;
         }
         Some(format!(
-            "{HELLO_ERR_UTC_CAPABILITY}: peer Hello lacks {}; local tip {} >= enforce_from {}",
+            "{HELLO_ERR_UTC_CAPABILITY}: peer Hello lacks {}; local tip {} >= close_from {} (enforce_from {}, lead {})",
             utc_header::CAP_UTC_HEADER_V5,
             self.tip_height,
-            self.utc_hello_enforce_from_height
+            close_from,
+            self.utc_hello_enforce_from_height,
+            utc_header::PROPOSED_UTC_HELLO_LEAD_BLOCKS
         ))
+    }
+
+    /// Effective hard-close height (enforce armed ⇒ min(enforce, H_utc - lead)).
+    pub fn utc_hello_hard_close_from(&self) -> u64 {
+        utc_header::utc_hello_hard_close_from(
+            self.utc_hello_enforce_from_height,
+            utc_header::network_utc_from_height(self.cfg.network_id),
+            utc_header::PROPOSED_UTC_HELLO_LEAD_BLOCKS,
+        )
+    }
+
+    /// True when Pack/OK from a peer with these Hello capabilities must be
+    /// refused (same predicate as the Hello hard close).
+    pub fn utc_refuse_peer_pack_ok(&self, peer_capabilities: &[String]) -> bool {
+        self.hello_utc_capability_reject(peer_capabilities).is_some()
     }
 
     /// v2.9.60 rolling exec-header cut, and the v2.9.61 one-off V1 cutoff,
@@ -5903,7 +5931,7 @@ impl Node {
 
     /// Live admission UTC checks: historical rules + PROPOSED skew vs local wall.
     /// Call only on live staging / OK paths — never on pure historical apply.
-    /// Uses `utc_header::wall_unix_ms()` (not chain `now_ms`) so synthetic
+    /// Uses the Node's `utc_pack_clock` (System = OS wall; not chain `now_ms`) so synthetic
     /// physics clocks cannot masquerade as UTC skew reference.
     fn check_sealed_utc_live(&self, ledger: &Ledger) -> Result<(), String> {
         let from = utc_header::network_utc_from_height(self.cfg.network_id);
@@ -5913,7 +5941,7 @@ impl Node {
             from,
             ledger.sealed_utc_ms,
             self.parent_sealed_utc(),
-            utc_header::wall_unix_ms(),
+            self.utc_pack_clock.now_unix_ms(),
             &bounds,
         )
         .map_err(|e| e.to_string())
@@ -13060,11 +13088,11 @@ impl Node {
         let from = utc_header::network_utc_from_height(self.cfg.network_id);
         let domain = header_domain(height, from);
         // Unarmed (default): sealed_utc_ms=0, v4 preimage unchanged.
-        // Armed: stamp OS wall Unix-ms (injectable pack clock = unfinished gate).
+        // Armed: stamp the Node's injectable pack clock (System = OS wall).
         let sealed_utc_ms = match domain {
             HeaderDomain::LegacyV4 => 0,
             HeaderDomain::V5 => {
-                let w = utc_header::wall_unix_ms();
+                let w = self.utc_pack_clock.now_unix_ms();
                 if w == 0 {
                     return Err("seal_v4_ledger: wall_unix_ms unavailable while UTC active".into());
                 }

@@ -11,8 +11,14 @@
 //! — not measured production-safe thresholds. Arming `H_utc` requires
 //! separate preactivation signoff.
 //!
-//! See `docs/ops/UTC_HEADER.md` for unfinished gates (Hello peer gate, full
-//! pack-path wall stamp, explorer exposure, archive capacity, Crypto candles).
+//! QC coverage: once v5 is armed, OK votes / QCs sign `ledger_hash`, which is
+//! derived from the v5 preimage ⇒ they attest to `sealed_utc_ms`. Mutating the
+//! UTC field invalidates the packer signature and every existing OK/QC. No
+//! UTC-specific slash rule exists; conflicting UTC at one height is ordinary
+//! conflicting-hash evidence.
+//!
+//! See `docs/ops/UTC_HEADER.md` for remaining policy gates (H_utc, skew
+//! signoff, Hello lead signoff, release tag) and downstream work.
 
 use crate::NETWORK_ID_PUBLIC_TESTNET_2300;
 
@@ -400,6 +406,60 @@ pub fn set_utc_from_height_override(network_id: u32, from_height: Option<u64>) {
     FROM_HEIGHT_OVERRIDE.with(|c| {
         c.set(from_height.map(|h| (network_id, h)));
     });
+}
+
+/// Injectable pack / live-admission wall clock carried on `Node`.
+///
+/// `System` reads [`wall_unix_ms`] (OS wall, or the legacy thread-local test
+/// override). `Frozen` / `Offset` let tests and isolated rehearsals pack under
+/// V5 deterministically per Node, without any process-global state. Production
+/// constructors always use `System`. Never used for `sealed_at_ms` physics.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum UtcPackClock {
+    #[default]
+    System,
+    /// Always return this Unix-ms value.
+    Frozen(u64),
+    /// System wall shifted by this many ms (negative = behind). Saturates at 0.
+    Offset(i64),
+}
+
+impl UtcPackClock {
+    pub fn now_unix_ms(&self) -> u64 {
+        match *self {
+            UtcPackClock::System => wall_unix_ms(),
+            UtcPackClock::Frozen(ms) => ms,
+            UtcPackClock::Offset(d) => {
+                let w = wall_unix_ms();
+                if d >= 0 {
+                    w.saturating_add(d as u64)
+                } else {
+                    w.saturating_sub(d.unsigned_abs())
+                }
+            }
+        }
+    }
+}
+
+/// PROPOSED (not production-signed): Hello min-release safety window. When
+/// Hello enforce is armed, peers lacking `utc-header-v5` are hard-closed from
+/// `H_utc - lead` (so they cannot deliver Pack/OK across the activation) or
+/// from the explicit enforce height, whichever is earlier. Inert while either
+/// enforce is `u64::MAX` (default everywhere, always on 2300).
+pub const PROPOSED_UTC_HELLO_LEAD_BLOCKS: u64 = 1_000;
+
+/// Effective hard-close height for peers missing `utc-header-v5`.
+/// - enforce disabled ⇒ disabled (never), regardless of H_utc.
+/// - H_utc disabled ⇒ the explicit enforce height.
+/// - otherwise `min(enforce_from, H_utc - lead)`.
+pub fn utc_hello_hard_close_from(enforce_from: u64, utc_from: u64, lead: u64) -> u64 {
+    if enforce_from == UTC_HELLO_ENFORCE_FROM_HEIGHT_DISABLED {
+        return UTC_HELLO_ENFORCE_FROM_HEIGHT_DISABLED;
+    }
+    if utc_from == UTC_FROM_HEIGHT_DISABLED {
+        return enforce_from;
+    }
+    enforce_from.min(utc_from.saturating_sub(lead))
 }
 
 /// OS wall-clock Unix milliseconds, or the thread override when set.

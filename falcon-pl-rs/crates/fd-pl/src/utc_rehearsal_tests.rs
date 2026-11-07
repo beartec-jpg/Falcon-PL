@@ -453,3 +453,181 @@ fn rehearsal_tip0_catchup_ledgers_from_ram_window_preserves_utc() {
         assert_eq!(n.chain.last().unwrap().sealed_utc_ms, tip_utc);
     }
 }
+
+// ---------------------------------------------------------------------------
+// Gate 1: injectable pack clock on the real Node seal path.
+// ---------------------------------------------------------------------------
+
+fn clock_net(h_utc: u64, clock: utc_header::UtcPackClock) -> Network {
+    let cfg = ChainConfig {
+        network_id: NET,
+        pack_budget_ms: 0,
+        max_txs_per_ledger: 8,
+        soft_ok_votes: 3,
+        ..Default::default()
+    };
+    set_utc_from_height_override(NET, Some(h_utc));
+    // Prove the Node clock, not the legacy thread-local wall, drives packing.
+    set_wall_unix_ms_override(None);
+    let mut net = Network::bootstrap(&["v1", "v2", "v3", "v4", "v5", "v6"], 1000, &users(), cfg);
+    for n in net.nodes.values_mut() {
+        n.qc_header_version = 4;
+        n.qc_start_height = 1;
+        n.utc_pack_clock = clock;
+    }
+    net.pong_all();
+    net
+}
+
+fn seal_to(net: &mut Network, h: u64) {
+    while net.tip_height() < h {
+        net.payment("alice", "bob", 1, 1).unwrap();
+        net.seal_next_height().unwrap();
+    }
+}
+
+#[test]
+fn rehearsal_node_pack_clock_frozen_drives_sealed_utc_and_commitment() {
+    let _g = UtcOverrides;
+    const H: u64 = 3;
+    const T: u64 = 1_650_000_000_000; // far from real wall: proves injection
+    let mut a = clock_net(H, utc_header::UtcPackClock::Frozen(T));
+    seal_to(&mut a, H);
+    let mut b = clock_net(H, utc_header::UtcPackClock::Frozen(T + 1));
+    seal_to(&mut b, H);
+    for h in 1..H {
+        let la = a.nodes["v1"].chain.iter().find(|l| l.height == h).unwrap();
+        let lb = b.nodes["v1"].chain.iter().find(|l| l.height == h).unwrap();
+        assert_eq!(la.sealed_utc_ms, 0, "pre-H utc 0 at {h}");
+        assert_eq!(la.ledger_hash, lb.ledger_hash, "pre-H hash independent of clock at {h}");
+    }
+    let mut hashes = std::collections::BTreeSet::new();
+    for n in a.nodes.values() {
+        let tip = n.chain.last().unwrap();
+        assert_eq!(tip.height, H);
+        assert_eq!(tip.sealed_utc_ms, T, "sealed_utc_ms follows injected Node clock");
+        assert!(tip.verify_packer(&n.keys));
+        assert!(n.certs.contains_key(&H), "QC formed over V5 tip");
+        hashes.insert(tip.ledger_hash.clone());
+    }
+    assert_eq!(hashes.len(), 1);
+    let tb = b.nodes["v1"].chain.last().unwrap();
+    assert_eq!(tb.sealed_utc_ms, T + 1);
+    assert_ne!(
+        a.nodes["v1"].chain.last().unwrap().ledger_hash,
+        tb.ledger_hash,
+        "v5 commitment must change when the injected clock changes"
+    );
+}
+
+#[test]
+fn rehearsal_pack_clock_offset_and_frozen_unit() {
+    let _g = UtcOverrides;
+    set_wall_unix_ms_override(Some(1_000_000));
+    assert_eq!(utc_header::UtcPackClock::System.now_unix_ms(), 1_000_000);
+    assert_eq!(utc_header::UtcPackClock::Frozen(7).now_unix_ms(), 7);
+    assert_eq!(utc_header::UtcPackClock::Offset(500).now_unix_ms(), 1_000_500);
+    assert_eq!(utc_header::UtcPackClock::Offset(-500).now_unix_ms(), 999_500);
+    assert_eq!(utc_header::UtcPackClock::Offset(-2_000_000).now_unix_ms(), 0);
+    assert_eq!(utc_header::UtcPackClock::default(), utc_header::UtcPackClock::System);
+    assert_eq!(bare_node().utc_pack_clock, utc_header::UtcPackClock::System, "prod default");
+}
+
+#[test]
+fn rehearsal_node_pack_clock_skewed_peer_rejected_by_live_admission() {
+    // Packer clock far ahead of verifiers ⇒ live admission refuses (no QC).
+    let _g = UtcOverrides;
+    const H: u64 = 3;
+    const T: u64 = 1_650_000_000_000;
+    let mut net = clock_net(H, utc_header::UtcPackClock::Frozen(T));
+    seal_to(&mut net, H - 1);
+    let b = UtcSkewBounds::resolve(NET);
+    let mut n = net.nodes.remove("v1").unwrap();
+    let mut probe = n.chain.last().unwrap().clone();
+    probe.height = H;
+    probe.sealed_utc_ms = T + b.max_ahead_ms + 1;
+    n.utc_pack_clock = utc_header::UtcPackClock::Frozen(T);
+    assert!(n.check_sealed_utc_live(&probe).is_err(), "ahead beyond bound refused");
+    probe.sealed_utc_ms = T;
+    assert!(n.check_sealed_utc_live(&probe).is_ok());
+}
+
+// ---------------------------------------------------------------------------
+// Gate 2: Hello min-release safety window (PROPOSED lead).
+// ---------------------------------------------------------------------------
+
+#[test]
+fn rehearsal_hello_lead_window_matrix() {
+    let _g = UtcOverrides;
+    use utc_header::{utc_hello_hard_close_from as f, PROPOSED_UTC_HELLO_LEAD_BLOCKS as LEAD};
+    const H: u64 = 5_000;
+    // pure function
+    assert_eq!(f(u64::MAX, H, LEAD), u64::MAX, "enforce off ⇒ never");
+    assert_eq!(f(10_000, u64::MAX, LEAD), 10_000, "H_utc off ⇒ explicit enforce");
+    assert_eq!(f(10_000, H, LEAD), H - LEAD);
+    assert_eq!(f(100, H, LEAD), 100, "earlier explicit enforce wins");
+    assert_eq!(f(10_000, 10, LEAD), 0, "saturates");
+
+    set_utc_from_height_override(NET, Some(H));
+    let mut n = bare_node();
+    let old = hello_with_caps(vec![]);
+    let new = hello_with_caps(local_hello_capabilities());
+
+    // Enforce unarmed (default): advertise/soft only even deep into window/post-H.
+    for tip in [H - LEAD - 1, H - LEAD, H, H + 10] {
+        n.tip_height = tip;
+        assert_eq!(HelloSession::default().check(&n, &old), HelloGate::Pass, "tip {tip}");
+        assert!(!n.utc_refuse_peer_pack_ok(&[]));
+    }
+    n.tip_height = H;
+    assert!(n.utc_peer_capability_gap(&[]).is_some(), "soft gap reported post-H");
+
+    // Armed (non-2300): before window = Pass; inside window = hard close.
+    n.utc_hello_enforce_from_height = 10_000;
+    assert_eq!(n.utc_hello_hard_close_from(), H - LEAD);
+    n.tip_height = H - LEAD - 1;
+    assert_eq!(HelloSession::default().check(&n, &old), HelloGate::Pass);
+    assert!(!n.utc_refuse_peer_pack_ok(&[]));
+    for tip in [H - LEAD, H - 1, H, H + 10] {
+        n.tip_height = tip;
+        match HelloSession::default().check(&n, &old) {
+            HelloGate::Close(r) => assert!(r.contains(HELLO_ERR_UTC_CAPABILITY), "{r}"),
+            g => panic!("tip {tip}: expected close, got {g:?}"),
+        }
+        assert!(n.utc_refuse_peer_pack_ok(&[]));
+        assert_eq!(HelloSession::default().check(&n, &new), HelloGate::Pass);
+        assert!(!n.utc_refuse_peer_pack_ok(&local_hello_capabilities()));
+    }
+}
+
+#[test]
+fn rehearsal_hello_lead_window_inert_on_2300_defaults() {
+    let _g = UtcOverrides;
+    struct Clear2300;
+    impl Drop for Clear2300 {
+        fn drop(&mut self) {
+            set_utc_from_height_override(NETWORK_ID_PUBLIC_TESTNET_2300, None);
+        }
+    }
+    let _c = Clear2300;
+    // Even env set must be ignored on 2300.
+    std::env::set_var(utc_header::ENV_UTC_HELLO_ENFORCE_FROM_HEIGHT, "1");
+    let cfg = ChainConfig {
+        network_id: NETWORK_ID_PUBLIC_TESTNET_2300,
+        ..Default::default()
+    };
+    let mut net = Network::bootstrap(&["v1", "v2", "v3", "v4"], 1000, &[], cfg);
+    std::env::remove_var(utc_header::ENV_UTC_HELLO_ENFORCE_FROM_HEIGHT);
+    let mut n = net.nodes.remove("v1").unwrap();
+    assert_eq!(n.utc_hello_enforce_from_height, UTC_HELLO_ENFORCE_FROM_HEIGHT_DISABLED);
+    assert_eq!(utc_header::TESTNET_2300_UTC_FROM_HEIGHT, UTC_FROM_HEIGHT_DISABLED);
+    assert_eq!(n.utc_hello_hard_close_from(), u64::MAX);
+    // Even a hypothetical test-only H override on 2300 cannot hard-close: enforce is MAX.
+    set_utc_from_height_override(NETWORK_ID_PUBLIC_TESTNET_2300, Some(5_000));
+    for tip in [0, 4_000, 5_000, 1_000_000] {
+        n.tip_height = tip;
+        assert_eq!(n.utc_hello_hard_close_from(), u64::MAX);
+        assert!(n.hello_utc_capability_reject(&[]).is_none(), "2300 tip {tip}");
+        assert!(!n.utc_refuse_peer_pack_ok(&[]));
+    }
+}

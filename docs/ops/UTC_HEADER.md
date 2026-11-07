@@ -49,16 +49,30 @@ Arming requires a **separate** commit + preactivation signoff after seat readine
 
 ## Unfinished gates (exact)
 
-1. **Hello / product_version peer gate** — refuse pack/OK with peers below required release after `H_utc − safety window` (window undecided).
-2. **Injectable pack wall clock** — `seal_v4_ledger` uses `wall_unix_ms()` when armed; tests need a controllable clock for deterministic pack under V5.
-3. **QC attestation path audit** — OK votes cover `ledger_hash` (hence UTC once v5), but explicit dual-attest / slash evidence docs need a pass for v5 wording.
-4. **Gossip / snapshot / disk round-trip soak** under armed devnet (BodyStore already stores full ledger JSON; needs armed rehearsal).
-5. **Explorer 1970 fix (P0)** — Falcon-faucet-wallet draft PR #187 (`draft/explorer-time-honesty-p0`); honesty mappers + docs; not merged.
-6. **Permanent fill IDs + cursor API (P2)** — beyond `RECENT_FILLS=200`; archive capacity not inspected.
-7. **Public height+hash→UTC API (P3)** — only after `H_utc` live.
-8. **Crypto candles (P4)** — do **not** merge #618 from this Go; needs `utc_committed` source.
-9. **Devnet fork rehearsal** — old binary left behind; document observed fork.
-10. **Release tag / version bump** — not chosen in this PR.
+Consensus gates (t568u pass):
+
+1. ~~**Hello / min-release peer gate**~~ — **DONE (code, unarmed).** `utc_header::utc_hello_hard_close_from` + `Node::hello_utc_capability_reject`: when Hello enforce is armed, peers lacking `utc-header-v5` are hard-closed from `min(enforce_from, H_utc − PROPOSED_UTC_HELLO_LEAD_BLOCKS)`. Closing the session is how Pack/OK from such peers is refused (`Node::utc_refuse_peer_pack_ok`, same predicate). `PROPOSED_UTC_HELLO_LEAD_BLOCKS = 1_000` is **PROPOSED, not production-signed**. Enforce unarmed (default; always on 2300) ⇒ advertise / soft-gap only, never hard close.
+2. ~~**Injectable pack wall clock**~~ — **DONE.** `Node.utc_pack_clock: UtcPackClock { System | Frozen(ms) | Offset(ms) }` drives both `seal_v4_ledger` V5 stamping and live admission (`check_sealed_utc_live`). Production constructors (`Node::new`, snapshot load) use `System`. Tests inject per-Node clocks with no process-global state.
+3. ~~**QC attestation wording**~~ — **DONE (docs).** See “QC / slash coverage” below. No new slashing rule.
+4. **Devnet fork rehearsal** — **script DONE, process evidence: see milestone t568u.** `docs/ops/tools/utc_fork_rehearsal.sh` (2200 loopback, old binary from `OLD_REF`).
+5. **Gossip / snapshot / disk round-trip soak** under armed devnet — restart evidence exists (t286u); long soak not done.
+
+Policy items (still explicit, NOT decided by code):
+
+6. **`H_utc` assignment for 2300** — stays `u64::MAX`.
+7. **Hello-enforce height for 2300** — stays `u64::MAX`; env ignored on 2300.
+8. **Exact skew signoff** — 5_000 ms ahead / 60_000 ms behind / monotonic-with-equal remain PROPOSED.
+9. **Hello lead window signoff** — `PROPOSED_UTC_HELLO_LEAD_BLOCKS = 1_000` PROPOSED.
+10. **Release tag / version bump** — not chosen.
+
+Downstream (not consensus): explorer 1970 fix (P0, faucet #187), permanent fill IDs + cursor API (P2), public height+hash→UTC API (P3, after live H_utc), Crypto candles (P4; #618 must not claim `utc_committed`).
+
+## QC / slash coverage (v5 wording)
+
+- Once v5 is armed at a height, the packer signs the v5 preimage, which includes `|utc:{sealed_utc_ms}`. `inner_hash` and `ledger_hash` are derived from that preimage.
+- OK votes (and therefore the QC / `LedgerCert`) sign `ledger_hash`. So an OK vote on a v5 ledger **attests to `sealed_utc_ms`** exactly as it attests to tx_root, state_root and committee root.
+- Mutating `sealed_utc_ms` after sealing changes `ledger_hash`: the packer signature fails `verify_packer`, and every existing OK vote / QC no longer matches — the QC is invalid for the mutated ledger (tested: `rehearsal_multinode_network_utc_qc_agreement`, `mutated_utc_changes_commitment`).
+- Two different `sealed_utc_ms` values at the same height by the same packer are two different ledger hashes: this is the **existing** equivocation / double-sign evidence shape, no UTC-specific slash rule is added. Pre-activation (v4) ledgers carry `sealed_utc_ms = 0` and are not covered.
 
 ## Ready / not-ready
 
@@ -123,3 +137,13 @@ Goal: durable fill + block time queries **after** honesty labels exist; **do not
 | Archive capacity | Inspect before promising depth | Silent truncation disguised as full history |
 
 Implementation stays a **separate draft PR** after P0 honesty (#187 faucet) and unarmed #27 review. Crypto #618 candles remain blocked until live `utc_committed`.
+
+
+## Milestone t568u — consensus gates (pack clock, Hello window, QC wording, fork script)
+
+- Injectable `Node.utc_pack_clock` on the real seal + live admission path. Tests:
+  `rehearsal_node_pack_clock_frozen_drives_sealed_utc_and_commitment` (6-seat Network, Frozen clock far from real wall ⇒ every seat seals `sealed_utc_ms == T`, QC at H, hash differs for T+1, pre-H hashes identical),
+  `rehearsal_pack_clock_offset_and_frozen_unit`, `rehearsal_node_pack_clock_skewed_peer_rejected_by_live_admission`.
+- Hello lead window: `rehearsal_hello_lead_window_matrix` (unarmed ⇒ Pass everywhere; armed non-2300 ⇒ Pass before `H−lead`, Close at/after; capable peers Pass), `rehearsal_hello_lead_window_inert_on_2300_defaults` (env set + test H override on 2300 still never closes).
+- `docs/ops/tools/utc_fork_rehearsal.sh` — MODE=soft|enforce mixed old/new binaries on 2200.
+- 2300: `TESTNET_2300_UTC_FROM_HEIGHT` and Hello enforce remain `u64::MAX`.

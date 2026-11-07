@@ -633,6 +633,7 @@ impl Node {
             orderbook_from_height,
             hello_min_release_from_height,
             utc_hello_enforce_from_height: crate::utc_header::network_utc_hello_enforce_from_height(network_id_for_utc_hello),
+            utc_pack_clock: crate::utc_header::UtcPackClock::System,
             peer_releases: BTreeMap::new(),
             rewards_v2_from_height,
             rewards_v2_epoch,
